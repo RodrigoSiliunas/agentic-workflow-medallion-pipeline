@@ -30,7 +30,7 @@ O pipeline Medallion ja possui um agente autonomo (`agent_pre.py` + `agent_post.
 |                                                                         |
 |  +------------+  +------------+  +------------+  +------------+         |
 |  | Web App    |  | WhatsApp   |  | Discord    |  | Telegram   |         |
-|  | (Next.js)  |  | (via Omni) |  | (via Omni) |  | (via Omni) |         |
+|  | (Nuxt 4)  |  | (via Omni) |  | (via Omni) |  | (via Omni) |         |
 |  +-----+------+  +-----+------+  +-----+------+  +-----+------+         |
 |        |               |               |               |                |
 |        |               +-------+-------+               |                |
@@ -80,7 +80,7 @@ O pipeline Medallion ja possui um agente autonomo (`agent_pre.py` + `agent_post.
 ```mermaid
 graph TB
     subgraph Apresentacao
-        WEB[Web App - Next.js]
+        WEB[Web App - Nuxt 4]
         WA[WhatsApp]
         DC[Discord]
         TG[Telegram]
@@ -128,69 +128,119 @@ graph TB
 
 ## 3. Componentes
 
-### 3.1 Frontend (Next.js)
+### 3.1 Frontend (Nuxt 4.4.2 + Vue 3)
 
-#### Estrutura de Paginas
+#### Estrutura de Paginas (file-based routing do Nuxt)
 
 ```
-/                        → Redirect para /chat ou /login
-/login                   → Login com email/senha ou OAuth
-/chat                    → Lista de pipelines + thread mais recente
-/chat/:pipeline_id       → Threads de conversa do pipeline
-/chat/:pipeline_id/:id   → Conversa especifica
-/settings                → Configuracoes da conta
-/admin                   → Gestao de usuarios e empresas
+pages/
+├── index.vue                          → Redirect para /chat ou /login
+├── login.vue                          → Login com email/senha ou OAuth
+├── chat/
+│   ├── index.vue                      → Lista de pipelines + thread recente
+│   └── [pipelineId]/
+│       ├── index.vue                  → Threads do pipeline
+│       └── [threadId].vue             → Conversa especifica
+├── settings.vue                       → Configuracoes da conta
+└── admin.vue                          → Gestao de usuarios e empresas
 ```
 
 #### Componentes Principais
 
 ```
-src/
-├── app/
-│   ├── (auth)/login/page.tsx
-│   ├── (dashboard)/
-│   │   ├── layout.tsx              # Sidebar + chat area
-│   │   └── chat/[pipelineId]/[threadId]/page.tsx
-├── components/
-│   ├── chat/
-│   │   ├── ChatWindow.tsx          # Container principal
-│   │   ├── MessageList.tsx         # Lista com scroll
-│   │   ├── MessageBubble.tsx       # Mensagem user/agent
-│   │   ├── StreamingMessage.tsx    # SSE streaming
-│   │   ├── ActionCard.tsx          # Card de acao (PR criado, run disparado)
-│   │   └── CodeBlock.tsx           # Syntax highlight
-│   ├── sidebar/
-│   │   ├── PipelineList.tsx        # Lista de pipelines
-│   │   ├── ThreadList.tsx          # Threads por pipeline
-│   │   └── PipelineStatus.tsx      # Badge de status
-│   └── pipeline/
-│       ├── PipelineOverview.tsx
-│       └── SchemaViewer.tsx
-├── hooks/
-│   ├── useChat.ts                  # SSE + estado do chat
-│   ├── usePipeline.ts
-│   └── useAuth.ts
-└── types/
-    ├── chat.ts
-    ├── pipeline.ts
-    └── user.ts
+components/
+├── chat/
+│   ├── ChatWindow.vue              # Container principal
+│   ├── MessageList.vue             # Lista com scroll
+│   ├── MessageBubble.vue           # Mensagem user/agent
+│   ├── StreamingMessage.vue        # SSE streaming
+│   ├── ActionCard.vue              # Card de acao (PR criado, run disparado)
+│   └── CodeBlock.vue               # Syntax highlight (Shiki via Nuxt Content)
+├── sidebar/
+│   ├── PipelineList.vue            # Lista de pipelines
+│   ├── ThreadList.vue              # Threads por pipeline
+│   └── PipelineStatus.vue          # Badge de status
+└── pipeline/
+    ├── PipelineOverview.vue
+    └── SchemaViewer.vue
+
+composables/
+├── useChat.ts                      # SSE + estado do chat
+├── usePipeline.ts                  # Estado do pipeline via useFetch
+└── useAuth.ts                      # Auth state + middleware
+
+layouts/
+├── default.vue                     # Layout com sidebar
+└── auth.vue                        # Layout limpo para login
+
+middleware/
+├── auth.ts                         # Redirect se nao autenticado
+└── role.ts                         # Verificar permissao (viewer/editor/admin)
+
+server/
+├── api/                            # Se precisar de BFF (Backend for Frontend)
+│   └── proxy/[...].ts              # Proxy para FastAPI backend
+
+types/
+├── chat.ts
+├── pipeline.ts
+└── user.ts
 ```
 
-#### Streaming de Respostas (SSE)
+#### Streaming de Respostas (SSE via composable)
 
 ```typescript
+// composables/useChat.ts
 interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  actions?: ActionResult[];
-  timestamp: string;
+  id: string
+  role: "user" | "assistant"
+  content: string
+  actions?: ActionResult[]
+  timestamp: string
 }
 
 interface ActionResult {
-  type: "pr_created" | "run_triggered" | "query_executed";
-  status: "success" | "failed";
-  details: Record<string, any>;
+  type: "pr_created" | "run_triggered" | "query_executed"
+  status: "success" | "failed"
+  details: Record<string, any>
+}
+
+export function useChat(threadId: Ref<string>) {
+  const messages = ref<ChatMessage[]>([])
+  const isStreaming = ref(false)
+
+  async function sendMessage(content: string) {
+    isStreaming.value = true
+    const assistantMsg = reactive<ChatMessage>({
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+    })
+    messages.value.push(assistantMsg)
+
+    // SSE via EventSource nativo
+    const eventSource = new EventSource(
+      `/api/chat/message?thread_id=${threadId.value}&message=${encodeURIComponent(content)}`
+    )
+
+    eventSource.addEventListener("token", (e) => {
+      const data = JSON.parse(e.data)
+      assistantMsg.content += data.content
+    })
+
+    eventSource.addEventListener("action", (e) => {
+      const data = JSON.parse(e.data)
+      assistantMsg.actions = [...(assistantMsg.actions || []), data]
+    })
+
+    eventSource.addEventListener("done", () => {
+      isStreaming.value = false
+      eventSource.close()
+    })
+  }
+
+  return { messages, isStreaming, sendMessage }
 }
 
 // Eventos SSE:
@@ -465,10 +515,11 @@ JWT com `company_id` no payload. Toda query filtra por `company_id` via middlewa
 
 | Tecnologia | Justificativa |
 |-----------|---------------|
-| Next.js 15 | App Router, SSR, streaming nativo |
-| TypeScript | Type safety obrigatoria |
-| Tailwind CSS + shadcn/ui | UI rapida e consistente |
-| Recharts | Graficos inline no chat |
+| Nuxt 4.4.2 | File-based routing, SSR/SSG, server routes, auto-imports |
+| Vue 3 + TypeScript | Composition API, reatividade nativa, type safety |
+| Tailwind CSS + Nuxt UI | UI consistente com componentes Vue nativos |
+| VueChart.js / Chart.js | Graficos inline no chat |
+| Pinia | Estado global (auth, pipeline selecionado) |
 
 ### Backend
 
@@ -530,7 +581,7 @@ Custo estimado: ~$270/mes (AWS) + ~$1500/mes (Anthropic API a 100 msgs/dia)
 
 ### MVP (4-6 semanas)
 
-- Chat basico Next.js + FastAPI
+- Chat basico Nuxt 4.4.2 + FastAPI
 - Login email/senha, single-tenant
 - 3 tools LLM (status, query, logs)
 - SQLite local, sem Redis
