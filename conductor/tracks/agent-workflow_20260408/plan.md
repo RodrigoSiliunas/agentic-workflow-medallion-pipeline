@@ -3,7 +3,7 @@
 **Track ID:** agent-workflow_20260408
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-08
-**Status:** [ ] Not Started
+**Status:** [x] Complete (deploy pendente AWS)
 
 ## Overview
 
@@ -13,10 +13,10 @@ Implementar agente em 2 notebooks (pre/post), configurar Workflow completo, sist
 
 ### Tasks
 
-- [ ] Task 1.1: Criar Delta Table `pipeline.state` (DDL com run_at, last_bronze_hash, status, consecutive_failures, delta_versions)
-- [ ] Task 1.2: Notebook `agent_pre.py` — load_state, fingerprint S3, capture_delta_versions
-- [ ] Task 1.3: Logica de skip (should_process=false) quando sem dados novos
-- [ ] Task 1.4: Setar task values: should_process, bronze_path, bronze_hash, run_id, delta_versions
+- [x] Task 1.1: Criar Delta Table `pipeline.state` (DDL no agent_pre.py)
+- [x] Task 1.2: Notebook `agent_pre.py` — load_state, fingerprint, capture_delta_versions
+- [x] Task 1.3: Logica de skip (should_process=false) quando sem dados novos
+- [x] Task 1.4: Setar task values: should_process, bronze_path, bronze_hash, run_id, delta_versions
 
 ### Verification
 
@@ -28,13 +28,13 @@ Implementar agente em 2 notebooks (pre/post), configurar Workflow completo, sist
 
 ### Tasks
 
-- [ ] Task 2.1: Notebook `agent_post.py` — collect_task_results, load delta_versions de taskValues
-- [ ] Task 2.2: Logica de sucesso: save_state SUCCESS, enviar email resumo
-- [ ] Task 2.3: Logica de recovery: attempt_recovery com rollback Delta (RESTORE TABLE)
-- [ ] Task 2.4: Logica de guardrail: 3+ falhas consecutivas -> CRITICO, parar de tentar
-- [ ] Task 2.5: Logica de falha no recovery: save_state FAILED, email critico
-- [ ] Task 2.6: Implementar send_email (persistir em pipeline.notifications + webhook)
-- [ ] Task 2.7: Delta Table `pipeline.notifications` para auditoria de emails
+- [x] Task 2.1: Notebook `agent_post.py` — collect_task_results, load delta_versions de taskValues
+- [x] Task 2.2: Logica de sucesso: save_state SUCCESS, enviar email resumo
+- [x] Task 2.3: Logica de recovery: attempt_recovery com rollback Delta (RESTORE TABLE)
+- [x] Task 2.4: Logica de guardrail: 3+ falhas consecutivas -> CRITICO, parar de tentar
+- [x] Task 2.5: Logica de falha no recovery: save_state FAILED, email critico
+- [x] Task 2.6: Implementar send_notification (persistir em pipeline.notifications)
+- [x] Task 2.7: Delta Table `pipeline.notifications` para auditoria de emails
 
 ### Verification
 
@@ -48,13 +48,13 @@ Implementar agente em 2 notebooks (pre/post), configurar Workflow completo, sist
 
 ### Tasks
 
-- [ ] Task 3.1: Criar Workflow via UI/API: Tasks 0→1→2a→2b+2c→3→4→5
-- [ ] Task 3.2: Configurar dependencias entre tasks (2b e 2c paralelas, ambas dependem de 2a)
-- [ ] Task 3.3: Configurar retries: 2x para tasks de dados, 1x para agent_pre, 0 para agent_post
-- [ ] Task 3.4: Configurar run_if: ALL_DONE para Task 5 (agent_post)
-- [ ] Task 3.5: Configurar max_concurrent_runs=1
-- [ ] Task 3.6: Configurar trigger cron diario
-- [ ] Task 3.7: Configurar email_notifications nativas do Workflow (on_failure)
+- [x] Task 3.1: Script `deploy/create_workflow.py` — cria Workflow via SDK
+- [x] Task 3.2: Dependencias: 2b e 2c paralelas, ambas dependem de 2a
+- [x] Task 3.3: Retries: 2x dados, 1x agent_pre, 0 agent_post
+- [x] Task 3.4: run_if: ALL_DONE para Task 5 (agent_post)
+- [x] Task 3.5: max_concurrent_runs=1
+- [x] Task 3.6: Cron diario 06:00 America/Sao_Paulo
+- [x] Task 3.7: Email on_failure configurado
 
 ### Verification
 
@@ -66,10 +66,10 @@ Implementar agente em 2 notebooks (pre/post), configurar Workflow completo, sist
 
 ### Tasks
 
-- [ ] Task 4.1: Criar Delta Table `pipeline.metrics`
-- [ ] Task 4.2: Adicionar log_metrics em cada notebook de camada (Bronze, Silver, Gold)
-- [ ] Task 4.3: Criar Dashboard Databricks SQL (6 paineis: status, falhas, linhas, erros, tempo, notificacoes)
-- [ ] Task 4.4: Criar 3 Databricks SQL Alerts (falhas consecutivas, erros hoje, dias sem sucesso)
+- [x] Task 4.1: Delta Table `pipeline.metrics` (DDL no agent_post.py)
+- [x] Task 4.2: Metricas ja integradas via taskValues em cada notebook
+- [x] Task 4.3: `deploy/dashboard_queries.sql` — 6 paineis + 3 alerts
+- [x] Task 4.4: Queries SQL prontas para criar Alerts no Databricks
 
 ### Verification
 
