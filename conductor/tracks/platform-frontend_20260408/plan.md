@@ -16,10 +16,13 @@ Implementar frontend Nuxt 4 com Atomic Design: auth, sidebar Claude Projects, ch
 - [ ] Task 1.1: Pinia store auth (login, logout, refresh, role getters — padrao idlehub)
 - [ ] Task 1.2: Composable useApiClient (token refresh, request queue, 401 handling)
 - [ ] Task 1.3: Middleware auth.global.ts (redirect /login, guest routes)
-- [ ] Task 1.4: Layout auth.vue (login/register, clean layout)
-- [ ] Task 1.5: Layout default.vue (sidebar + main area, 2 colunas)
-- [ ] Task 1.6: Pages: login.vue, pagina principal redirect
-- [ ] Task 1.7: Atoms: AppButton, AppInput, AppBadge, AppAvatar, AppSpinner
+- [ ] Task 1.3b: Middleware role.ts (protege /settings e /admin por role, nao apenas por componente)
+- [ ] Task 1.4: Server route proxy: server/api/proxy/[...].ts (passthrough SSE para FastAPI backend)
+- [ ] Task 1.5: Types: types/chat.ts, types/pipeline.ts, types/user.ts (derivados do OpenAPI do backend)
+- [ ] Task 1.6: Layout auth.vue (login/register, clean layout)
+- [ ] Task 1.7: Layout default.vue (sidebar + main area, 2 colunas)
+- [ ] Task 1.8: Pages: login.vue, pagina principal redirect
+- [ ] Task 1.9: Atoms: AppButton, AppInput, AppBadge, AppAvatar, AppSpinner
 
 ### Verification
 
@@ -58,7 +61,9 @@ Implementar frontend Nuxt 4 com Atomic Design: auth, sidebar Claude Projects, ch
 - [ ] Task 3.5: Organism: ChatWindow (MessageList + ChatInput)
 - [ ] Task 3.6: Organism: ChatInput (Shift+Enter, drag & drop imagens/arquivos, send button)
 - [ ] Task 3.7: StreamingMessage (conteudo em construcao com cursor piscante)
-- [ ] Task 3.8: Template: ChatLayout (sidebar + chat area)
+- [ ] Task 3.8: Composable useAttachments (upload FormData, preview, validacao tamanho, tipos permitidos)
+- [ ] Task 3.9: Molecule: ChartCard (renderiza dados de generate_chart_data com VueChart.js)
+- [ ] Task 3.10: Template: ChatLayout (sidebar + chat area)
 
 ### Verification
 
@@ -78,8 +83,10 @@ Implementar frontend Nuxt 4 com Atomic Design: auth, sidebar Claude Projects, ch
 - [ ] Task 4.4: Organism: ChannelsForm (Discord token, Telegram token, status de conexao)
 - [ ] Task 4.5: Organism: QrCodePairing (botao Conectar → mostra QR → status atualizado)
 - [ ] Task 4.6: Organism: UserTable (lista usuarios, criar, editar role, desativar)
-- [ ] Task 4.7: Template: SettingsLayout (tabs + content area)
-- [ ] Task 4.8: Role-based visibility: viewer nao ve /settings, editor ve parcial
+- [ ] Task 4.7: Organism: ModelSelector (Sonnet/Opus, preferencia da empresa)
+- [ ] Task 4.8: Organism: ChannelHealthStatus (status de cada canal: connected/disconnected/pairing)
+- [ ] Task 4.9: Template: SettingsLayout (tabs + content area)
+- [ ] Task 4.10: Role-based visibility: viewer nao ve /settings, editor ve parcial (enforced por middleware/role.ts)
 
 ### Verification
 

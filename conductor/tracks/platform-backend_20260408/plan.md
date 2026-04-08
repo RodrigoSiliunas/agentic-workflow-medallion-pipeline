@@ -19,9 +19,10 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 - [ ] Task 1.4: Alembic migrations
 - [ ] Task 1.5: AuthContext dataclass (user, company, role, permissions)
 - [ ] Task 1.6: Auth routes: POST /auth/login, /auth/refresh, /auth/register-company (cria empresa + root user)
-- [ ] Task 1.7: JWT (access 15min, refresh 7d) + bcrypt passwords + Fernet encryption para credenciais
+- [ ] Task 1.7: JWT RS256 (access 15min, refresh 7d) + bcrypt passwords + Fernet encryption (chave separada)
 - [ ] Task 1.8: RBAC middleware: root > admin > editor > viewer
 - [ ] Task 1.9: User management routes: POST /users (admin cria), GET /users, PUT /users/:id/role
+- [ ] Task 1.10: Audit log model + service (who, what, when, channel, ip) para acoes sensiveis
 
 ### Verification
 
@@ -39,8 +40,9 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 - [ ] Task 2.3: Routes: GET/PUT /settings/credentials (root/admin only)
 - [ ] Task 2.4: Credential types: anthropic_api_key, discord_bot_token, telegram_bot_token, github_token, github_repo, databricks_host, databricks_token
 - [ ] Task 2.5: Validacao no save: test Anthropic API call, test Databricks connection, test GitHub repo access
-- [ ] Task 2.6: WhatsApp QR Code: route que proxeia Omni WebSocket para o frontend
-- [ ] Task 2.7: Testes: credential CRUD, encryption round-trip, validation mocks
+- [ ] Task 2.6: WhatsApp QR Code: route que proxeia Omni WebSocket para o frontend via SSE
+- [ ] Task 2.7: Campo preferred_model (sonnet/opus) na company settings
+- [ ] Task 2.8: Testes: credential CRUD, encryption round-trip, validation mocks
 
 ### Verification
 
@@ -58,8 +60,9 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 - [ ] Task 3.3: Databricks Service: get_status, list_runs, get_logs, query_table, trigger_run (usa credencial da empresa)
 - [ ] Task 3.4: Context Engine: collect, rank, assemble (3 niveis: resumo, detalhes, completo)
 - [ ] Task 3.5: Intent classifier (heuristica por keywords: status_check, error_diagnosis, change_request, report_request)
-- [ ] Task 3.6: Cache Redis L1 (pipeline_state 60s, schemas 300s, runs 120s)
-- [ ] Task 3.7: Testes: context assembly, cache invalidation, mock Databricks responses
+- [ ] Task 3.6: Cache Redis L1 (pipeline_state 60s, schemas 300s, runs 120s) + PostgreSQL L2 + S3 L3 (notebook_code 600s)
+- [ ] Task 3.7: GitHub Service: read_file, list_recent_prs (usa credencial da empresa)
+- [ ] Task 3.8: Testes: context assembly, cache invalidation, mock Databricks responses
 
 ### Verification
 
@@ -74,8 +77,9 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 - [ ] Task 4.1: Models: threads, messages
 - [ ] Task 4.2: Routes: POST /chat/message (SSE stream), GET /chat/threads, POST /chat/threads, DELETE
 - [ ] Task 4.3: LLM Orchestrator: loop de tool use (max 10 rounds), streaming SSE
-- [ ] Task 4.4: Tools: get_pipeline_status, get_run_logs, query_delta_table, get_table_schema
-- [ ] Task 4.5: Tools: create_pull_request, trigger_pipeline_run, send_notification (requerem confirmacao)
+- [ ] Task 4.4: Tools leitura: get_pipeline_status, get_run_logs, query_delta_table, get_table_schema, read_file, list_recent_prs
+- [ ] Task 4.5: Tools acao: create_pull_request, trigger_pipeline_run, send_notification, generate_chart_data (requerem confirmacao exceto chart)
+- [ ] Task 4.5b: Email notification service (SES ou SendGrid, configuravel por empresa)
 - [ ] Task 4.6: Confirmacao inline: tool retorna "confirmation_required", frontend mostra botao
 - [ ] Task 4.7: Historico de conversa: ultimas 20 mensagens completas, 21-50 resumidas
 - [ ] Task 4.8: Testes: chat flow, tool execution mocks, SSE streaming
@@ -92,7 +96,9 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 ### Tasks
 
 - [ ] Task 5.1: Omni Service: create_instance, connect, configure_webhook, send_message (usa Omni API)
-- [ ] Task 5.2: Route: POST /webhooks/omni (recebe mensagens normalizadas do Omni)
+- [ ] Task 5.2: Route: POST /webhooks/omni (recebe mensagens normalizadas) com HMAC signature validation
+- [ ] Task 5.2b: Route: POST /webhooks/pipeline (recebe eventos do agent_pre/agent_post para notificacoes proativas)
+- [ ] Task 5.2c: Multi-tenant instance naming: company_{slug}_{channel} (ex: acme_whatsapp, acme_discord)
 - [ ] Task 5.3: Channel identity resolver: identifica usuario por phone/discord_id/telegram_id
 - [ ] Task 5.4: Slash command parser: /resume, /pipelines, /status, /threads, /new, /whoami, /help
 - [ ] Task 5.5: Models: active_sessions, channel_identities
@@ -112,8 +118,10 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 6.1: Rate limiting Redis-backed (sliding window, por empresa, com fallback in-memory)
+- [ ] Task 6.1: Rate limiting Redis-backed (sliding window, por empresa + por canal, com fallback in-memory)
+- [ ] Task 6.1b: Rate limits por canal: WhatsApp 1500msg/dia, Discord 50req/s, Telegram 30msg/s
 - [ ] Task 6.2: Middleware: RequestID, CORS, GZip
+- [ ] Task 6.2b: Route GET /health/channels — status de todas as instancias Omni da empresa
 - [ ] Task 6.3: Domain exceptions: NotFound→404, Conflict→409, AuthorizationError→403, PlanLimit→402
 - [ ] Task 6.4: Prometheus metrics endpoint (/metrics)
 - [ ] Task 6.5: Structured logging (JSON em producao)

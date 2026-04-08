@@ -7,79 +7,86 @@
 
 ## Overview
 
-Setup do Omni como servico, docker-compose, integracao com backend via webhook, e fluxo de pairing de canais na pagina de settings.
+Setup do Omni como servico de infraestrutura, docker-compose com network isolation, e documentacao de integracao. A logica de negocio (OmniService, channel management, webhook handling) vive no backend — este track foca em infra e configuracao.
 
-## Phase 1: Omni Service Setup
+**Nota**: Tasks de logica (OmniService, webhook handler, slash commands, QR pairing) estao no Track platform-backend Phase 5. Este track e complementar — infraestrutura e E2E testing.
+
+## Phase 1: Omni Service Setup + Network Isolation
 
 ### Tasks
 
-- [ ] Task 1.1: Criar platform/omni/ com docker-compose.yml (omni-api, postgres, nats)
-- [ ] Task 1.2: Configuracao .env do Omni (portas, database, log level)
-- [ ] Task 1.3: Script setup_omni.py: verifica health, cria API key
-- [ ] Task 1.4: Documentar setup manual (README em platform/omni/)
-- [ ] Task 1.5: Health check endpoint no backend: GET /health/omni
+- [ ] Task 1.1: Criar platform/omni/docker-compose.yml (omni-api, postgres-omni, nats)
+- [ ] Task 1.2: Configurar docker network interna (omni-net) — Omni so acessivel pelo backend, nao exposto externamente
+- [ ] Task 1.3: Configuracao .env do Omni (portas, database, log level, API key)
+- [ ] Task 1.4: Script setup_omni.sh: verifica health, gera API key, registra no .env do backend
+- [ ] Task 1.5: HMAC shared secret: gerar e configurar no Omni + backend para validacao de webhooks
+- [ ] Task 1.6: Documentar setup em platform/omni/README.md
+- [ ] Task 1.7: Backend health check: GET /health/omni (verifica se Omni responde)
 
 ### Verification
 
-- [ ] docker-compose up sobe Omni + PostgreSQL + NATS
-- [ ] GET http://localhost:8882/api/v2/health retorna OK
+- [ ] docker-compose up sobe Omni + PostgreSQL + NATS em rede isolada
+- [ ] Omni acessivel apenas via docker network (nao via localhost externo)
 - [ ] Backend consegue autenticar com Omni via x-api-key
+- [ ] HMAC secret compartilhado entre Omni e backend
 
-## Phase 2: Webhook Provider + Channel Auto-Setup
-
-### Tasks
-
-- [ ] Task 2.1: OmniService no backend: client HTTP para Omni API (create_instance, connect, send_message)
-- [ ] Task 2.2: Webhook provider: backend chama Omni para criar provider apontando para POST /webhooks/omni
-- [ ] Task 2.3: Discord flow: admin salva token em settings → backend chama Omni create_instance + connect
-- [ ] Task 2.4: Telegram flow: idem Discord
-- [ ] Task 2.5: Agent routes: auto-configurar para usar webhook provider
-- [ ] Task 2.6: Desconectar canal: admin desativa em settings → backend chama Omni disconnect
-
-### Verification
-
-- [ ] Admin salva Discord token → bot aparece online no Discord
-- [ ] Admin salva Telegram token → bot responde no Telegram
-- [ ] Mensagem no Discord → chega no backend via webhook → resposta volta
-
-## Phase 3: WhatsApp QR Code Pairing
+## Phase 2: Multi-Tenant Instance Convention + Channel Templates
 
 ### Tasks
 
-- [ ] Task 3.1: Backend route: POST /settings/whatsapp/pair → chama Omni create_instance (whatsapp-baileys)
-- [ ] Task 3.2: Backend route: GET /settings/whatsapp/qr (SSE) → proxeia QR code do Omni
-- [ ] Task 3.3: Frontend: QrCodePairing component → mostra QR → atualiza status em tempo real
-- [ ] Task 3.4: Estado de conexao: connected/disconnected/pairing armazenado no backend
-- [ ] Task 3.5: Auto-reconnect: Omni reconecta WhatsApp automaticamente, backend monitora
+- [ ] Task 2.1: Definir convencao de nomes: company_{slug}_{channel} (ex: acme_whatsapp, acme_discord)
+- [ ] Task 2.2: Template de configuracao por canal (debounce, split delay, reaction ack, timeouts)
+- [ ] Task 2.3: Script de bootstrap: cria webhook provider apontando para backend + configura HMAC
+- [ ] Task 2.4: Documentar limites: max instancias por Omni, memoria por instancia Baileys (~50MB)
+- [ ] Task 2.5: Documentar rate limits por canal (WhatsApp 1500/dia, Discord 50/s, Telegram 30/s)
 
 ### Verification
 
-- [ ] Admin clica "Conectar WhatsApp" → QR Code aparece
-- [ ] Escaneia com celular → status muda para "Conectado"
-- [ ] Mensagem no WhatsApp → chega no backend → resposta volta
-- [ ] Restart do Omni → WhatsApp reconecta automaticamente
+- [ ] Convencao de nomes aplicada em todas as instancias
+- [ ] Webhook provider criado apontando para backend com HMAC
+- [ ] Documentacao de limites disponivel
 
-## Phase 4: End-to-End Testing
+## Phase 3: WhatsApp QR Code Infrastructure
 
 ### Tasks
 
-- [ ] Task 4.1: Teste: mensagem WhatsApp → backend → LLM → resposta no WhatsApp
-- [ ] Task 4.2: Teste: /resume no Discord → muda pipeline → contexto correto
-- [ ] Task 4.3: Teste: cross-channel (WhatsApp → Discord, mesmo thread UUID)
-- [ ] Task 4.4: Teste: admin desconecta canal → mensagens nao chegam mais
-- [ ] Task 4.5: Documentacao: fluxo completo em docs/
+- [ ] Task 3.1: Configurar Omni para expor QR code via API (GET /instances/:id/qr)
+- [ ] Task 3.2: Testar fluxo: criar instancia whatsapp-baileys → gerar QR → escanear → conectado
+- [ ] Task 3.3: Testar auto-reconnect: reiniciar Omni → WhatsApp reconecta automaticamente
+- [ ] Task 3.4: Testar estado persistente: auth state no PostgreSQL do Omni sobrevive restart
 
 ### Verification
 
-- [ ] Fluxo completo funciona em todos os 3 canais
-- [ ] Cross-channel funciona (mesma conversa em canais diferentes)
+- [ ] QR Code acessivel via Omni API
+- [ ] Escanear QR conecta o WhatsApp
+- [ ] Restart do Omni → WhatsApp reconecta sem novo QR
+
+## Phase 4: End-to-End Testing + Monitoring
+
+### Tasks
+
+- [ ] Task 4.1: E2E WhatsApp: mensagem → Omni → backend → LLM → resposta (manual, requer celular)
+- [ ] Task 4.2: E2E Discord: mensagem → Omni → backend → LLM → resposta (automatizavel com bot de teste)
+- [ ] Task 4.3: E2E Telegram: mensagem → Omni → backend → LLM → resposta (automatizavel)
+- [ ] Task 4.4: E2E cross-channel: /resume no Discord retoma conversa do WhatsApp
+- [ ] Task 4.5: Teste desconectar: admin desativa canal → mensagens param de chegar
+- [ ] Task 4.6: Teste failover: derrubar Omni → mensagens em NATS JetStream → replay quando voltar
+- [ ] Task 4.7: Documentar fluxo completo em docs/
+
+### Verification
+
+- [ ] 3 canais funcionais end-to-end
+- [ ] Cross-channel funciona
+- [ ] Desconectar canal funciona
+- [ ] Recovery apos restart do Omni funciona
 
 ## Final Verification
 
 - [ ] docker-compose up sobe tudo (backend + frontend + omni + postgres + redis + nats)
-- [ ] 3 canais funcionais (WhatsApp QR, Discord token, Telegram token)
-- [ ] Settings da empresa: conectar/desconectar canais
-- [ ] Mensagens fluem: canal → Omni → backend → LLM → backend → Omni → canal
+- [ ] Network isolation: Omni nao acessivel externamente
+- [ ] HMAC validation funciona (request sem assinatura → rejeitado)
+- [ ] Multi-tenant: 2 empresas com instancias separadas, nomes corretos
+- [ ] 3 canais E2E + cross-channel
 
 ---
 
