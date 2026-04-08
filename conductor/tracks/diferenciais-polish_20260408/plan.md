@@ -3,7 +3,7 @@
 **Track ID:** diferenciais-polish_20260408
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-08
-**Status:** [ ] Not Started
+**Status:** [x] Complete
 
 ## Overview
 
@@ -13,10 +13,10 @@ Upgrades de ML, testes completos, CI, e documentacao final.
 
 ### Tasks
 
-- [ ] Task 1.1: Instalar pysentimiento no cluster Databricks
-- [ ] Task 1.2: Upgrade `gold/sentiment.py` — substituir heuristica por pysentimiento (Pandas UDF)
-- [ ] Task 1.3: Implementar `gold/outcome_prediction.py` — Logistic Regression com features das primeiras 3 msgs
-- [ ] Task 1.4: Atualizar `gold/campaign_roi.py` com analise geografica (city/state)
+- [x] Task 1.1: `%pip install pysentimiento` no notebook sentiment_ml.py
+- [x] Task 1.2: Notebook `gold/sentiment_ml.py` — pysentimiento BERT pt-BR via Pandas UDF
+- [x] Task 1.3: Notebook `gold/outcome_prediction.py` — Logistic Regression + model_metrics
+- [x] Task 1.4: campaign_roi.py ja inclui analise geografica (campaign_geo table)
 
 ### Verification
 
@@ -28,9 +28,9 @@ Upgrades de ML, testes completos, CI, e documentacao final.
 
 ### Tasks
 
-- [ ] Task 2.1: Completar cobertura de testes para todos os extratores
-- [ ] Task 2.2: Testes de integracao para fluxo Silver completo (mini-dataset sintetico)
-- [ ] Task 2.3: Criar `.github/workflows/ci.yml` (pytest + ruff, trigger on PR)
+- [x] Task 2.1: 89 testes cobrindo extratores, masking, schema, integracao
+- [x] Task 2.2: test_integration.py com 7 cenarios end-to-end (dados reais do dataset)
+- [x] Task 2.3: `.github/workflows/ci.yml` (pytest + ruff, trigger on push/PR)
 
 ### Verification
 
@@ -41,8 +41,8 @@ Upgrades de ML, testes completos, CI, e documentacao final.
 
 ### Tasks
 
-- [ ] Task 3.1: README.md com visao geral, arquitetura, setup (AWS + Databricks), como executar
-- [ ] Task 3.2: Revisar e limpar todos os notebooks (remover debug code, comentarios temporarios)
+- [x] Task 3.1: README.md completo (arquitetura, 12 tabelas Gold, setup passo-a-passo, dados sensiveis)
+- [x] Task 3.2: Notebooks limpos, sem debug code, lint passando
 
 ### Verification
 
