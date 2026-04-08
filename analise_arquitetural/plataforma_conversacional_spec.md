@@ -456,6 +456,131 @@ Telegram ──┘       │
 | Code blocks | Syntax highlight | Texto puro | Markdown | Markdown |
 | Max mensagem | Ilimitado | 4096 chars | 2000 chars | 4096 chars |
 | Confirmacao | Botao | Quick reply | Button | Inline keyboard |
+| Slash commands | N/A (usa sidebar) | Sim | Sim | Sim |
+
+#### Slash Commands nos Canais Externos
+
+Nos canais de mensagem (WhatsApp, Discord, Telegram), o usuario nao tem sidebar para selecionar pipelines. Em vez disso, usa **slash commands** para navegar entre pipelines e controlar o agente:
+
+| Comando | Descricao |
+|---------|-----------|
+| `/resume [pipeline-nome]` | Muda o contexto para o pipeline especificado. Retoma o thread mais recente daquele pipeline. |
+| `/pipelines` | Lista todos os pipelines disponiveis para o usuario. |
+| `/status` | Mostra status resumido do pipeline ativo. |
+| `/new [pipeline-nome]` | Inicia um novo thread de conversa para o pipeline. |
+| `/history` | Mostra ultimas 5 conversas do pipeline ativo. |
+| `/help` | Lista comandos disponiveis. |
+
+**Fluxo do `/resume`:**
+
+```
+Usuario (WhatsApp): /resume medallion-whatsapp
+    │
+    ▼
+Webhook Handler detecta slash command
+    │
+    ▼
+Busca pipeline "medallion-whatsapp" na empresa do usuario
+    │
+    ├── Encontrou: busca thread mais recente daquele pipeline
+    │   ├── Tem thread ativo: retoma conversa
+    │   │   → "Retomando pipeline medallion-whatsapp. Ultimo run: hoje 06:00 (sucesso).
+    │   │      Em que posso ajudar?"
+    │   └── Sem thread: cria novo
+    │       → "Conectado ao pipeline medallion-whatsapp. O que voce precisa?"
+    │
+    └── Nao encontrou: sugere pipelines disponiveis
+        → "Pipeline 'medallion-whatsapp' nao encontrado. Pipelines disponiveis:
+           - medallion-whatsapp-seguros
+           - etl-crm-diario
+           Use /resume [nome] para conectar."
+```
+
+**Implementacao no backend:**
+
+```python
+# routers/webhooks.py
+
+SLASH_COMMANDS = {
+    "/resume": "switch_pipeline",
+    "/pipelines": "list_pipelines",
+    "/status": "quick_status",
+    "/new": "new_thread",
+    "/history": "show_history",
+    "/help": "show_help",
+}
+
+async def handle_omni_message(payload: OmniWebhookPayload, user: User):
+    message = payload.message.strip()
+
+    # Verificar se e um slash command
+    for cmd, handler_name in SLASH_COMMANDS.items():
+        if message.lower().startswith(cmd):
+            args = message[len(cmd):].strip()
+            handler = getattr(slash_handlers, handler_name)
+            return await handler(user=user, args=args, channel=payload.channel)
+
+    # Nao e comando — tratar como mensagem normal para o LLM
+    return await process_chat_message(user=user, message=message, channel=payload.channel)
+
+
+class SlashHandlers:
+    async def switch_pipeline(self, user: User, args: str, channel: str) -> str:
+        """Muda o contexto do usuario para outro pipeline."""
+        if not args:
+            return "Uso: /resume [nome-do-pipeline]"
+
+        # Busca fuzzy por nome
+        pipeline = await pipeline_repo.find_by_name_fuzzy(
+            company_id=user.company_id, query=args
+        )
+
+        if not pipeline:
+            available = await pipeline_repo.list(company_id=user.company_id)
+            names = "\n".join(f"  - {p.name}" for p in available)
+            return f"Pipeline '{args}' nao encontrado. Disponiveis:\n{names}"
+
+        # Buscar ou criar thread
+        thread = await thread_repo.get_or_create_active(
+            user_id=user.id,
+            pipeline_id=pipeline.id,
+            channel=channel,
+        )
+
+        # Atualizar sessao ativa do usuario neste canal
+        await session_repo.set_active_pipeline(
+            user_id=user.id, channel=channel, pipeline_id=pipeline.id
+        )
+
+        # Resumo rapido do pipeline
+        status = await databricks_service.get_pipeline_status(pipeline)
+        return (
+            f"Conectado ao pipeline *{pipeline.name}*.\n"
+            f"Status: {status.state} | Ultimo run: {status.last_run_at}\n"
+            f"Em que posso ajudar?"
+        )
+
+    async def list_pipelines(self, user: User, args: str, channel: str) -> str:
+        pipelines = await pipeline_repo.list(company_id=user.company_id)
+        if not pipelines:
+            return "Nenhum pipeline configurado para sua empresa."
+        lines = [f"Pipelines disponiveis:"]
+        for p in pipelines:
+            lines.append(f"  - *{p.name}* (use /resume {p.name})")
+        return "\n".join(lines)
+
+    async def quick_status(self, user: User, args: str, channel: str) -> str:
+        pipeline = await session_repo.get_active_pipeline(user.id, channel)
+        if not pipeline:
+            return "Nenhum pipeline ativo. Use /resume [nome] para conectar."
+        status = await databricks_service.get_pipeline_status(pipeline)
+        return (
+            f"*{pipeline.name}*\n"
+            f"Status: {status.state}\n"
+            f"Ultimo run: {status.last_run_at}\n"
+            f"Proxima run: {status.next_run_at}"
+        )
+```
 
 ### 3.6 Auth (RBAC)
 
@@ -497,14 +622,32 @@ JWT com `company_id` no payload. Toda query filtra por `company_id` via middlewa
 6. Se usuario confirma, LLM chama trigger_pipeline_run
 ```
 
-### 4.3 WhatsApp: "status do pipeline"
+### 4.3 WhatsApp: navegando entre pipelines
 
 ```
-1. Omni recebe mensagem, envia webhook
-2. Backend identifica usuario pelo numero
-3. Context compacto (resposta curta para WhatsApp)
-4. LLM responde conciso: "Pipeline OK. 15k registros. Proxima run amanha 03:00"
-5. Resposta via Omni → WhatsApp
+Usuario: /pipelines
+Agente:  Pipelines disponiveis:
+           - medallion-whatsapp-seguros (use /resume medallion-whatsapp-seguros)
+           - etl-crm-diario (use /resume etl-crm-diario)
+
+Usuario: /resume medallion-whatsapp-seguros
+Agente:  Conectado ao pipeline *medallion-whatsapp-seguros*.
+         Status: SUCCESS | Ultimo run: hoje 06:00
+         Em que posso ajudar?
+
+Usuario: quantas vendas fechamos ontem?
+Agente:  [LLM consulta gold.funil_vendas via query_delta_table]
+         Ontem tivemos 47 vendas fechadas (taxa de conversao de 23%).
+         Top agente: agent_lucas_09 com 8 vendas.
+
+Usuario: /resume etl-crm-diario
+Agente:  Conectado ao pipeline *etl-crm-diario*.
+         Status: FAILED | Ultimo run: hoje 03:00
+         Em que posso ajudar?
+
+Usuario: o que aconteceu?
+Agente:  [LLM agora usa contexto do etl-crm-diario, nao do medallion]
+         A task de ingestao falhou com: "Connection refused to CRM API"...
 ```
 
 ---
