@@ -130,6 +130,57 @@ graph TB
 
 ### 3.1 Frontend (Nuxt 4.4.2 + Vue 3)
 
+#### UX: Modelo Claude Projects
+
+A interface segue o padrao do Claude.ai Projects — sidebar com pipelines expandiveis em conversas:
+
+```
+┌──────────────────────────────┬───────────────────────────────────────────┐
+│  SIDEBAR                     │  AREA DE CHAT                            │
+│                              │                                          │
+│  🔍 Buscar...                │  medallion-whatsapp-seguros > abc-123    │
+│                              │                                          │
+│  ▼ medallion-whatsapp-seguros│  ┌────────────────────────────────────┐  │
+│    ● (SUCCESS)               │  │ 👤 quantas vendas fechamos ontem?  │  │
+│    ├─ abc-123 (hoje, 10:30)  │  └────────────────────────────────────┘  │
+│    │  "quantas vendas..."    │  ┌────────────────────────────────────┐  │
+│    ├─ xyz-789 (ontem, 15:00) │  │ 🤖 47 vendas fechadas (taxa de    │  │
+│    │  "por que a Silver..."  │  │    23%). Top agente: lucas_09.     │  │
+│    └─ + Nova conversa        │  │                                    │  │
+│                              │  │    [📊 Ver detalhes por agente]    │  │
+│  ▶ etl-crm-diario           │  └────────────────────────────────────┘  │
+│    ● (FAILED)                │                                          │
+│                              │  ┌────────────────────────────────────┐  │
+│  ▶ etl-financeiro            │  │ 👤 detalha por campanha           │  │
+│    ● (RUNNING)               │  └────────────────────────────────────┘  │
+│                              │  ┌────────────────────────────────────┐  │
+│                              │  │ 🤖 ▊ (streaming...)               │  │
+│                              │  └────────────────────────────────────┘  │
+│                              │                                          │
+│  ─────────────────────────── │  ┌────────────────────────────────────┐  │
+│  ⚙ Configuracoes             │  │ 📎 Anexar | 📷 Print | ▶ Enviar  │  │
+│  👤 Rodrigo (editor)         │  └────────────────────────────────────┘  │
+└──────────────────────────────┴───────────────────────────────────────────┘
+```
+
+**Comportamento da sidebar:**
+- Pipelines listados com badge de status (SUCCESS/FAILED/RUNNING)
+- Clique no pipeline: expande lista de conversas do usuario (apenas as dele)
+- Cada conversa mostra: UUID curto, data, preview da primeira mensagem
+- Hover na conversa: botao de deletar
+- "+ Nova conversa": cria thread novo para aquele pipeline
+- Conversas ordenadas por ultima atividade (mais recente primeiro)
+- Conversas de OUTROS canais (WhatsApp, Discord) tambem aparecem aqui
+  (ex: conversa iniciada no WhatsApp aparece na sidebar web com icone do canal)
+
+**Interacao com o chat:**
+- Input suporta: texto, Shift+Enter (nova linha), arrastar arquivo/imagem
+- Tipos de anexo: screenshots (png/jpg), CSVs, logs (.txt)
+- Anexos sao enviados como base64 para o LLM (Claude suporta vision)
+- Mensagens do agente renderizam: Markdown, code blocks (Shiki), tabelas, graficos
+- Action cards: quando o agente cria um PR ou dispara um run, aparece um card clicavel
+- Confirmacao inline: acoes perigosas mostram botao "Confirmar" / "Cancelar"
+
 #### Estrutura de Paginas (file-based routing do Nuxt)
 
 ```
@@ -137,12 +188,15 @@ pages/
 ├── index.vue                          → Redirect para /chat ou /login
 ├── login.vue                          → Login com email/senha ou OAuth
 ├── chat/
-│   ├── index.vue                      → Lista de pipelines + thread recente
+│   ├── index.vue                      → Redirect para ultimo pipeline ativo
 │   └── [pipelineId]/
-│       ├── index.vue                  → Threads do pipeline
-│       └── [threadId].vue             → Conversa especifica
+│       ├── index.vue                  → Cria novo thread e redireciona
+│       └── [threadId].vue             → Conversa (area principal)
 ├── settings.vue                       → Configuracoes da conta
-└── admin.vue                          → Gestao de usuarios e empresas
+└── admin/
+    ├── index.vue                      → Dashboard admin
+    ├── users.vue                      → Gestao de usuarios
+    └── pipelines.vue                  → Gestao de pipelines
 ```
 
 #### Componentes Principais
@@ -150,103 +204,236 @@ pages/
 ```
 components/
 ├── chat/
-│   ├── ChatWindow.vue              # Container principal
-│   ├── MessageList.vue             # Lista com scroll
-│   ├── MessageBubble.vue           # Mensagem user/agent
-│   ├── StreamingMessage.vue        # SSE streaming
-│   ├── ActionCard.vue              # Card de acao (PR criado, run disparado)
-│   └── CodeBlock.vue               # Syntax highlight (Shiki via Nuxt Content)
+│   ├── ChatWindow.vue              # Container principal (messages + input)
+│   ├── MessageList.vue             # Lista com auto-scroll e lazy loading
+│   ├── MessageBubble.vue           # Mensagem user/agent com Markdown
+│   ├── StreamingMessage.vue        # Mensagem em construcao (SSE)
+│   ├── ActionCard.vue              # Card: PR criado, run disparado, query executada
+│   ├── ConfirmAction.vue           # Inline confirm/cancel para acoes perigosas
+│   ├── CodeBlock.vue               # Syntax highlight (Shiki)
+│   ├── AttachmentPreview.vue       # Preview de imagem/arquivo antes de enviar
+│   └── ChatInput.vue               # Input com Shift+Enter, drag&drop, anexos
 ├── sidebar/
-│   ├── PipelineList.vue            # Lista de pipelines
-│   ├── ThreadList.vue              # Threads por pipeline
-│   └── PipelineStatus.vue          # Badge de status
-└── pipeline/
-    ├── PipelineOverview.vue
-    └── SchemaViewer.vue
+│   ├── SidebarLayout.vue           # Container da sidebar
+│   ├── PipelineItem.vue            # Pipeline expandivel com badge de status
+│   ├── ThreadItem.vue              # Conversa com preview, data, canal de origem
+│   ├── ThreadActions.vue           # Menu: deletar, renomear, copiar UUID
+│   ├── NewThreadButton.vue         # "+ Nova conversa"
+│   └── SearchBar.vue               # Busca por pipeline ou conversa
+├── pipeline/
+│   ├── PipelineOverview.vue        # Status, metricas, ultimo run
+│   ├── SchemaViewer.vue            # Schemas das Delta Tables
+│   └── StatusBadge.vue             # Badge colorido (verde/vermelho/amarelo)
+└── common/
+    ├── ChannelIcon.vue             # Icone do canal (web/whatsapp/discord/telegram)
+    └── LoadingDots.vue             # "Agente pensando..."
 
 composables/
-├── useChat.ts                      # SSE + estado do chat
-├── usePipeline.ts                  # Estado do pipeline via useFetch
+├── useChat.ts                      # SSE streaming + envio de mensagem
+├── useSidebar.ts                   # Estado: pipeline expandido, thread selecionado
+├── usePipelines.ts                 # Lista de pipelines + status (polling 30s)
+├── useThreads.ts                   # CRUD de threads por pipeline
+├── useAttachments.ts               # Upload de arquivos/imagens
 └── useAuth.ts                      # Auth state + middleware
 
 layouts/
-├── default.vue                     # Layout com sidebar
-└── auth.vue                        # Layout limpo para login
+├── default.vue                     # Sidebar + chat area (2 colunas)
+├── auth.vue                        # Layout limpo para login/registro
+└── admin.vue                       # Layout admin com nav diferente
 
 middleware/
-├── auth.ts                         # Redirect se nao autenticado
+├── auth.ts                         # Redirect para /login se nao autenticado
 └── role.ts                         # Verificar permissao (viewer/editor/admin)
 
 server/
-├── api/                            # Se precisar de BFF (Backend for Frontend)
-│   └── proxy/[...].ts              # Proxy para FastAPI backend
+├── api/
+│   └── proxy/[...].ts              # Proxy para FastAPI backend (SSE passthrough)
 
 types/
-├── chat.ts
-├── pipeline.ts
-└── user.ts
+├── chat.ts                         # Message, Thread, Attachment
+├── pipeline.ts                     # Pipeline, Run, Table, Schema
+└── user.ts                         # User, Company, Role
 ```
 
 #### Streaming de Respostas (SSE via composable)
 
 ```typescript
 // composables/useChat.ts
+
 interface ChatMessage {
   id: string
   role: "user" | "assistant"
   content: string
   actions?: ActionResult[]
+  attachments?: Attachment[]
+  channel: "web" | "whatsapp" | "discord" | "telegram"
   timestamp: string
 }
 
 interface ActionResult {
-  type: "pr_created" | "run_triggered" | "query_executed"
-  status: "success" | "failed"
+  type: "pr_created" | "run_triggered" | "query_executed" | "confirmation_required"
+  status: "success" | "failed" | "pending"
   details: Record<string, any>
+}
+
+interface Attachment {
+  type: "image" | "file"
+  name: string
+  url: string
+  mime_type: string
 }
 
 export function useChat(threadId: Ref<string>) {
   const messages = ref<ChatMessage[]>([])
   const isStreaming = ref(false)
 
-  async function sendMessage(content: string) {
+  // Carregar historico (inclui mensagens de TODOS os canais)
+  async function loadHistory() {
+    const { data } = await useFetch(`/api/chat/threads/${threadId.value}/messages`)
+    messages.value = data.value ?? []
+  }
+
+  // Enviar mensagem (com anexos opcionais)
+  async function sendMessage(content: string, attachments?: File[]) {
+    // Adicionar mensagem do usuario localmente
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content,
+      channel: "web",
+      attachments: attachments?.map(f => ({
+        type: f.type.startsWith("image/") ? "image" : "file",
+        name: f.name,
+        url: URL.createObjectURL(f),
+        mime_type: f.type,
+      })),
+      timestamp: new Date().toISOString(),
+    }
+    messages.value.push(userMsg)
+
+    // Preparar FormData (para anexos)
+    const formData = new FormData()
+    formData.append("thread_id", threadId.value)
+    formData.append("message", content)
+    attachments?.forEach(f => formData.append("files", f))
+
+    // Iniciar streaming da resposta
     isStreaming.value = true
     const assistantMsg = reactive<ChatMessage>({
       id: crypto.randomUUID(),
       role: "assistant",
       content: "",
+      channel: "web",
       timestamp: new Date().toISOString(),
     })
     messages.value.push(assistantMsg)
 
-    // SSE via EventSource nativo
-    const eventSource = new EventSource(
-      `/api/chat/message?thread_id=${threadId.value}&message=${encodeURIComponent(content)}`
-    )
-
-    eventSource.addEventListener("token", (e) => {
-      const data = JSON.parse(e.data)
-      assistantMsg.content += data.content
+    const response = await fetch("/api/chat/message", {
+      method: "POST",
+      body: formData,
     })
 
-    eventSource.addEventListener("action", (e) => {
-      const data = JSON.parse(e.data)
-      assistantMsg.actions = [...(assistantMsg.actions || []), data]
-    })
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
 
-    eventSource.addEventListener("done", () => {
-      isStreaming.value = false
-      eventSource.close()
-    })
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value)
+      for (const line of chunk.split("\n")) {
+        if (!line.startsWith("data: ")) continue
+        const event = JSON.parse(line.slice(6))
+
+        if (event.type === "token") {
+          assistantMsg.content += event.content
+        } else if (event.type === "action") {
+          assistantMsg.actions = [...(assistantMsg.actions || []), event]
+        } else if (event.type === "done") {
+          assistantMsg.id = event.message_id
+        }
+      }
+    }
+
+    isStreaming.value = false
   }
 
-  return { messages, isStreaming, sendMessage }
+  // Deletar thread
+  async function deleteThread() {
+    await useFetch(`/api/chat/threads/${threadId.value}`, { method: "DELETE" })
+  }
+
+  return { messages, isStreaming, loadHistory, sendMessage, deleteThread }
+}
+```
+
+#### Composable da Sidebar
+
+```typescript
+// composables/useSidebar.ts
+
+interface SidebarPipeline {
+  id: string
+  name: string
+  status: "SUCCESS" | "FAILED" | "RUNNING" | "IDLE"
+  threads: SidebarThread[]
+  isExpanded: boolean
 }
 
-// Eventos SSE:
-// event: token    → {"content": "A Silver falhou porque..."}
-// event: action   → {"type": "query_executed", "details": {...}}
-// event: done     → {"message_id": "msg_abc123"}
+interface SidebarThread {
+  id: string                  // UUID — pode ser usado no /resume cross-channel
+  title: string               // Auto-gerado da primeira mensagem
+  preview: string             // Primeiras ~50 chars da ultima mensagem
+  channel: string             // Canal onde foi criado (icone visual)
+  lastActivity: string        // "hoje, 10:30" / "ontem" / "3 dias atras"
+  messageCount: number
+}
+
+export function useSidebar() {
+  const pipelines = ref<SidebarPipeline[]>([])
+  const activePipelineId = ref<string | null>(null)
+  const activeThreadId = ref<string | null>(null)
+
+  // Carregar pipelines + threads do usuario logado
+  async function load() {
+    const { data } = await useFetch("/api/pipelines?include_threads=true")
+    pipelines.value = data.value?.map(p => ({
+      ...p,
+      isExpanded: p.id === activePipelineId.value,
+    })) ?? []
+  }
+
+  // Expandir/colapsar pipeline
+  function togglePipeline(pipelineId: string) {
+    const p = pipelines.value.find(p => p.id === pipelineId)
+    if (p) p.isExpanded = !p.isExpanded
+  }
+
+  // Criar nova conversa
+  async function createThread(pipelineId: string) {
+    const { data } = await useFetch("/api/chat/threads", {
+      method: "POST",
+      body: { pipeline_id: pipelineId },
+    })
+    await load() // Refresh sidebar
+    return data.value // { id: "new-uuid", ... }
+  }
+
+  // Deletar conversa
+  async function deleteThread(threadId: string) {
+    await useFetch(`/api/chat/threads/${threadId}`, { method: "DELETE" })
+    await load()
+  }
+
+  // Polling de status a cada 30s
+  const { pause, resume } = useIntervalFn(load, 30_000)
+
+  return {
+    pipelines, activePipelineId, activeThreadId,
+    load, togglePipeline, createThread, deleteThread,
+    pausePolling: pause, resumePolling: resume,
+  }
+}
 ```
 
 ### 3.2 Backend API (FastAPI)
