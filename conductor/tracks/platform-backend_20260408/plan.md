@@ -55,14 +55,14 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 3.1: Models: pipelines, pipeline_context_cache
-- [ ] Task 3.2: Routes: CRUD /pipelines (admin registra, todos veem)
-- [ ] Task 3.3: Databricks Service: get_status, list_runs, get_logs, query_table, trigger_run (usa credencial da empresa)
-- [ ] Task 3.4: Context Engine: collect, rank, assemble (3 niveis: resumo, detalhes, completo)
-- [ ] Task 3.5: Intent classifier (heuristica por keywords: status_check, error_diagnosis, change_request, report_request)
-- [ ] Task 3.6: Cache Redis L1 (pipeline_state 60s, schemas 300s, runs 120s) + PostgreSQL L2 + S3 L3 (notebook_code 600s)
-- [ ] Task 3.7: GitHub Service: read_file, list_recent_prs (usa credencial da empresa)
-- [ ] Task 3.8: Testes: context assembly, cache invalidation, mock Databricks responses
+- [x] Task 3.1: Models: Pipeline + PipelineContextCache + migration aplicada
+- [x] Task 3.2: Routes: GET /pipelines, POST /pipelines, GET /pipelines/:id/status
+- [x] Task 3.3: DatabricksService: get_job_status, list_runs, get_run_output, query_table, trigger_run, get_table_schemas, get_pipeline_summary
+- [x] Task 3.4: Context Engine: 3 niveis (resumo/detalhes/completo), auto-select por intent
+- [x] Task 3.5: Intent classifier: 5 intents (status_check, error_diagnosis, change_request, report_request, fix_request) + priority weights
+- [ ] Task 3.6: Cache Redis L1 + PostgreSQL L2 (implementar na Phase 6 com Redis)
+- [x] Task 3.7: GitHubService: read_file, list_recent_prs, create_pr (usa credencial da empresa)
+- [ ] Task 3.8: Testes (pendente)
 
 ### Verification
 

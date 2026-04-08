@@ -22,6 +22,7 @@ from app.models.company import Company  # noqa: F401, E402
 from app.models.user import User  # noqa: F401, E402
 from app.models.credential import CompanyCredential  # noqa: F401, E402
 from app.models.audit import AuditLog  # noqa: F401, E402
+from app.models.pipeline import Pipeline, PipelineContextCache  # noqa: F401, E402
 
 target_metadata = Base.metadata
 
