@@ -1,0 +1,19 @@
+{
+  "id": "infra-bronze_20260408",
+  "title": "Infra Databricks + AWS + Bronze Layer",
+  "type": "feature",
+  "status": "complete",
+  "created": "2026-04-08",
+  "updated": "2026-04-08",
+  "current_phase": 3,
+  "current_task": "3.6",
+  "phases": {
+    "total": 3,
+    "completed": 3
+  },
+  "tasks": {
+    "total": 14,
+    "completed": 14
+  },
+  "commits": []
+}

@@ -1,0 +1,27 @@
+[project]
+name = "agentic-workflow-medallion-pipeline"
+version = "0.1.0"
+description = "Pipeline agentico de transformacao de dados Medallion sobre conversas WhatsApp de vendas de seguro automotivo"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+ml = ["pysentimiento>=0.7", "scikit-learn>=1.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "pyspark>=3.5", "delta-spark>=3.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["notebooks/"]  # Notebooks Databricks usam spark/dbutils injetados pelo runtime
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

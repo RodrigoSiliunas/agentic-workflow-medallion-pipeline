@@ -1,0 +1,44 @@
+# Data files
+data/
+*.parquet
+conversations_bronze.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+Lib/
+Scripts/
+pyvenv.cfg
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Databricks
+.databricks/
+
+# Word docs (test instructions, not code)
+*.docx
+
+# Secrets
+*.pem
+*.key
+mapping.encrypted

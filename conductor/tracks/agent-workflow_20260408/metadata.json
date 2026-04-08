@@ -1,0 +1,16 @@
+{
+  "id": "agent-workflow_20260408",
+  "title": "Agente Autonomo + Workflow + Observabilidade",
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-04-08",
+  "updated": "2026-04-08",
+  "phases": {
+    "total": 4,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 19,
+    "completed": 0
+  }
+}
