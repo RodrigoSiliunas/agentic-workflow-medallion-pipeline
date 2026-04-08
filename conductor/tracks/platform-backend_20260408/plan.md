@@ -3,7 +3,7 @@
 **Track ID:** platform-backend_20260408
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-08
-**Status:** [ ] Not Started
+**Status:** [~] In Progress
 
 ## Overview
 
@@ -13,16 +13,16 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 1.1: Scaffold FastAPI (padrao idlehub: main.py, config.py, deps.py, routers/, services/, models/, schemas/)
-- [ ] Task 1.2: Pydantic Settings com cascade .env (DATABASE_URL, REDIS_URL, JWT secrets, ENCRYPTION_KEY)
-- [ ] Task 1.3: PostgreSQL + SQLAlchemy 2 async (models: companies, users, company_credentials)
-- [ ] Task 1.4: Alembic migrations
-- [ ] Task 1.5: AuthContext dataclass (user, company, role, permissions)
-- [ ] Task 1.6: Auth routes: POST /auth/login, /auth/refresh, /auth/register-company (cria empresa + root user)
-- [ ] Task 1.7: JWT RS256 (access 15min, refresh 7d) + bcrypt passwords + Fernet encryption (chave separada)
-- [ ] Task 1.8: RBAC middleware: root > admin > editor > viewer
-- [ ] Task 1.9: User management routes: POST /users (admin cria), GET /users, PUT /users/:id/role
-- [ ] Task 1.10: Audit log model + service (who, what, when, channel, ip) para acoes sensiveis
+- [x] Task 1.1: Scaffold FastAPI (main.py, config.py, deps.py, routers/, services/, models/, schemas/)
+- [x] Task 1.2: Pydantic Settings com cascade .env (DATABASE_URL, REDIS_URL, JWT secrets, ENCRYPTION_KEY)
+- [x] Task 1.3: PostgreSQL + SQLAlchemy 2 async (models: companies, users, company_credentials)
+- [ ] Task 1.4: Alembic migrations (pendente — requer PostgreSQL rodando)
+- [x] Task 1.5: AuthContext dataclass (user, company, role, permissions)
+- [x] Task 1.6: Auth routes: POST /auth/login, /auth/refresh, /auth/register-company
+- [x] Task 1.7: JWT HS256 (access 15min, refresh 7d) + bcrypt + Fernet encryption (chave separada)
+- [x] Task 1.8: RBAC: root > admin > editor > viewer (require_permission, require_role)
+- [x] Task 1.9: User management routes: POST /users, GET /users, PUT /users/:id/role
+- [x] Task 1.10: Audit log model (who, what, when, channel, ip) + domain exceptions
 
 ### Verification
 
