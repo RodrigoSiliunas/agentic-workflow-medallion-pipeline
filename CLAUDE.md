@@ -2,64 +2,57 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Monorepo Structure
 
-This is a **Data & AI Engineering technical test** — building an agentic data transformation pipeline using the Medallion architecture (Bronze → Silver → Gold) over WhatsApp sales conversation data for auto insurance.
+```
+pipeline/           — Pipeline Medallion (Databricks + AWS)
+platform/frontend/  — Plataforma Conversacional (Nuxt 4.4.2 + Vue 3)
+platform/backend/   — API da Plataforma (FastAPI — padrao idlehub)
+platform/design/    — Design system references (awesome-design-md)
+docs/               — Analise arquitetural, viabilidade, spec plataforma
+conductor/          — Tracks e workflow do projeto
+```
 
-**Key constraint**: The agent must build the pipeline as **persistent infrastructure** (like a Databricks job), NOT perform one-off analyses. The agent must self-manage: detect failures, alert, and auto-correct.
+## Pipeline (pipeline/)
 
-## Source Data
+Agentic Medallion pipeline: Bronze → Silver → Gold sobre conversas WhatsApp de seguro auto.
 
-- **File**: `conversations_bronze.parquet` — ~15k conversations, 120-150k messages
-- **Period**: Feb 2026
-- **Domain**: WhatsApp conversations between human sales agents and leads for auto insurance
-- **Language**: Brazilian Portuguese (pt-BR)
+- **Plataforma**: Databricks Free Edition (AWS), Unity Catalog, Delta Lake
+- **Engine**: PySpark
+- **Agente**: agent_pre.py (Task 0) + agent_post.py (Task 5) com Claude API + auto-PR GitHub
+- **Testes**: 89 testes (pytest), ruff lint
+- **Deploy**: Scripts em pipeline/deploy/ (setup_catalog, create_workflow, upload_data, trigger_run)
 
-### Data Characteristics (intentional imperfections)
-- `sender_name`: inconsistent casing, abbreviations, accents, empty values for the same lead
-- `message_body`: unstructured text containing CPF, CEP, email, phone, plates in varied formats
-- `status`: duplicate rows (sent + delivered) for same message
-- `message_type=audio`: transcriptions with speech recognition errors
-- `message_type=sticker/image`: empty/null `message_body`
-- Vehicle data in free text, unordered ("gol 2019 1.0 placa ABC1D23")
-- Competitor insurer mentions in informal language
-- `metadata` column: JSON string with `device`, `city`, `state`, `response_time_sec`, `is_business_hours`, `lead_source`
+## Platform Frontend (platform/frontend/)
 
-### Key Columns
-- `conversation_id` (conv_XXXXXXXX): groups all messages in one conversation
-- `direction`: outbound (seller) / inbound (lead) — seller always starts
-- `conversation_outcome`: venda_fechada | perdido_preco | perdido_concorrente | ghosting | desistencia_lead | proposta_enviada | em_negociacao
-- `campaign_id`: 8-10 campaigns, same value across all messages in a conversation
-- `agent_id`: 15-20 sellers with uneven distribution
+- **Framework**: Nuxt 4.4.2 + Vue 3 + TypeScript
+- **Package manager**: Bun
+- **UI**: @nuxt/ui (Tailwind-based)
+- **Estado**: Pinia
+- **Composables**: @vueuse/nuxt
+- **Arquitetura de componentes**: **Atomic Design**
+  - `atoms/` — Elementos indivisiveis (Button, Input, Badge). Zero logica de negocio.
+  - `molecules/` — Combinacao de atoms (SearchBar, MessageBubble). Estado local simples.
+  - `organisms/` — Secoes completas (ChatWindow, Sidebar). Usam composables e stores.
+  - `templates/` — Layouts de pagina (ChatLayout, AuthLayout).
+  - Ver `ATOMIC_DESIGN.md` para guia completo.
+- **Padroes do idlehub a seguir**: useApiClient com token refresh, SWR caching, auth middleware global
 
-## Pipeline Requirements
+## Platform Backend (platform/backend/)
 
-### Bronze Layer
-- Raw data as-is from `conversations_bronze.parquet`
-- Unstructured messages + conversation metadata
+- **Framework**: FastAPI (async)
+- **Padrao**: Baseado no idlehub-platform-backend
+- **Auth**: JWT + API Key, RBAC (viewer/editor/admin), multi-tenant
+- **DB**: PostgreSQL (SQLAlchemy 2 async)
+- **Cache**: Redis
+- **Padroes**: Service layer, domain exceptions, Pydantic Settings, lifespan hooks
 
-### Silver Layer
-- Clean and organize data per user/lead
-- Extract structured info from messages: emails, CPF, phone, plates, vehicle data, CEP
-- Deduplicate status rows (sent+delivered)
-- Normalize names, remove noise
-- **Sensitive data must be masked** preserving original dimensions
+## Convencoes
 
-### Gold Layer
-- Analytical tables with classifications and groupings
-- Must **auto-update** when new data arrives in Bronze
-- Expected insights: email provider distribution, persona/profile classification, audience segmentation, customer sentiment analysis
-- Creativity encouraged — go beyond the suggested examples
-
-### Agent Requirements
-- Pure Python implementation
-- Agent creates AND manages the pipeline (self-correction on failure)
-- Live pipeline: Gold auto-updates when Bronze source grows
-- Code in a public GitHub repository
-- **Differentiator**: Databricks integration (free tier)
-
-## Conversation Distribution
-- ~35% cold lead/bounce (2-4 messages)
-- ~30% short conversation (5-10 messages)
-- ~25% medium conversation (11-20 messages)
-- ~10% long conversation (21-30+ messages)
+- **Commits**: Conventional Commits em pt-BR (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`)
+- **Lint Python**: ruff (line-length=100, py311). Notebooks excluidos.
+- **Lint JS/TS**: ESLint flat config + Prettier (double quotes, 2 spaces, 100 chars)
+- **Testes Python**: pytest. TDD moderado (obrigatorio para lib/, flexivel para notebooks)
+- **Testes JS**: Vitest + Vue Test Utils
+- **Branch strategy**: PRs do agente AI para `dev` (fix/usuario/..., feat/usuario/...)
+- **Dados sensiveis**: Mascaramento na Silver, HMAC obrigatorio sem fallback, redaction do message_body
