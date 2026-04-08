@@ -3,7 +3,7 @@
 **Track ID:** gold-layer_20260408
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-08
-**Status:** [ ] Not Started
+**Status:** [x] Complete
 
 ## Overview
 
@@ -13,11 +13,11 @@ Implementar 12 tabelas Gold em 3 fases: core (funil, agentes, sentimento), analy
 
 ### Tasks
 
-- [ ] Task 1.1: Notebook `gold/funnel.py` — funil de conversao, outcomes por etapa, mensagem fatal
-- [ ] Task 1.2: Notebook `gold/agent_performance.py` — metricas + percentis dos 20 agentes
-- [ ] Task 1.3: Notebook `gold/sentiment.py` — heuristica pt-BR (keywords positivas/negativas)
-- [ ] Task 1.4: Notebook `gold/lead_scoring.py` — score 0-100 (depende de sentimento)
-- [ ] Task 1.5: Notebook `gold/email_providers.py` — distribuicao de provedores de email
+- [x] Task 1.1: Notebook `gold/funnel.py` — funil de conversao, outcomes por etapa, mensagem fatal
+- [x] Task 1.2: Notebook `gold/agent_performance.py` — metricas + percentis dos 20 agentes
+- [x] Task 1.3: Notebook `gold/sentiment.py` — heuristica pt-BR (keywords positivas/negativas)
+- [x] Task 1.4: Notebook `gold/lead_scoring.py` — score 0-100 (depende de sentimento)
+- [x] Task 1.5: Notebook `gold/email_providers.py` — distribuicao de provedores de email
 
 ### Verification
 
@@ -30,9 +30,9 @@ Implementar 12 tabelas Gold em 3 fases: core (funil, agentes, sentimento), analy
 
 ### Tasks
 
-- [ ] Task 2.1: Notebook `gold/temporal_analysis.py` — heatmap conversao por hora x dia da semana
-- [ ] Task 2.2: Notebook `gold/competitor_intel.py` — concorrentes mencionados, price gap, loss rate
-- [ ] Task 2.3: Notebook `gold/campaign_roi.py` — eficacia das 10 campanhas, conversion rate, lead quality
+- [x] Task 2.1: Notebook `gold/temporal_analysis.py` — heatmap conversao por hora x dia da semana
+- [x] Task 2.2: Notebook `gold/competitor_intel.py` — concorrentes mencionados, price gap, loss rate
+- [x] Task 2.3: Notebook `gold/campaign_roi.py` — eficacia das 10 campanhas, conversion rate, lead quality + geo
 
 ### Verification
 
@@ -44,11 +44,11 @@ Implementar 12 tabelas Gold em 3 fases: core (funil, agentes, sentimento), analy
 
 ### Tasks
 
-- [ ] Task 3.1: Notebook `gold/segmentation.py` — classificacao em 6 personas (Decidido Rapido, Comparador, etc.)
-- [ ] Task 3.2: Notebook `gold/churn_reengagement.py` — leads que pararam e voltaram, mensagens de reativacao
-- [ ] Task 3.3: Notebook `gold/negotiation_complexity.py` — correlacao perguntas vs conversao
-- [ ] Task 3.4: Notebook `gold/first_contact_resolution.py` — % vendas na 1a conversa vs multiplos contatos
-- [ ] Task 3.5: Notebook `gold/analytics.py` — orquestrador que chama todos os modulos Gold
+- [x] Task 3.1: Notebook `gold/segmentation.py` — classificacao em 6 personas (Decidido Rapido, Comparador, etc.)
+- [x] Task 3.2: Notebook `gold/churn_reengagement.py` — leads que pararam e voltaram, mensagens de reativacao
+- [x] Task 3.3: Notebook `gold/negotiation_complexity.py` — correlacao perguntas vs conversao
+- [x] Task 3.4: Notebook `gold/first_contact_resolution.py` — % vendas na 1a conversa vs multiplos contatos
+- [x] Task 3.5: Notebook `gold/analytics.py` — orquestrador que chama todos os 12 modulos Gold
 
 ### Verification
 
