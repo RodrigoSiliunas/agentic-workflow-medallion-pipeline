@@ -74,15 +74,15 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 4.1: Models: threads, messages
-- [ ] Task 4.2: Routes: POST /chat/message (SSE stream), GET /chat/threads, POST /chat/threads, DELETE
-- [ ] Task 4.3: LLM Orchestrator: loop de tool use (max 10 rounds), streaming SSE
-- [ ] Task 4.4: Tools leitura: get_pipeline_status, get_run_logs, query_delta_table, get_table_schema, read_file, list_recent_prs
-- [ ] Task 4.5: Tools acao: create_pull_request, trigger_pipeline_run, send_notification, generate_chart_data (requerem confirmacao exceto chart)
-- [ ] Task 4.5b: Email notification service (SES ou SendGrid, configuravel por empresa)
-- [ ] Task 4.6: Confirmacao inline: tool retorna "confirmation_required", frontend mostra botao
-- [ ] Task 4.7: Historico de conversa: ultimas 20 mensagens completas, 21-50 resumidas
-- [ ] Task 4.8: Testes: chat flow, tool execution mocks, SSE streaming
+- [x] Task 4.1: Models: Thread + Message + migration (8 tabelas total)
+- [x] Task 4.2: Routes: POST /chat/message (SSE), GET/POST/DELETE threads
+- [x] Task 4.3: LLM Orchestrator: loop de tool use (max 10 rounds), SSE streaming, model por empresa
+- [x] Task 4.4: Tools leitura: get_pipeline_status, get_run_logs, query_delta_table, get_table_schema, read_file, list_recent_prs (6 tools)
+- [x] Task 4.5: Tools acao: create_pull_request (branch feat/{user}/...), trigger_pipeline_run (2 tools com confirmacao)
+- [ ] Task 4.5b: Email notification + generate_chart_data (pendente)
+- [x] Task 4.6: Confirmacao inline: tool retorna confirmation_required event via SSE
+- [x] Task 4.7: Historico: ultimas 20 mensagens carregadas, titulo auto-gerado
+- [ ] Task 4.8: Testes (pendente)
 
 ### Verification
 

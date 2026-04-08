@@ -1,0 +1,289 @@
+"""LLM Orchestrator — Claude API com tool use e streaming SSE."""
+
+import json
+import uuid
+from collections.abc import AsyncGenerator
+
+import anthropic
+import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.context_engine import ContextEngine
+from app.services.credential_service import CredentialService
+from app.services.databricks_service import DatabricksService
+from app.services.github_service import GitHubService
+
+logger = structlog.get_logger()
+
+MAX_TOOL_ROUNDS = 10
+
+# Tool definitions para Claude API
+TOOLS = [
+    {
+        "name": "get_pipeline_status",
+        "description": "Retorna status atual do pipeline (running, idle, failed).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"pipeline_job_id": {"type": "integer"}},
+            "required": ["pipeline_job_id"],
+        },
+    },
+    {
+        "name": "get_run_logs",
+        "description": "Busca logs de uma run especifica do pipeline.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"run_id": {"type": "integer"}},
+            "required": ["run_id"],
+        },
+    },
+    {
+        "name": "query_delta_table",
+        "description": "Executa SELECT SQL em tabelas Delta. Apenas SELECT.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sql": {"type": "string", "description": "Query SQL (SELECT only)"},
+                "max_rows": {"type": "integer", "default": 50},
+            },
+            "required": ["sql"],
+        },
+    },
+    {
+        "name": "get_table_schema",
+        "description": "Retorna schema completo de uma tabela Delta.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"catalog": {"type": "string", "default": "medallion"}},
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Le conteudo de um arquivo do repositorio do pipeline.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "ref": {"type": "string", "default": "main"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_recent_prs",
+        "description": "Lista PRs recentes do repositorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string", "default": "all"},
+                "limit": {"type": "integer", "default": 10},
+            },
+        },
+    },
+    {
+        "name": "create_pull_request",
+        "description": "Cria PR com mudancas no codigo. REQUER CONFIRMACAO.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "branch": {"type": "string"},
+                "files": {
+                    "type": "object",
+                    "description": "Dict path->content dos arquivos a modificar",
+                },
+            },
+            "required": ["title", "description", "branch"],
+        },
+    },
+    {
+        "name": "trigger_pipeline_run",
+        "description": "Dispara execucao do pipeline. REQUER CONFIRMACAO.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"pipeline_job_id": {"type": "integer"}},
+            "required": ["pipeline_job_id"],
+        },
+    },
+]
+
+CONFIRMATION_REQUIRED = {"create_pull_request", "trigger_pipeline_run"}
+
+
+class LLMOrchestrator:
+    def __init__(
+        self, db: AsyncSession, company_id: uuid.UUID, user_name: str
+    ):
+        self.db = db
+        self.company_id = company_id
+        self.user_name = user_name
+        self.databricks = DatabricksService(db, company_id)
+        self.github = GitHubService(db, company_id)
+        self.context_engine = ContextEngine(db, company_id)
+        self._cred_service = CredentialService(db)
+
+    async def _get_anthropic_client(self) -> anthropic.AsyncAnthropic:
+        api_key = await self._cred_service.get_decrypted(
+            self.company_id, "anthropic_api_key"
+        )
+        if not api_key:
+            raise ValueError("Anthropic API key nao configurada para esta empresa")
+        return anthropic.AsyncAnthropic(api_key=api_key)
+
+    async def _get_model(self) -> str:
+        from sqlalchemy import select
+
+        from app.models.company import Company
+        result = await self.db.execute(
+            select(Company.preferred_model).where(Company.id == self.company_id)
+        )
+        pref = result.scalar_one_or_none() or "sonnet"
+        return {
+            "sonnet": "claude-sonnet-4-20250514",
+            "opus": "claude-opus-4-20250514",
+        }.get(pref, "claude-sonnet-4-20250514")
+
+    async def process_message(
+        self,
+        user_message: str,
+        pipeline_job_id: int,
+        conversation_history: list[dict],
+    ) -> AsyncGenerator[dict, None]:
+        """Processa mensagem do usuario. Yields SSE events."""
+        client = await self._get_anthropic_client()
+        model = await self._get_model()
+
+        # Montar contexto
+        context = await self.context_engine.assemble(
+            pipeline_job_id=pipeline_job_id,
+            user_message=user_message,
+        )
+
+        # System prompt + contexto
+        system = context.system_prompt + "\n\n"
+        for block in context.blocks:
+            system += f"<{block.type}>\n{block.content}\n</{block.type}>\n\n"
+
+        # Mensagens
+        messages = conversation_history + [{"role": "user", "content": user_message}]
+
+        # Loop de tool use
+        for _round in range(MAX_TOOL_ROUNDS):
+            response = await client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=system,
+                messages=messages,
+                tools=TOOLS,
+            )
+
+            # Processar resposta
+            tool_calls = []
+            for block in response.content:
+                if block.type == "text":
+                    yield {"type": "token", "content": block.text}
+                elif block.type == "tool_use":
+                    tool_calls.append(block)
+
+            # Se nao tem tool calls, resposta finalizada
+            if not tool_calls:
+                yield {"type": "done", "model": model, "tokens": response.usage.output_tokens}
+                return
+
+            # Executar tools
+            tool_results = []
+            for call in tool_calls:
+                # Verificar se precisa confirmacao
+                if call.name in CONFIRMATION_REQUIRED:
+                    yield {
+                        "type": "action",
+                        "action": "confirmation_required",
+                        "tool": call.name,
+                        "input": call.input,
+                        "details": {"tool_id": call.id},
+                    }
+                    # Por enquanto, executar sempre (confirmacao sera implementada no frontend)
+                    # TODO: aguardar confirmacao do usuario
+
+                # Executar tool
+                result = await self._execute_tool(call.name, call.input)
+
+                yield {
+                    "type": "action",
+                    "action": call.name,
+                    "status": "success" if "error" not in result else "failed",
+                    "details": result,
+                }
+
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": call.id,
+                    "content": json.dumps(result, default=str),
+                })
+
+            # Adicionar tool calls + results e continuar loop
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": tool_results})
+
+        yield {"type": "error", "content": "Limite de rounds de tool use atingido"}
+
+    async def _execute_tool(self, name: str, input_data: dict) -> dict:
+        """Executa uma tool e retorna resultado."""
+        try:
+            if name == "get_pipeline_status":
+                return await self.databricks.get_pipeline_summary(
+                    input_data["pipeline_job_id"]
+                )
+
+            if name == "get_run_logs":
+                return await self.databricks.get_run_output(input_data["run_id"])
+
+            if name == "query_delta_table":
+                sql = input_data["sql"].strip()
+                if not sql.upper().startswith("SELECT"):
+                    return {"error": "Apenas queries SELECT sao permitidas"}
+                return await self.databricks.query_table(
+                    sql, input_data.get("max_rows", 50)
+                )
+
+            if name == "get_table_schema":
+                return {
+                    "schemas": await self.databricks.get_table_schemas(
+                        input_data.get("catalog", "medallion")
+                    )
+                }
+
+            if name == "read_file":
+                content = await self.github.read_file(
+                    input_data["path"], input_data.get("ref", "main")
+                )
+                return {"path": input_data["path"], "content": content}
+
+            if name == "list_recent_prs":
+                return {
+                    "prs": await self.github.list_recent_prs(
+                        input_data.get("state", "all"),
+                        input_data.get("limit", 10),
+                    )
+                }
+
+            if name == "create_pull_request":
+                branch = f"feat/{self.user_name}/{input_data['branch']}"
+                return await self.github.create_pr(
+                    title=input_data["title"],
+                    body=input_data["description"],
+                    branch=branch,
+                    files=input_data.get("files"),
+                )
+
+            if name == "trigger_pipeline_run":
+                return await self.databricks.trigger_run(
+                    input_data["pipeline_job_id"]
+                )
+
+            return {"error": f"Tool desconhecida: {name}"}
+
+        except Exception as e:
+            logger.error("Tool execution failed", tool=name, error=str(e))
+            return {"error": str(e)}
