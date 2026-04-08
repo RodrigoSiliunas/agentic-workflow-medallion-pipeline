@@ -2,13 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
-  lint-and-test:
+  pipeline-lint-test:
+    name: Pipeline (lint + test)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline
 
     steps:
       - uses: actions/checkout@v4
@@ -18,8 +22,32 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install ruff pytest pydantic
+        run: pip install ruff pytest pydantic
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest tests/ -v
+
+  # Validacao extra para PRs do agente de IA
+  validate-agent-pr:
+    name: Validate agent-generated PR
+    runs-on: ubuntu-latest
+    if: startsWith(github.head_ref, 'fix/') || startsWith(github.head_ref, 'feat/')
+    defaults:
+      run:
+        working-directory: pipeline
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install ruff pytest pydantic
 
       - name: Lint
         run: ruff check .

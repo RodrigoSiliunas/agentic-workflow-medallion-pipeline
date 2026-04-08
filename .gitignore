@@ -1,7 +1,7 @@
 # Data files
 data/
+pipeline/data/
 *.parquet
-conversations_bronze.parquet
 
 # Python
 __pycache__/
@@ -35,8 +35,20 @@ Thumbs.db
 # Databricks
 .databricks/
 
-# Word docs (test instructions, not code)
+# Word docs (test instructions)
 *.docx
+
+# Frontend build artifacts
+.nuxt/
+.output/
+node_modules/
+bun.lock
+
+# Platform backend venv
+platform/backend/venv/
+
+# Design system repo (submodule/reference)
+platform/design/
 
 # Secrets
 *.pem
