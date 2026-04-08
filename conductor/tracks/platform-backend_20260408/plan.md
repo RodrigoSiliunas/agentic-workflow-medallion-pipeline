@@ -16,7 +16,7 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 - [x] Task 1.1: Scaffold FastAPI (main.py, config.py, deps.py, routers/, services/, models/, schemas/)
 - [x] Task 1.2: Pydantic Settings com cascade .env (DATABASE_URL, REDIS_URL, JWT secrets, ENCRYPTION_KEY)
 - [x] Task 1.3: PostgreSQL + SQLAlchemy 2 async (models: companies, users, company_credentials)
-- [ ] Task 1.4: Alembic migrations (pendente — requer PostgreSQL rodando)
+- [x] Task 1.4: Alembic migrations (PostgreSQL + initial_schema: 4 tabelas)
 - [x] Task 1.5: AuthContext dataclass (user, company, role, permissions)
 - [x] Task 1.6: Auth routes: POST /auth/login, /auth/refresh, /auth/register-company
 - [x] Task 1.7: JWT HS256 (access 15min, refresh 7d) + bcrypt + Fernet encryption (chave separada)
@@ -35,14 +35,14 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 2.1: Models: company_credentials (company_id, type, encrypted_value, is_valid, last_tested_at)
-- [ ] Task 2.2: Fernet encryption service (encrypt/decrypt, chave separada do JWT)
-- [ ] Task 2.3: Routes: GET/PUT /settings/credentials (root/admin only)
-- [ ] Task 2.4: Credential types: anthropic_api_key, discord_bot_token, telegram_bot_token, github_token, github_repo, databricks_host, databricks_token
-- [ ] Task 2.5: Validacao no save: test Anthropic API call, test Databricks connection, test GitHub repo access
-- [ ] Task 2.6: WhatsApp QR Code: route que proxeia Omni WebSocket para o frontend via SSE
-- [ ] Task 2.7: Campo preferred_model (sonnet/opus) na company settings
-- [ ] Task 2.8: Testes: credential CRUD, encryption round-trip, validation mocks
+- [x] Task 2.1: Model CompanyCredential (criado na Phase 1)
+- [x] Task 2.2: EncryptionService (Fernet, chave separada do JWT)
+- [x] Task 2.3: Routes: GET /settings, PUT /credentials, POST /credentials/:type/test
+- [x] Task 2.4: 7 credential types (anthropic, discord, telegram, github, databricks)
+- [x] Task 2.5: Validacao: test Anthropic API, Databricks conn, GitHub repo
+- [ ] Task 2.6: WhatsApp QR Code SSE (implementar com Omni na Phase 5)
+- [x] Task 2.7: PUT /settings/preferred-model (sonnet/opus)
+- [ ] Task 2.8: Testes credential (pendente)
 
 ### Verification
 
