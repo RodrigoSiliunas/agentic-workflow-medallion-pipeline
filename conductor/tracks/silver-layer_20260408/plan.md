@@ -3,7 +3,7 @@
 **Track ID:** silver-layer_20260408
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-08
-**Status:** [ ] Not Started
+**Status:** [x] Complete
 
 ## Overview
 
@@ -15,12 +15,12 @@ TDD: testes primeiro, depois implementacao.
 
 ### Tasks
 
-- [ ] Task 1.1: Criar `tests/test_extractors/` com testes para CPF, email, telefone, placa, CEP, veiculo, concorrente, preco
-- [ ] Task 1.2: Implementar `lib/extractors/cpf.py` (regex + validacao digitos verificadores)
-- [ ] Task 1.3: Implementar `lib/extractors/email.py`, `phone.py`, `plate.py`, `cep.py`
-- [ ] Task 1.4: Implementar `lib/extractors/vehicle.py` (marca/modelo/ano de texto livre)
-- [ ] Task 1.5: Implementar `lib/extractors/competitor.py` (seguradoras concorrentes)
-- [ ] Task 1.6: Implementar `lib/extractors/price.py` (valores R$)
+- [x] Task 1.1: Criar `tests/test_extractors/` com testes para CPF, email, telefone, placa, CEP, veiculo, concorrente, preco
+- [x] Task 1.2: Implementar `pipeline_lib/extractors/cpf.py` (regex + validacao digitos verificadores)
+- [x] Task 1.3: Implementar `pipeline_lib/extractors/email.py`, `phone.py`, `plate.py`, `cep.py`
+- [x] Task 1.4: Implementar `pipeline_lib/extractors/vehicle.py` (marca/modelo/ano de texto livre)
+- [x] Task 1.5: Implementar `pipeline_lib/extractors/competitor.py` (seguradoras concorrentes)
+- [x] Task 1.6: Implementar `pipeline_lib/extractors/price.py` (valores R$)
 
 ### Verification
 
@@ -31,11 +31,11 @@ TDD: testes primeiro, depois implementacao.
 
 ### Tasks
 
-- [ ] Task 2.1: Criar `tests/test_masking/` com testes para CPF, email, telefone, placa (formato preservado, deterministico)
-- [ ] Task 2.2: Implementar `lib/masking/format_preserving.py` (mask_cpf, mask_email, mask_phone, mask_plate)
-- [ ] Task 2.3: Implementar `lib/masking/hash_based.py` (hash_cpf HMAC-SHA256, chave obrigatoria)
-- [ ] Task 2.4: Implementar funcao `redact_message_body` (substituir PII no texto livre)
-- [ ] Task 2.5: Testar que chave ausente causa erro explicito (sem fallback)
+- [x] Task 2.1: Criar `tests/test_masking/` com testes para CPF, email, telefone, placa (formato preservado, deterministico)
+- [x] Task 2.2: Implementar `pipeline_lib/masking/format_preserving.py` (mask_cpf, mask_email, mask_phone, mask_plate)
+- [x] Task 2.3: Implementar `pipeline_lib/masking/hash_based.py` (hash_cpf HMAC-SHA256, chave obrigatoria)
+- [x] Task 2.4: Implementar `pipeline_lib/masking/redaction.py` (redact_message_body)
+- [x] Task 2.5: Testar que chave ausente causa KeyError (sem fallback)
 
 ### Verification
 
@@ -48,10 +48,10 @@ TDD: testes primeiro, depois implementacao.
 
 ### Tasks
 
-- [ ] Task 3.1: Notebook `silver/dedup_clean.py` (Task 2a) — dedup sent+delivered, normalizacao nomes, parse metadata JSON
-- [ ] Task 3.2: Notebook `silver/entities_mask.py` (Task 2b) — UDFs PySpark com extratores, mascaramento, redaction do message_body
-- [ ] Task 3.3: Notebook `silver/enrichment.py` (Task 2c) — metricas por conversa (msg count, duracao, avg response_time)
-- [ ] Task 3.4: Registrar 3 Delta Tables no Unity Catalog com mergeSchema
+- [x] Task 3.1: Notebook `silver/dedup_clean.py` (Task 2a) — dedup sent+delivered, normalizacao nomes, parse metadata JSON
+- [x] Task 3.2: Notebook `silver/entities_mask.py` (Task 2b) — UDFs PySpark com extratores, mascaramento, redaction do message_body
+- [x] Task 3.3: Notebook `silver/enrichment.py` (Task 2c) — metricas por conversa (msg count, duracao, avg response_time)
+- [x] Task 3.4: Registrar 3 Delta Tables no Unity Catalog com mergeSchema (saveAsTable em cada notebook)
 
 ### Verification
 
