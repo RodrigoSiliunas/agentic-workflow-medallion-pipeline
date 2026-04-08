@@ -337,27 +337,59 @@ CREATE TABLE pipelines (
     config JSONB DEFAULT '{}'
 );
 
+-- Threads: conversa de UM usuario sobre UM pipeline
+-- O thread e INDEPENDENTE do canal — pode ser acessado de qualquer canal
 CREATE TABLE threads (
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY,                -- este e o UUID que o usuario usa no /resume
     pipeline_id UUID REFERENCES pipelines(id),
-    user_id UUID REFERENCES users(id),
-    title VARCHAR(500),
-    channel VARCHAR(50) DEFAULT 'web',  -- web | whatsapp | discord | telegram
+    user_id UUID REFERENCES users(id),  -- SEMPRE pertence a 1 usuario
+    title VARCHAR(500),                 -- auto-gerado da primeira mensagem
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Mensagens: cada mensagem registra DE QUAL CANAL veio
 CREATE TABLE messages (
     id UUID PRIMARY KEY,
     thread_id UUID REFERENCES threads(id),
     role VARCHAR(20) NOT NULL,          -- user | assistant | system | tool
     content TEXT NOT NULL,
     actions JSONB DEFAULT '[]',
+    channel VARCHAR(50),                -- web | whatsapp | discord | telegram
     token_count INTEGER,
     model VARCHAR(100),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Sessao ativa: mapeia usuario+canal para o thread ativo naquele canal
+-- Permite que o mesmo usuario tenha threads diferentes em canais diferentes
+-- OU o mesmo thread em canais diferentes (via /resume com UUID)
+CREATE TABLE active_sessions (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    channel VARCHAR(50) NOT NULL,       -- web | whatsapp | discord | telegram
+    channel_user_id VARCHAR(255),       -- numero WhatsApp, Discord ID, Telegram ID
+    active_thread_id UUID REFERENCES threads(id),
+    active_pipeline_id UUID REFERENCES pipelines(id),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, channel)            -- 1 sessao ativa por usuario por canal
+);
+
+-- Channel identities: vincula identidades externas ao usuario
+-- Permite identificar o usuario quando chega mensagem do WhatsApp/Discord/Telegram
+CREATE TABLE channel_identities (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    channel VARCHAR(50) NOT NULL,       -- whatsapp | discord | telegram
+    channel_user_id VARCHAR(255) NOT NULL, -- +5511999999999 | discord#1234 | @user_tg
+    verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(channel, channel_user_id)    -- 1 identidade por canal
+);
+
+-- Pipeline context cache: COMPARTILHADO entre todos os usuarios da empresa
+-- Contexto do pipeline (estado, schemas, metricas) e o mesmo para todos
 CREATE TABLE pipeline_context_cache (
     id UUID PRIMARY KEY,
     pipeline_id UUID REFERENCES pipelines(id),
@@ -367,6 +399,12 @@ CREATE TABLE pipeline_context_cache (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(pipeline_id, context_type)
 );
+
+-- Indices para performance
+CREATE INDEX idx_threads_user_pipeline ON threads(user_id, pipeline_id, updated_at DESC);
+CREATE INDEX idx_messages_thread ON messages(thread_id, created_at ASC);
+CREATE INDEX idx_active_sessions_user ON active_sessions(user_id, channel);
+CREATE INDEX idx_channel_identities_lookup ON channel_identities(channel, channel_user_id);
 ```
 
 ### 3.3 Context Engine
@@ -460,126 +498,176 @@ Telegram ──┘       │
 
 #### Slash Commands nos Canais Externos
 
-Nos canais de mensagem (WhatsApp, Discord, Telegram), o usuario nao tem sidebar para selecionar pipelines. Em vez disso, usa **slash commands** para navegar entre pipelines e controlar o agente:
+Nos canais de mensagem (WhatsApp, Discord, Telegram), o usuario usa **slash commands** para navegar entre pipelines e conversas. O conceito-chave: **o thread e independente do canal**. O usuario pode iniciar no WhatsApp e continuar no Discord usando o UUID da conversa.
 
 | Comando | Descricao |
 |---------|-----------|
-| `/resume [pipeline-nome]` | Muda o contexto para o pipeline especificado. Retoma o thread mais recente daquele pipeline. |
-| `/pipelines` | Lista todos os pipelines disponiveis para o usuario. |
-| `/status` | Mostra status resumido do pipeline ativo. |
-| `/new [pipeline-nome]` | Inicia um novo thread de conversa para o pipeline. |
-| `/history` | Mostra ultimas 5 conversas do pipeline ativo. |
-| `/help` | Lista comandos disponiveis. |
+| `/resume [pipeline-nome]` | Conecta ao pipeline e retoma o thread mais recente DO USUARIO naquele pipeline. |
+| `/resume [pipeline-nome] [uuid]` | Retoma uma conversa especifica pelo UUID. Permite continuar de outro canal. |
+| `/pipelines` | Lista pipelines disponiveis. |
+| `/threads [pipeline-nome]` | Lista threads do usuario naquele pipeline (com UUIDs para /resume). |
+| `/status` | Status do pipeline ativo. |
+| `/new [pipeline-nome]` | Cria novo thread (nova conversa). |
+| `/whoami` | Mostra usuario logado, pipeline ativo, thread ativo, canal atual. |
+| `/help` | Lista comandos. |
 
-**Fluxo do `/resume`:**
+#### Modelo de Contexto: Pipeline vs. Conversa
 
 ```
-Usuario (WhatsApp): /resume medallion-whatsapp
-    │
-    ▼
-Webhook Handler detecta slash command
-    │
-    ▼
-Busca pipeline "medallion-whatsapp" na empresa do usuario
-    │
-    ├── Encontrou: busca thread mais recente daquele pipeline
-    │   ├── Tem thread ativo: retoma conversa
-    │   │   → "Retomando pipeline medallion-whatsapp. Ultimo run: hoje 06:00 (sucesso).
-    │   │      Em que posso ajudar?"
-    │   └── Sem thread: cria novo
-    │       → "Conectado ao pipeline medallion-whatsapp. O que voce precisa?"
-    │
-    └── Nao encontrou: sugere pipelines disponiveis
-        → "Pipeline 'medallion-whatsapp' nao encontrado. Pipelines disponiveis:
-           - medallion-whatsapp-seguros
-           - etl-crm-diario
-           Use /resume [nome] para conectar."
+CONTEXTO DO PIPELINE (compartilhado entre usuarios da empresa)
+┌─────────────────────────────────────────────┐
+│  pipeline: medallion-whatsapp-seguros       │
+│  estado: SUCCESS, ultimo run: 06:00         │
+│  schemas: bronze.*, silver.*, gold.*        │
+│  metricas: 153k rows, 12 tabelas Gold       │
+│  codigo: notebooks/, pipeline_lib/          │
+│                                             │
+│  Todos os usuarios da empresa veem o mesmo  │
+│  estado do pipeline.                        │
+└─────────────────────────────────────────────┘
+           │                    │
+           ▼                    ▼
+CONTEXTO DA CONVERSA (isolado por usuario)
+┌──────────────────────┐  ┌──────────────────────┐
+│  Rodrigo             │  │  Felipe              │
+│  thread: abc-123     │  │  thread: def-456     │
+│  canal: WhatsApp     │  │  canal: Discord      │
+│                      │  │                      │
+│  "por que a Silver   │  │  "cria uma tabela    │
+│   falhou ontem?"     │  │   Gold de churn"     │
+│  → diagnostico...    │  │  → PR #53 criado...  │
+│                      │  │                      │
+│  PRs: branch com     │  │  PRs: branch com     │
+│  rodrigo/ no nome    │  │  felipe/ no nome     │
+└──────────────────────┘  └──────────────────────┘
 ```
 
-**Implementacao no backend:**
+**Isolamento garantido por design:**
+- Thread pertence a 1 usuario (`threads.user_id`)
+- Mensagens registram de qual canal vieram (`messages.channel`)
+- Sessao ativa por canal por usuario (`active_sessions`)
+- Pipeline context (estado, schemas) e compartilhado (read-only)
+- Conversa e PRs sao isolados por usuario
+
+#### Continuidade Cross-Channel
+
+O mesmo thread pode ser acessado de qualquer canal. Exemplo:
+
+```
+Rodrigo no WhatsApp:
+  /resume medallion-whatsapp
+  → "Conectado. Thread: abc-123. Status: SUCCESS."
+  "quantas vendas fechamos?"
+  → "47 vendas ontem, taxa de 23%."
+
+Rodrigo MUDA para o Discord:
+  /resume medallion-whatsapp abc-123
+  → "Retomando conversa abc-123 (iniciada no WhatsApp).
+     Ultima mensagem: '47 vendas ontem, taxa de 23%.'
+     Em que posso ajudar?"
+  "detalha por agente"
+  → [LLM tem contexto completo da conversa do WhatsApp]
+  → "Top 3 agentes: lucas_09 (8), julia_15 (6), marcos_07 (5)."
+
+Rodrigo VOLTA para o WhatsApp:
+  "e por campanha?"
+  → [LLM tem tudo: WhatsApp + Discord + WhatsApp]
+  → "Top campanha: instagram_fev2026 com 12 vendas."
+```
+
+**Como funciona tecnicamente:**
 
 ```python
-# routers/webhooks.py
+async def switch_pipeline(user: User, args: str, channel: str) -> str:
+    parts = args.split()
+    pipeline_name = parts[0] if parts else ""
+    thread_uuid = parts[1] if len(parts) > 1 else None
 
-SLASH_COMMANDS = {
-    "/resume": "switch_pipeline",
-    "/pipelines": "list_pipelines",
-    "/status": "quick_status",
-    "/new": "new_thread",
-    "/history": "show_history",
-    "/help": "show_help",
-}
+    if not pipeline_name:
+        return "Uso: /resume [pipeline] ou /resume [pipeline] [uuid-conversa]"
 
-async def handle_omni_message(payload: OmniWebhookPayload, user: User):
-    message = payload.message.strip()
+    # Buscar pipeline
+    pipeline = await pipeline_repo.find_by_name_fuzzy(
+        company_id=user.company_id, query=pipeline_name
+    )
+    if not pipeline:
+        available = await pipeline_repo.list(company_id=user.company_id)
+        names = "\n".join(f"  - {p.name}" for p in available)
+        return f"Pipeline '{pipeline_name}' nao encontrado.\nDisponiveis:\n{names}"
 
-    # Verificar se e um slash command
-    for cmd, handler_name in SLASH_COMMANDS.items():
-        if message.lower().startswith(cmd):
-            args = message[len(cmd):].strip()
-            handler = getattr(slash_handlers, handler_name)
-            return await handler(user=user, args=args, channel=payload.channel)
+    # Se UUID fornecido, retomar thread especifico
+    if thread_uuid:
+        thread = await thread_repo.get_by_id(thread_uuid)
+        if not thread or thread.user_id != user.id:
+            return f"Thread '{thread_uuid}' nao encontrado ou nao pertence a voce."
+        if thread.pipeline_id != pipeline.id:
+            return f"Thread '{thread_uuid}' pertence a outro pipeline."
+    else:
+        # Sem UUID: buscar thread mais recente DO USUARIO neste pipeline
+        thread = await thread_repo.get_latest(user_id=user.id, pipeline_id=pipeline.id)
+        if not thread:
+            thread = await thread_repo.create(user_id=user.id, pipeline_id=pipeline.id)
 
-    # Nao e comando — tratar como mensagem normal para o LLM
-    return await process_chat_message(user=user, message=message, channel=payload.channel)
+    # Atualizar sessao ativa NESTE CANAL
+    await session_repo.upsert(
+        user_id=user.id,
+        channel=channel,
+        active_thread_id=thread.id,
+        active_pipeline_id=pipeline.id,
+    )
 
+    # Contexto do pipeline (compartilhado)
+    status = await databricks_service.get_pipeline_status(pipeline)
 
-class SlashHandlers:
-    async def switch_pipeline(self, user: User, args: str, channel: str) -> str:
-        """Muda o contexto do usuario para outro pipeline."""
-        if not args:
-            return "Uso: /resume [nome-do-pipeline]"
+    # Ultima mensagem da conversa (para contexto cross-channel)
+    last_msg = await message_repo.get_latest(thread_id=thread.id)
+    last_channel = last_msg.channel if last_msg else None
 
-        # Busca fuzzy por nome
-        pipeline = await pipeline_repo.find_by_name_fuzzy(
-            company_id=user.company_id, query=args
-        )
+    response = f"Conectado ao pipeline *{pipeline.name}*.\n"
+    response += f"Thread: `{thread.id}`\n"
+    response += f"Status: {status.state} | Ultimo run: {status.last_run_at}\n"
 
-        if not pipeline:
-            available = await pipeline_repo.list(company_id=user.company_id)
-            names = "\n".join(f"  - {p.name}" for p in available)
-            return f"Pipeline '{args}' nao encontrado. Disponiveis:\n{names}"
+    if last_msg and last_channel != channel:
+        response += f"\nRetomando conversa (iniciada no {last_channel}).\n"
+        response += f"Ultima mensagem: \"{last_msg.content[:100]}...\"\n"
 
-        # Buscar ou criar thread
-        thread = await thread_repo.get_or_create_active(
-            user_id=user.id,
-            pipeline_id=pipeline.id,
-            channel=channel,
-        )
+    response += "Em que posso ajudar?"
+    return response
+```
 
-        # Atualizar sessao ativa do usuario neste canal
-        await session_repo.set_active_pipeline(
-            user_id=user.id, channel=channel, pipeline_id=pipeline.id
-        )
+#### Branch Strategy para PRs do Agente (por usuario)
 
-        # Resumo rapido do pipeline
-        status = await databricks_service.get_pipeline_status(pipeline)
-        return (
-            f"Conectado ao pipeline *{pipeline.name}*.\n"
-            f"Status: {status.state} | Ultimo run: {status.last_run_at}\n"
-            f"Em que posso ajudar?"
-        )
+Quando o LLM cria um PR, o branch inclui o nome do usuario para evitar conflitos:
 
-    async def list_pipelines(self, user: User, args: str, channel: str) -> str:
-        pipelines = await pipeline_repo.list(company_id=user.company_id)
-        if not pipelines:
-            return "Nenhum pipeline configurado para sua empresa."
-        lines = [f"Pipelines disponiveis:"]
-        for p in pipelines:
-            lines.append(f"  - *{p.name}* (use /resume {p.name})")
-        return "\n".join(lines)
+```
+Base: dev (nunca main diretamente)
 
-    async def quick_status(self, user: User, args: str, channel: str) -> str:
-        pipeline = await session_repo.get_active_pipeline(user.id, channel)
-        if not pipeline:
-            return "Nenhum pipeline ativo. Use /resume [nome] para conectar."
-        status = await databricks_service.get_pipeline_status(pipeline)
-        return (
-            f"*{pipeline.name}*\n"
-            f"Status: {status.state}\n"
-            f"Ultimo run: {status.last_run_at}\n"
-            f"Proxima run: {status.next_run_at}"
-        )
+Branches:
+  fix/rodrigo/agent-auto-silver-dedup-20260408-060000
+  feat/felipe/gold-churn-table-20260408-143000
+  fix/rodrigo/cpf-regex-format-20260409-031500
+```
+
+**Regras:**
+- Branch base: `dev` (nao `main`)
+- Prefixo: `fix/` ou `feat/` + nome do usuario
+- Sufixo: task + timestamp
+- PR description inclui: quem solicitou, de qual canal, diagnostico, confianca
+- Labels: `agent-generated`, `needs-review`
+- Merge para `dev` → review humano → merge para `main`
+
+```python
+# pipeline_lib/agent/github_pr.py (atualizacao)
+def create_fix_pr(user_name: str, ...):
+    branch_name = f"fix/{user_name}/agent-auto-{task}-{timestamp}"
+    # ...
+    pr = repo.create_pull(
+        title=f"fix: [{task}] correcao via agente ({user_name})",
+        body=pr_body,
+        head=branch_name,
+        base="dev",  # NUNCA main
+    )
+    pr.add_to_labels("agent-generated", "needs-review")
 ```
 
 ### 3.6 Auth (RBAC)
@@ -622,33 +710,61 @@ JWT com `company_id` no payload. Toda query filtra por `company_id` via middlewa
 6. Se usuario confirma, LLM chama trigger_pipeline_run
 ```
 
-### 4.3 WhatsApp: navegando entre pipelines
+### 4.3 Multi-canal: navegacao + continuidade cross-channel
+
+**Cenario: Rodrigo navega entre pipelines no WhatsApp**
 
 ```
-Usuario: /pipelines
+Rodrigo (WhatsApp): /pipelines
 Agente:  Pipelines disponiveis:
-           - medallion-whatsapp-seguros (use /resume medallion-whatsapp-seguros)
-           - etl-crm-diario (use /resume etl-crm-diario)
+           - medallion-whatsapp-seguros
+           - etl-crm-diario
+         Use /resume [nome] para conectar.
 
-Usuario: /resume medallion-whatsapp-seguros
+Rodrigo (WhatsApp): /resume medallion-whatsapp-seguros
 Agente:  Conectado ao pipeline *medallion-whatsapp-seguros*.
+         Thread: abc-123
          Status: SUCCESS | Ultimo run: hoje 06:00
          Em que posso ajudar?
 
-Usuario: quantas vendas fechamos ontem?
-Agente:  [LLM consulta gold.funil_vendas via query_delta_table]
-         Ontem tivemos 47 vendas fechadas (taxa de conversao de 23%).
+Rodrigo (WhatsApp): quantas vendas fechamos ontem?
+Agente:  47 vendas fechadas (taxa de conversao de 23%).
          Top agente: agent_lucas_09 com 8 vendas.
+```
 
-Usuario: /resume etl-crm-diario
-Agente:  Conectado ao pipeline *etl-crm-diario*.
-         Status: FAILED | Ultimo run: hoje 03:00
+**Cenario: Rodrigo continua no Discord de onde parou no WhatsApp**
+
+```
+Rodrigo (Discord): /resume medallion-whatsapp-seguros abc-123
+Agente:  Retomando conversa abc-123 (iniciada no WhatsApp).
+         Ultima mensagem: "47 vendas fechadas (taxa de 23%)."
          Em que posso ajudar?
 
-Usuario: o que aconteceu?
-Agente:  [LLM agora usa contexto do etl-crm-diario, nao do medallion]
-         A task de ingestao falhou com: "Connection refused to CRM API"...
+Rodrigo (Discord): detalha por campanha
+Agente:  [LLM tem contexto completo: WhatsApp + Discord]
+         Top campanha: instagram_fev2026 com 12 vendas (25% do total).
 ```
+
+**Cenario: Felipe (mesmo pipeline, contexto isolado)**
+
+```
+Felipe (Telegram): /resume medallion-whatsapp-seguros
+Agente:  Conectado ao pipeline *medallion-whatsapp-seguros*.
+         Thread: def-456  ← UUID DIFERENTE do Rodrigo
+         Status: SUCCESS | Ultimo run: hoje 06:00
+         Em que posso ajudar?
+
+Felipe (Telegram): o pipeline ta lento, o que pode ser?
+Agente:  [LLM usa contexto do pipeline (compartilhado) + conversa do Felipe (isolada)]
+         A ultima run demorou 4min32s (media historica: 2min15s)...
+
+Felipe (Telegram): corrige isso
+Agente:  Criei PR #54: feat/felipe/optimize-silver-dedup-20260408
+         Branch base: dev
+         Aguardando review humano.
+```
+
+**Rodrigo e Felipe nunca veem as conversas um do outro**, mas ambos veem o mesmo estado do pipeline.
 
 ---
 
