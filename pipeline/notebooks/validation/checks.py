@@ -41,10 +41,35 @@ try:
 except Exception:
     pass
 
+# Chaos mode check
+chaos_mode = "off"
+try:
+    chaos_mode = dbutils.jobs.taskValues.get(
+        taskKey="agent_pre", key="chaos_mode", default="off"
+    )
+except Exception:
+    pass
+
 # Inicializa contadores de tempo, erros e warnings
 start_time = time.time()
 errors = []
 warnings = []
+
+# CHAOS: Injeta erro de validacao impossivel de passar
+if chaos_mode == "validation_strict":
+    logger.warning("CHAOS MODE: Injetando validacao impossivel")
+    errors.append(
+        "CHAOS: Threshold impossivel — Silver deve ter exatamente "
+        "o mesmo numero de linhas que Bronze (sem dedup)"
+    )
+    try:
+        dbutils.jobs.taskValues.set(key="status", value="FAIL")
+        dbutils.jobs.taskValues.set(
+            key="error",
+            value="CHAOS: Validacao com threshold impossivel injetada"
+        )
+    except Exception:
+        pass
 
 # COMMAND ----------
 

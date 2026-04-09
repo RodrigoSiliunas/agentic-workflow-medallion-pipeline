@@ -68,6 +68,18 @@ except Exception:
 
 # COMMAND ----------
 
+# DBTITLE 1,Chaos Mode Check
+# Injeta falha controlada se chaos_mode ativado pelo agent_pre
+chaos_mode = "off"
+try:
+    chaos_mode = dbutils.jobs.taskValues.get(
+        taskKey="agent_pre", key="chaos_mode", default="off"
+    )
+except Exception:
+    pass
+
+# COMMAND ----------
+
 # DBTITLE 1,Ler Parquet do S3
 # Marca o inicio para medir duracao total da ingestao
 start_time = time.time()
@@ -76,6 +88,26 @@ start_time = time.time()
 df = lake.read_parquet(bronze_prefix)
 row_count = int(df.count())
 columns = set(df.columns)
+
+# CHAOS: Injeta coluna invalida que quebra schema validation
+if chaos_mode == "bronze_schema":
+    logger.warning("CHAOS MODE: Injetando coluna invalida no DataFrame")
+    from pyspark.sql import functions as F
+    df = df.withColumn("_chaos_invalid_col", F.lit("BUG_INJETADO"))
+    columns = set(df.columns)
+    # Forca o schema validator a rejeitar (coluna com constraint invalida)
+    try:
+        dbutils.jobs.taskValues.set(key="status", value="FAILED")
+        dbutils.jobs.taskValues.set(
+            key="error",
+            value="Schema invalido: coluna _chaos_invalid_col nao pertence ao contrato"
+        )
+    except Exception:
+        pass
+    raise ValueError(
+        "CHAOS: Schema invalido — coluna _chaos_invalid_col "
+        "injetada pelo chaos mode para teste do agente AI"
+    )
 
 logger.info(f"Linhas lidas: {row_count}")
 logger.info(f"Colunas encontradas: {sorted(columns)}")

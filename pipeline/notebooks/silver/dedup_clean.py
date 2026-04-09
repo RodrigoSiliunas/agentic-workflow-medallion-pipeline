@@ -56,6 +56,17 @@ except Exception:
 
 # COMMAND ----------
 
+# DBTITLE 1,Chaos Mode Check
+chaos_mode = "off"
+try:
+    chaos_mode = dbutils.jobs.taskValues.get(
+        taskKey="agent_pre", key="chaos_mode", default="off"
+    )
+except Exception:
+    pass
+
+# COMMAND ----------
+
 # DBTITLE 1,Configuracao de Tabelas
 # Tabela de entrada (Bronze) e saida (Silver)
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
@@ -70,6 +81,22 @@ start_time = time.time()
 df = spark.table(BRONZE_TABLE)
 bronze_count = df.count()
 logger.info(f"Bronze: {bronze_count} linhas")
+
+# CHAOS: Injeta NULLs no conversation_id que quebram o dedup/groupBy
+if chaos_mode == "silver_null":
+    logger.warning("CHAOS MODE: Injetando NULLs em conversation_id")
+    try:
+        dbutils.jobs.taskValues.set(key="status", value="FAILED")
+        dbutils.jobs.taskValues.set(
+            key="error",
+            value="NullPointerException em conversation_id durante dedup"
+        )
+    except Exception:
+        pass
+    raise ValueError(
+        "CHAOS: conversation_id contem NULLs — injetado pelo "
+        "chaos mode para teste do agente AI"
+    )
 
 # COMMAND ----------
 

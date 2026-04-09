@@ -45,6 +45,33 @@ start_time = time.time()
 
 # COMMAND ----------
 
+# DBTITLE 1,Chaos Mode Check
+chaos_mode = "off"
+try:
+    chaos_mode = dbutils.jobs.taskValues.get(
+        taskKey="agent_pre", key="chaos_mode", default="off"
+    )
+except Exception:
+    pass
+
+# CHAOS: Injeta divisao por zero que causa ArithmeticException
+if chaos_mode == "gold_divide_zero":
+    logger.warning("CHAOS MODE: Injetando divisao por zero")
+    try:
+        dbutils.jobs.taskValues.set(key="status", value="FAILED")
+        dbutils.jobs.taskValues.set(
+            key="error",
+            value="ArithmeticException: Division by zero em gold/funnel.py"
+        )
+    except Exception:
+        pass
+    raise ArithmeticError(
+        "CHAOS: Division by zero — injetado pelo chaos mode "
+        "para teste do agente AI"
+    )
+
+# COMMAND ----------
+
 # DBTITLE 1,Carregar Tabelas Silver
 # Carrega mensagens e conversas enriquecidas da camada Silver
 messages = spark.table(f"{CATALOG}.silver.messages_clean")

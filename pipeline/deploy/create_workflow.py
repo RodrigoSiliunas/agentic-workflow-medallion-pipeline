@@ -44,9 +44,11 @@ def create_workflow():
         return f"{repo_path}/notebooks/{name}"
 
     # Parametros compartilhados por todas as tasks
+    # chaos_mode: off por padrao, ativado via trigger_chaos.py
     shared_params = {
         "catalog": CATALOG,
         "scope": SECRET_SCOPE,
+        "chaos_mode": "off",
     }
 
     # ============================================================

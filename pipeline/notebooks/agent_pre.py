@@ -34,10 +34,12 @@ from pipeline_lib.storage import S3Lake
 dbutils.widgets.text("catalog", "medallion", "Catalog Name")
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
 dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")
+dbutils.widgets.text("chaos_mode", "off", "Chaos Mode (off|bronze_schema|silver_null|gold_divide_zero|validation_strict)")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")
 BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")
+CHAOS_MODE = dbutils.widgets.get("chaos_mode")
 
 # Inicializa o lake client (boto3 wrapper) e o logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
@@ -170,6 +172,14 @@ dbutils.jobs.taskValues.set(key="bronze_prefix", value=BRONZE_PREFIX)
 dbutils.jobs.taskValues.set(key="bronze_hash", value=current_hash)
 dbutils.jobs.taskValues.set(key="run_id", value=run_id)
 dbutils.jobs.taskValues.set(key="delta_versions", value=json.dumps(delta_versions))
+dbutils.jobs.taskValues.set(key="chaos_mode", value=CHAOS_MODE)
 
-logger.info(f"Task values setados. run_id={run_id}")
-dbutils.notebook.exit(f"GO: run_id={run_id}, hash={current_hash[:16]}")
+# Alerta visual se chaos mode ativado
+if CHAOS_MODE != "off":
+    print(f"\n{'!'*60}")
+    print(f"  CHAOS MODE ATIVADO: {CHAOS_MODE}")
+    print(f"  Uma falha controlada sera injetada neste pipeline run.")
+    print(f"{'!'*60}\n")
+
+logger.info(f"Task values setados. run_id={run_id}, chaos_mode={CHAOS_MODE}")
+dbutils.notebook.exit(f"GO: run_id={run_id}, hash={current_hash[:16]}, chaos={CHAOS_MODE}")
