@@ -58,7 +58,7 @@ except Exception:
 start_time = time.time()
 
 df = lake.read_parquet(bronze_prefix)
-row_count = df.count()
+row_count = int(df.count())
 columns = set(df.columns)
 
 logger.info(f"Linhas lidas: {row_count}")
@@ -106,7 +106,7 @@ logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
 )
 
 # Verificar resultado
-saved_count = spark.table(BRONZE_TABLE).count()
+saved_count = int(spark.table(BRONZE_TABLE).count())
 logger.info(f"Delta Table salva (UC): {saved_count} linhas")
 
 # 4b. Upload para S3 (data lake persistente, in-memory)

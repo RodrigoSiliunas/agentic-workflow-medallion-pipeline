@@ -73,9 +73,11 @@ class S3Lake:
     def write_parquet(self, df, s3_prefix: str, filename: str = "data.parquet"):
         """Converte Spark DF para parquet e faz upload para S3.
 
-        Fluxo: Spark DataFrame -> pandas -> BytesIO -> S3
+        Fluxo: Spark DataFrame -> collect -> pandas -> BytesIO -> S3
+        Usa collect() + asDict() para evitar PlanMetrics no serverless.
         """
-        pdf = df.toPandas()
+        rows = df.collect()
+        pdf = pd.DataFrame([row.asDict() for row in rows])
         buf = io.BytesIO()
         pdf.to_parquet(buf, index=False)
         buf.seek(0)
