@@ -29,7 +29,7 @@ resource "aws_iam_role" "databricks_cross_account" {
         Sid    = "SelfAssumingRole"
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::051457670776:role/service-roles/${var.project_name}-databricks-role"
+          AWS = "arn:aws:iam::${local.account_id}:role/service-roles/${var.project_name}-databricks-role"
         }
         Action = "sts:AssumeRole"
       }

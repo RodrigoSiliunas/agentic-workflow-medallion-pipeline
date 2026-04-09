@@ -115,7 +115,7 @@ resource "aws_iam_policy" "databricks_sts" {
           "sts:AssumeRole",
           "sts:TagSession",
         ]
-        Resource = "arn:aws:iam::051457670776:role/service-roles/${var.project_name}-databricks-role"
+        Resource = "arn:aws:iam::${local.account_id}:role/service-roles/${var.project_name}-databricks-role"
       }
     ]
   })
@@ -207,7 +207,7 @@ resource "aws_iam_policy" "databricks_ec2_vpc" {
         Sid    = "IAMPassRole"
         Effect = "Allow"
         Action = "iam:PassRole"
-        Resource = "arn:aws:iam::051457670776:role/service-roles/${var.project_name}-*"
+        Resource = "arn:aws:iam::${local.account_id}:role/service-roles/${var.project_name}-*"
       },
       {
         Sid    = "IAMCreateServiceLinkedRole"
@@ -254,8 +254,8 @@ resource "aws_iam_policy" "databricks_root_storage" {
           "s3:GetBucketLocation",
         ]
         Resource = [
-          "arn:aws:s3:::namastex-databricks-root",
-          "arn:aws:s3:::namastex-databricks-root/*",
+          "arn:aws:s3:::${var.databricks_root_bucket}",
+          "arn:aws:s3:::${var.databricks_root_bucket}/*",
         ]
       }
     ]

@@ -26,6 +26,7 @@ from databricks.sdk.service.jobs import (
 ADMIN_EMAIL = os.environ.get("PIPELINE_ADMIN_EMAIL", "administrator@idlehub.com.br")
 CATALOG = os.environ.get("PIPELINE_CATALOG", "medallion")
 SECRET_SCOPE = os.environ.get("PIPELINE_SECRET_SCOPE", "medallion-pipeline")
+CLUSTER_ID = os.environ.get("PIPELINE_CLUSTER_ID", "")
 
 
 def create_workflow():
@@ -51,24 +52,35 @@ def create_workflow():
         "chaos_mode": "off",
     }
 
+    # Cluster: se PIPELINE_CLUSTER_ID definido, usa cluster existente
+    # Caso contrario, roda em serverless
+    cluster_kwargs = {}
+    if CLUSTER_ID:
+        cluster_kwargs["existing_cluster_id"] = CLUSTER_ID
+        print(f"  Cluster: {CLUSTER_ID}")
+    else:
+        print("  Compute: serverless")
+
     # ============================================================
-    # TASKS — Medallion Pipeline (Bronze → Silver → Gold)
+    # TASKS — Medallion Pipeline (Bronze > Silver > Gold)
     # ============================================================
     tasks = [
         Task(
             task_key="agent_pre",
-            description="Pre-check: fingerprint S3, captura versoes Delta, decide se processa",
+            description="Pre-check: fingerprint S3, captura versoes Delta",
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("agent_pre"),
                 base_parameters={**shared_params, "bronze_prefix": "bronze/"},
             ),
             max_retries=1,
-            timeout_seconds=300,  # 5 min
+            timeout_seconds=600,  # 10 min (inclui cold start)
         ),
         Task(
             task_key="bronze_ingestion",
-            description="Ingestao: S3 parquet → Delta Table bronze.conversations",
+            description="Ingestao: S3 parquet -> Delta bronze.conversations",
             depends_on=[TaskDependency(task_key="agent_pre")],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("bronze/ingest"),
                 base_parameters={**shared_params, "bronze_prefix": "bronze/"},
@@ -78,8 +90,9 @@ def create_workflow():
         ),
         Task(
             task_key="silver_dedup",
-            description="Dedup + Clean: remove sent+delivered duplicados, normaliza nomes",
+            description="Dedup + Clean: remove duplicados, normaliza nomes",
             depends_on=[TaskDependency(task_key="bronze_ingestion")],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("silver/dedup_clean"),
                 base_parameters=shared_params,
@@ -89,8 +102,9 @@ def create_workflow():
         ),
         Task(
             task_key="silver_entities",
-            description="Entity extraction (CPF/email/phone/plate) + masking + redaction",
+            description="Entity extraction + masking + redaction",
             depends_on=[TaskDependency(task_key="silver_dedup")],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("silver/entities_mask"),
                 base_parameters=shared_params,
@@ -102,6 +116,7 @@ def create_workflow():
             task_key="silver_enrichment",
             description="Metricas por conversa: duracao, mensagens, response time",
             depends_on=[TaskDependency(task_key="silver_dedup")],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("silver/enrichment"),
                 base_parameters=shared_params,
@@ -111,11 +126,12 @@ def create_workflow():
         ),
         Task(
             task_key="gold_analytics",
-            description="12 notebooks analiticos: funnel, sentiment, lead scoring, etc.",
+            description="12 notebooks analiticos sequenciais",
             depends_on=[
                 TaskDependency(task_key="silver_entities"),
                 TaskDependency(task_key="silver_enrichment"),
             ],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("gold/analytics"),
                 base_parameters=shared_params,
@@ -125,8 +141,9 @@ def create_workflow():
         ),
         Task(
             task_key="quality_validation",
-            description="Quality checks: row counts, null rates, cross-layer consistency",
+            description="Quality checks: row counts, null rates, consistency",
             depends_on=[TaskDependency(task_key="gold_analytics")],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("validation/checks"),
                 base_parameters=shared_params,
@@ -136,8 +153,9 @@ def create_workflow():
         ),
         Task(
             task_key="agent_post",
-            description="Post-check: recovery, rollback Delta, AI diagnosis, notifications",
+            description="Post-check: recovery, rollback, AI diagnosis",
             depends_on=[TaskDependency(task_key="quality_validation")],
+            **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("agent_post"),
                 base_parameters=shared_params,

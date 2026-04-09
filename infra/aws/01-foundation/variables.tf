@@ -43,3 +43,9 @@ variable "bucket_name" {
   type        = string
   default     = "namastex-medallion-datalake"
 }
+
+variable "databricks_root_bucket" {
+  description = "Nome do S3 bucket para Databricks root storage (assets, libs, logs)"
+  type        = string
+  default     = "namastex-databricks-root"
+}
