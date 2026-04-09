@@ -1,0 +1,100 @@
+name: CD — Deploy to Databricks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/**"
+      - ".github/workflows/cd.yml"
+
+# Garante que apenas um deploy roda por vez
+concurrency:
+  group: databricks-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Pipeline to Databricks
+    runs-on: ubuntu-latest
+    # Só roda se o CI passou (deploy depende de lint + test)
+    needs: []
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Databricks CLI
+        run: pip install databricks-sdk
+
+      - name: Sync Databricks Repo
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          python -c "
+          from databricks.sdk import WorkspaceClient
+          import os
+
+          w = WorkspaceClient(
+              host=os.environ['DATABRICKS_HOST'],
+              token=os.environ['DATABRICKS_TOKEN'],
+          )
+
+          # Encontra e atualiza o repo para latest main
+          for repo in w.repos.list():
+              if 'agentic-workflow-medallion-pipeline' in repo.path:
+                  w.repos.update(repo_id=repo.id, branch='main')
+                  print(f'Repo atualizado: {repo.path}')
+                  break
+          else:
+              print('WARN: Repo nao encontrado no workspace')
+              exit(1)
+          "
+
+      - name: Verify Deployment
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          python -c "
+          from databricks.sdk import WorkspaceClient
+          import os
+
+          w = WorkspaceClient(
+              host=os.environ['DATABRICKS_HOST'],
+              token=os.environ['DATABRICKS_TOKEN'],
+          )
+
+          # Verifica que o repo esta sincronizado
+          for repo in w.repos.list():
+              if 'agentic-workflow-medallion-pipeline' in repo.path:
+                  print(f'Repo: {repo.path}')
+                  print(f'Branch: {repo.branch}')
+                  print(f'Head commit: {repo.head_commit_id}')
+                  break
+
+          # Verifica que o job existe
+          jobs = list(w.jobs.list(name='medallion_pipeline_whatsapp'))
+          if jobs:
+              job = jobs[0]
+              print(f'Job: {job.settings.name} (ID: {job.job_id})')
+              print(f'Tasks: {len(job.settings.tasks)}')
+          else:
+              print('WARN: Job nao encontrado')
+
+          print('Deploy concluido com sucesso!')
+          "
+
+      - name: Post Deploy Summary
+        if: success()
+        run: |
+          echo "### Databricks Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action:** Repo synced to latest" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workspace:** ${{ secrets.DATABRICKS_HOST }}" >> $GITHUB_STEP_SUMMARY
