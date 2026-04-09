@@ -72,32 +72,13 @@ log.append(f"Observer iniciado: {datetime.now().isoformat()}")
 # Modo 2: busca falhas recentes (execucao manual/debug)
 if SOURCE_RUN_ID:
     log.append(f"Modo: triggered (run_id={SOURCE_RUN_ID})")
-    run = w.jobs.get_run(run_id=int(SOURCE_RUN_ID))
-    job_name = run.run_name or "unknown"
-
-    # Coletar tasks que falharam
-    failed_tasks = []
-    errors = {}
-    for task in run.tasks:
-        result = str(task.state.result_state) if task.state else ""
-        if "FAILED" in result:
-            try:
-                out = w.jobs.get_run_output(run_id=task.run_id)
-                error = out.error or "Unknown"
-            except Exception:
-                error = "Could not retrieve"
-            failed_tasks.append(task.task_key)
-            errors[task.task_key] = error[:500]
-
-    failures = [{
-        "job_id": int(SOURCE_JOB_ID) if SOURCE_JOB_ID else 0,
-        "job_name": job_name,
-        "run_id": int(SOURCE_RUN_ID),
-        "failed_tasks": failed_tasks,
-        "errors": errors,
-        "timestamp": str(run.start_time),
-    }]
-    log.append(f"Tasks com falha: {failed_tasks}")
+    # Usa o metodo do observer para evitar duplicacao de logica
+    failure = observer.build_failure_from_run(
+        run_id=int(SOURCE_RUN_ID),
+        job_id=int(SOURCE_JOB_ID) if SOURCE_JOB_ID else 0,
+    )
+    failures = [failure]
+    log.append(f"Tasks com falha: {failure['failed_tasks']}")
 else:
     log.append("Modo: busca automatica (ultimas 2h)")
     failures = observer.find_recent_failures(hours=2)

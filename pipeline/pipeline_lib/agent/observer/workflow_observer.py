@@ -1,11 +1,14 @@
 """Workflow Observer — agente generico que monitora workflows Databricks.
 
 Detecta falhas em qualquer workflow do workspace, coleta contexto
-completo (logs, codigo, schema) e aciona o LLM para diagnostico + PR.
+completo (logs, codigo, schema) para enviar ao LLM provider.
 
-Desacoplado do pipeline — funciona como workflow independente.
+Desacoplado de qualquer pipeline especifico.
 """
 
+from __future__ import annotations
+
+import base64
 import logging
 from datetime import datetime, timedelta
 
@@ -15,33 +18,25 @@ logger = logging.getLogger("workflow_observer")
 
 
 class WorkflowObserver:
-    """Observa workflows Databricks e aciona agente AI em falhas."""
+    """Observa workflows Databricks e coleta contexto de falhas."""
 
     def __init__(self, w: WorkspaceClient):
         self.w = w
 
     def find_recent_failures(
-        self, hours: int = 1, workflow_name: str = None
+        self,
+        hours: int = 1,
+        workflow_name: str | None = None,
     ) -> list[dict]:
-        """Encontra runs que falharam nas ultimas N horas.
-
-        Args:
-            hours: janela de tempo para buscar falhas
-            workflow_name: filtrar por nome do workflow (None = todos)
-
-        Returns:
-            Lista de dicts com job_id, run_id, job_name, failed_tasks, errors
-        """
+        """Encontra runs que falharam nas ultimas N horas."""
         failures = []
         start_time = int(
             (datetime.now() - timedelta(hours=hours)).timestamp() * 1000
         )
 
-        # Listar todos os jobs (ou filtrar por nome)
         jobs = list(self.w.jobs.list(name=workflow_name))
 
         for job in jobs:
-            # Buscar runs recentes
             runs = list(
                 self.w.jobs.list_runs(
                     job_id=job.job_id,
@@ -49,120 +44,128 @@ class WorkflowObserver:
                     limit=5,
                 )
             )
-
             for run in runs:
                 result = str(run.state.result_state) if run.state else ""
-                if "FAILED" in result or "SUCCESS_WITH_FAILURES" in result:
-                    # Coletar detalhes das tasks que falharam
-                    full_run = self.w.jobs.get_run(run_id=run.run_id)
-                    failed_tasks = []
-                    errors = {}
+                if "FAILED" not in result and "WITH_FAILURES" not in result:
+                    continue
 
-                    for task in full_run.tasks:
-                        task_result = str(task.state.result_state) if task.state else ""
-                        if "FAILED" in task_result:
-                            try:
-                                out = self.w.jobs.get_run_output(
-                                    run_id=task.run_id
-                                )
-                                error = out.error or "Unknown error"
-                            except Exception:
-                                error = "Could not retrieve error"
-                            failed_tasks.append(task.task_key)
-                            errors[task.task_key] = error[:500]
-
-                    if failed_tasks:
-                        failures.append({
-                            "job_id": job.job_id,
-                            "job_name": job.settings.name,
-                            "run_id": run.run_id,
-                            "failed_tasks": failed_tasks,
-                            "errors": errors,
-                            "timestamp": str(run.start_time),
-                        })
+                failure = self.build_failure_from_run(
+                    run_id=run.run_id,
+                    job_id=job.job_id,
+                    job_name=job.settings.name,
+                )
+                if failure["failed_tasks"]:
+                    failures.append(failure)
 
         return failures
 
-    def collect_notebook_code(self, run_id: int) -> dict[str, str]:
-        """Le o codigo fonte de cada notebook de um run.
+    def build_failure_from_run(
+        self,
+        run_id: int,
+        job_id: int = 0,
+        job_name: str = "unknown",
+    ) -> dict:
+        """Constroi dict de falha a partir de um run_id.
 
-        Usa o Databricks Workspace API para ler os notebooks
-        diretamente do Repos — funciona com qualquer workflow.
-
-        Returns:
-            Dict {task_key: codigo_fonte}
+        Pode ser chamado diretamente (modo triggered) ou via
+        find_recent_failures (modo busca).
         """
+        run = self.w.jobs.get_run(run_id=run_id)
+        failed_tasks = []
+        errors = {}
+
+        for task in run.tasks or []:
+            task_result = str(task.state.result_state) if task.state else ""
+            if "FAILED" not in task_result:
+                continue
+            try:
+                out = self.w.jobs.get_run_output(run_id=task.run_id)
+                error = out.error or "Unknown error"
+            except Exception:
+                error = "Could not retrieve error"
+            failed_tasks.append(task.task_key)
+            errors[task.task_key] = error[:500]
+
+        return {
+            "job_id": job_id,
+            "job_name": job_name or run.run_name or "unknown",
+            "run_id": run_id,
+            "failed_tasks": failed_tasks,
+            "errors": errors,
+            "timestamp": str(run.start_time),
+        }
+
+    def collect_notebook_code(self, run_id: int) -> dict[str, str]:
+        """Le codigo fonte de cada notebook via Workspace API."""
         codes = {}
         run = self.w.jobs.get_run(run_id=run_id)
 
-        for task in run.tasks:
-            if task.notebook_task:
-                nb_path = task.notebook_task.notebook_path
-                try:
-                    # Exporta o notebook como SOURCE (codigo Python)
-                    export = self.w.workspace.export(
-                        path=nb_path, format="SOURCE"
-                    )
-                    if export.content:
-                        import base64
-                        code = base64.b64decode(export.content).decode("utf-8")
-                        codes[task.task_key] = code
-                        logger.info(
-                            f"Codigo coletado: {task.task_key} "
-                            f"({len(code)} chars)"
-                        )
-                except Exception as e:
-                    codes[task.task_key] = f"[Erro ao ler {nb_path}: {e}]"
-                    logger.warning(f"Nao leu {nb_path}: {e}")
+        for task in run.tasks or []:
+            if not task.notebook_task:
+                continue
+            nb_path = task.notebook_task.notebook_path
+            try:
+                export = self.w.workspace.export(
+                    path=nb_path, format="SOURCE"
+                )
+                if export.content:
+                    code = base64.b64decode(export.content).decode("utf-8")
+                    codes[task.task_key] = code
+                    logger.info(f"Codigo: {task.task_key} ({len(code)} chars)")
+            except Exception as e:
+                codes[task.task_key] = f"[Erro ao ler {nb_path}: {e}]"
+                logger.warning(f"Nao leu {nb_path}: {e}")
 
         return codes
 
-    def collect_schema_info(self, catalog: str = "medallion") -> str:
-        """Coleta schema detalhado de todas as tabelas do catalogo.
+    def collect_schema_info(
+        self,
+        catalog: str = "medallion",
+        schemas: list[str] | None = None,
+    ) -> str:
+        """Coleta schema detalhado das tabelas do catalogo.
 
-        Returns:
-            String formatada com tabela: [col:tipo, ...]
+        Args:
+            catalog: Nome do catalogo no Unity Catalog
+            schemas: Lista de schemas a coletar. Se None, descobre automaticamente.
         """
+        # Se nao especificado, descobre schemas do catalogo
+        if schemas is None:
+            try:
+                discovered = list(self.w.schemas.list(catalog_name=catalog))
+                schemas = [s.name for s in discovered if s.name != "information_schema"]
+            except Exception:
+                schemas = []
+
         parts = []
-        for schema in ["bronze", "silver", "gold", "pipeline"]:
+        for schema in schemas:
             try:
                 tables = list(
-                    self.w.tables.list(
-                        catalog_name=catalog, schema_name=schema
-                    )
+                    self.w.tables.list(catalog_name=catalog, schema_name=schema)
                 )
                 for t in tables:
-                    cols = []
-                    if t.columns:
-                        cols = [
-                            f"{c.name}:{c.type_text}"
-                            for c in t.columns[:20]
-                        ]
-                    parts.append(
-                        f"{catalog}.{schema}.{t.name}: [{', '.join(cols)}]"
-                    )
+                    cols = [
+                        f"{c.name}:{c.type_text}"
+                        for c in (t.columns or [])[:20]
+                    ]
+                    parts.append(f"{catalog}.{schema}.{t.name}: [{', '.join(cols)}]")
             except Exception:
                 parts.append(f"{catalog}.{schema}: [indisponivel]")
+
         return "\n".join(parts)
 
     def build_context(self, failure: dict) -> dict:
-        """Constroi o contexto completo para o LLM.
-
-        Combina: erros, codigo fonte, schema, estado do run.
-        """
+        """Constroi contexto completo para o LLM provider."""
         run_id = failure["run_id"]
         codes = self.collect_notebook_code(run_id)
         schema = self.collect_schema_info()
 
-        # Pegar codigo da primeira task que falhou
         first_failed = failure["failed_tasks"][0]
-        notebook_code = codes.get(first_failed, "[codigo nao disponivel]")
-        error_msg = failure["errors"].get(first_failed, "Unknown")
 
         return {
             "failed_task": first_failed,
-            "error_message": error_msg,
-            "notebook_code": notebook_code,
+            "error_message": failure["errors"].get(first_failed, "Unknown"),
+            "notebook_code": codes.get(first_failed, "[codigo nao disponivel]"),
             "schema_info": schema,
             "all_codes": codes,
             "pipeline_state": {
