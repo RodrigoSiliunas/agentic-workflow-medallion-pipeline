@@ -21,8 +21,8 @@ resource "aws_iam_policy" "databricks_s3_access" {
           "s3:GetBucketLocation",
         ]
         Resource = [
-          "arn:aws:s3:::${var.project_name}-datalake",
-          "arn:aws:s3:::${var.project_name}-datalake/*",
+          "arn:aws:s3:::${var.bucket_name}",
+          "arn:aws:s3:::${var.bucket_name}/*",
         ]
       },
       {
@@ -63,8 +63,8 @@ resource "aws_iam_policy" "pipeline_s3_access" {
           "s3:ListBucketVersions",
         ]
         Resource = [
-          "arn:aws:s3:::${var.project_name}-datalake",
-          "arn:aws:s3:::${var.project_name}-datalake/*",
+          "arn:aws:s3:::${var.bucket_name}",
+          "arn:aws:s3:::${var.bucket_name}/*",
         ]
       }
     ]
