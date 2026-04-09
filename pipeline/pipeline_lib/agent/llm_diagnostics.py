@@ -1,12 +1,17 @@
-"""Modulo de diagnostico de erros via Claude API.
+"""Modulo de diagnostico de erros via Claude API (Opus 4.6).
 
-Analisa stack traces, codigo e contexto do pipeline para propor correcoes.
+Analisa stack traces, codigo, schema e contexto do pipeline
+para propor correcoes precisas com codigo completo.
 """
 
 import json
 import os
 
 import anthropic
+
+# Modelo: Opus 4.6 para maxima capacidade de diagnostico
+MODEL = "claude-opus-4-20250514"
+MAX_TOKENS = 16000
 
 
 def get_client() -> anthropic.Anthropic:
@@ -22,60 +27,81 @@ def diagnose_error(
     schema_info: str,
     pipeline_state: dict,
 ) -> dict:
-    """Envia contexto do erro para Claude e recebe diagnostico + correcao.
+    """Envia contexto completo do erro para Claude Opus e recebe
+    diagnostico estruturado + codigo corrigido.
 
-    Retorna dict com: diagnosis, root_cause, fix_description, fixed_code, confidence.
+    Args:
+        error_message: Mensagem de erro principal
+        stack_trace: Stack trace completo (pode ser diferente do error)
+        failed_task: Nome da task que falhou (ex: bronze_ingestion)
+        notebook_code: Codigo fonte completo do notebook
+        schema_info: Schema detalhado das tabelas (DESCRIBE + colunas)
+        pipeline_state: Dict com run_id, task_results, delta_versions, etc.
+
+    Returns:
+        Dict com: diagnosis, root_cause, fix_description, fixed_code,
+                  file_to_fix, confidence, requires_human_review
     """
     client = get_client()
 
-    system_prompt = """Voce e um engenheiro de dados senior especializado em PySpark, Delta Lake e Databricks.
-Seu trabalho e diagnosticar erros em pipelines de dados e propor correcoes de codigo.
-
-Regras:
-- Responda SEMPRE em JSON valido
-- Seja especifico sobre a causa raiz
-- Proponha codigo corrigido que resolva o problema
-- Indique seu nivel de confianca (0.0 a 1.0)
-- Se nao tiver certeza, diga e sugira investigacao adicional
-- NUNCA invente informacoes sobre o schema ou dados"""
+    system_prompt = (
+        "Voce e um engenheiro de dados senior especializado em "
+        "PySpark, Delta Lake, Databricks e pipelines Medallion.\n\n"
+        "Seu trabalho e diagnosticar erros em pipelines de dados "
+        "e propor correcoes de codigo COMPLETAS e funcionais.\n\n"
+        "Regras:\n"
+        "- Responda SEMPRE em JSON valido\n"
+        "- Seja especifico e tecnico sobre a causa raiz\n"
+        "- O campo fixed_code deve conter o notebook COMPLETO "
+        "corrigido (nao apenas o trecho alterado)\n"
+        "- O campo file_to_fix deve ser o path relativo ao repo "
+        "(ex: pipeline/notebooks/bronze/ingest.py)\n"
+        "- Indique confianca realista (0.0 a 1.0)\n"
+        "- Se nao tiver certeza, diga e sugira investigacao\n"
+        "- NUNCA invente informacoes sobre schema ou dados\n"
+        "- Considere que o pipeline roda em Databricks serverless "
+        "ou cluster AWS com acesso S3 via boto3"
+    )
 
     user_prompt = f"""O pipeline Medallion falhou. Preciso de diagnostico e correcao.
 
 ## Task que falhou
 {failed_task}
 
-## Erro
+## Mensagem de erro
 {error_message}
 
 ## Stack Trace
 {stack_trace}
 
-## Codigo do notebook que falhou
+## Codigo fonte do notebook que falhou
 ```python
 {notebook_code}
 ```
 
-## Schema das tabelas (Unity Catalog)
+## Schema das tabelas no Unity Catalog
 {schema_info}
 
-## Estado do pipeline
-{json.dumps(pipeline_state, indent=2)}
+## Estado completo do pipeline
+```json
+{json.dumps(pipeline_state, indent=2, default=str)}
+```
 
-## Responda em JSON com esta estrutura:
+## Responda em JSON com esta estrutura EXATA:
 {{
-    "diagnosis": "Descricao clara do que aconteceu",
-    "root_cause": "Causa raiz tecnica",
-    "fix_description": "O que precisa ser alterado e por que",
-    "fixed_code": "Codigo completo do notebook corrigido (ou null se nao aplicavel)",
-    "file_to_fix": "Path do arquivo a corrigir (ex: notebooks/silver/dedup_clean.py)",
-    "confidence": 0.0-1.0,
-    "requires_human_review": true/false,
+    "diagnosis": "Descricao clara e tecnica do que aconteceu",
+    "root_cause": "Causa raiz tecnica especifica",
+    "fix_description": "O que foi alterado no codigo e por que",
+    "fixed_code": "Codigo COMPLETO do notebook corrigido",
+    "file_to_fix": "pipeline/notebooks/path/to/file.py",
+    "confidence": 0.0,
+    "requires_human_review": true,
     "additional_notes": "Notas extras ou investigacoes sugeridas"
 }}"""
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=8000,
+        model=MODEL,
+        max_tokens=MAX_TOKENS,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -83,25 +109,34 @@ Regras:
     # Extrair JSON da resposta
     text = response.content[0].text
     try:
-        # Tentar parsear JSON direto
         result = json.loads(text)
     except json.JSONDecodeError:
         # Tentar extrair JSON de dentro de markdown code block
         import re
 
-        json_match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+        json_match = re.search(
+            r"```(?:json)?\s*(.*?)```", text, re.DOTALL
+        )
         if json_match:
             result = json.loads(json_match.group(1))
         else:
             result = {
-                "diagnosis": text,
-                "root_cause": "Nao foi possivel parsear resposta estruturada",
-                "fix_description": text,
+                "diagnosis": text[:500],
+                "root_cause": "Resposta nao estruturada do LLM",
+                "fix_description": text[:500],
                 "fixed_code": None,
                 "file_to_fix": None,
                 "confidence": 0.3,
                 "requires_human_review": True,
-                "additional_notes": "Resposta do LLM nao estava em JSON",
+                "additional_notes": (
+                    "Resposta do LLM nao estava em JSON. "
+                    "Raw response truncada incluida no diagnosis."
+                ),
             }
+
+    # Metadata da chamada para auditoria
+    result["_model"] = MODEL
+    result["_input_tokens"] = response.usage.input_tokens
+    result["_output_tokens"] = response.usage.output_tokens
 
     return result
