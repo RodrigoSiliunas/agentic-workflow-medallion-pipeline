@@ -71,8 +71,9 @@ spark.sql(f"""
 # ============================================================
 def load_state() -> dict:
     if spark.catalog.tableExists(STATE_TABLE):
+        from pyspark.sql import functions as F
         row = spark.table(STATE_TABLE).orderBy(
-            spark.table(STATE_TABLE)["run_at"].desc()
+            F.col("run_at").desc()
         ).first()
         if row:
             return row.asDict()
