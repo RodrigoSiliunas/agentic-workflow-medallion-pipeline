@@ -98,5 +98,14 @@ class S3Lake:
         return items
 
     def make_temp_dir(self, prefix: str = "pipeline_") -> str:
-        """Cria diretorio temporario para processamento local."""
-        return tempfile.mkdtemp(prefix=prefix)
+        """Cria diretorio temporario em Volumes (acessivel pelo Spark serverless).
+
+        Serverless compute nao tem acesso ao /tmp local nem ao DBFS.
+        Volumes sao o unico filesystem acessivel por boto3 E por Spark.
+        """
+        import uuid
+
+        vol_base = "/Volumes/medallion/pipeline/tmp"
+        tmp_path = f"{vol_base}/{prefix}{uuid.uuid4().hex[:8]}"
+        os.makedirs(tmp_path, exist_ok=True)
+        return tmp_path
