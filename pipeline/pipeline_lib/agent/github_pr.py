@@ -32,7 +32,7 @@ def create_fix_pr(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     branch_name = f"fix/agent-auto-{failed_task.replace('_', '-')}-{timestamp}"
 
-    # Criar branch a partir de main
+    # Criar branch a partir de main (PRs vao para dev)
     main_ref = repo.get_git_ref("heads/main")
     repo.create_git_ref(f"refs/heads/{branch_name}", main_ref.object.sha)
 
@@ -80,11 +80,19 @@ def create_fix_pr(
 🤖 PR criado automaticamente pelo **Pipeline Agent** via Claude API.
 """
 
+    # PRs do agente vao para dev (nunca direto para main)
+    base_branch = "dev"
+    try:
+        repo.get_branch(base_branch)
+    except Exception:
+        # Se branch dev nao existe, cria a partir de main
+        repo.create_git_ref(f"refs/heads/{base_branch}", main_ref.object.sha)
+
     pr = repo.create_pull(
         title=f"fix: [{failed_task}] correcao automatica do agente",
         body=pr_body,
         head=branch_name,
-        base="main",
+        base=base_branch,
     )
 
     return {

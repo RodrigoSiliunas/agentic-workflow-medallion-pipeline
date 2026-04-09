@@ -44,6 +44,12 @@ SCOPE = dbutils.widgets.get("scope")
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("agent_post")
 
+# Carregar credenciais do agente AI a partir dos Databricks Secrets
+# Necessario para o LLM diagnostics (Claude API) e GitHub PR
+os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
+os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
+os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
+
 # COMMAND ----------
 
 # DBTITLE 1,Constantes e Tabelas de Apoio
@@ -283,6 +289,16 @@ def attempt_recovery(failed: list) -> list:
                     actions.append(f"Rollback {tbl} para versao {ver}")
 
     return actions
+
+# COMMAND ----------
+
+# DBTITLE 1,Instalar Dependencias do Agente AI
+# anthropic: Claude API para diagnostico inteligente de erros
+# PyGithub: criacao automatica de PRs com correcoes
+
+# COMMAND ----------
+
+# MAGIC %pip install anthropic PyGithub --quiet
 
 # COMMAND ----------
 

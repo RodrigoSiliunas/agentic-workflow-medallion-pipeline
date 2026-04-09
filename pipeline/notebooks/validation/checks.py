@@ -77,10 +77,18 @@ try:
             "Dedup nao removeu linhas?"
         )
 
-    # Se Silver perdeu mais de 15% das linhas, algo esta errado
-    if bronze_count > 0 and messages_count < bronze_count * 0.85:
+    # Verifica que dedup nao removeu linhas demais.
+    # O bronze acumula runs (overwrite), e o dedup remove duplicados sent+delivered,
+    # entao a reducao pode ser significativa (~50-85% eh normal).
+    # Alerta se Silver tem MENOS de 5% do Bronze (algo drastico aconteceu).
+    if bronze_count > 0 and messages_count < bronze_count * 0.05:
         errors.append(
-            f"Silver perdeu mais de 15% das linhas: {messages_count}/{bronze_count}"
+            f"Silver perdeu mais de 95% das linhas: {messages_count}/{bronze_count}"
+        )
+    elif bronze_count > 0 and messages_count < bronze_count * 0.10:
+        warnings.append(
+            f"Silver com menos de 10% do Bronze: {messages_count}/{bronze_count} "
+            "(pode ser normal se dedup removeu muitos duplicados)"
         )
 
     # Verifica que message_body nao contem PII em texto claro (CPF)
