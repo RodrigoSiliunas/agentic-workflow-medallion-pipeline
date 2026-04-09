@@ -5,29 +5,34 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("silver.enrichment")
 
 # COMMAND ----------
 
-# ============================================================
-# IMPORTAR S3Lake (boto3 + Databricks Secrets)
-# ============================================================
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-from pipeline_lib.storage import S3Lake
-
-lake = S3Lake(dbutils, spark)
-
-# COMMAND ----------
-
-# ============================================================
-# TASK VALUES
-# ============================================================
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -39,10 +44,6 @@ except Exception:
 
 # COMMAND ----------
 
-# ============================================================
-# CONFIGURACAO
-# ============================================================
-CATALOG = "medallion"
 SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"
 SILVER_CONVERSATIONS = f"{CATALOG}.silver.conversations_enriched"
 
@@ -50,16 +51,20 @@ start_time = time.time()
 
 # COMMAND ----------
 
-# ============================================================
-# 1. LER MESSAGES_CLEAN
-# ============================================================
+# MAGIC %md
+# MAGIC ## Ler Messages Clean
+
+# COMMAND ----------
+
 df = spark.table(SILVER_MESSAGES)
 
 # COMMAND ----------
 
-# ============================================================
-# 2. AGREGAR METRICAS POR CONVERSA
-# ============================================================
+# MAGIC %md
+# MAGIC ## Agregar Metricas por Conversa
+
+# COMMAND ----------
+
 conversations = df.groupBy("conversation_id").agg(
     F.count("*").alias("total_messages"),
     F.sum(F.when(F.col("direction") == "inbound", 1).otherwise(0)).alias("inbound_count"),
@@ -80,7 +85,6 @@ conversations = df.groupBy("conversation_id").agg(
     F.collect_set("message_type").alias("message_types_used"),
 )
 
-# Duração da conversa em minutos
 conversations = conversations.withColumn(
     "duration_minutes",
     (F.unix_timestamp("last_message_at") - F.unix_timestamp("first_message_at")) / 60,
@@ -88,10 +92,11 @@ conversations = conversations.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. SALVAR (UC + S3)
-# ============================================================
-# 3a. Unity Catalog
+# MAGIC %md
+# MAGIC ## Salvar (UC + S3)
+
+# COMMAND ----------
+
 (
     conversations.write.format("delta")
     .mode("overwrite")
@@ -101,7 +106,6 @@ conversations = conversations.withColumn(
 
 conv_count = spark.table(SILVER_CONVERSATIONS).count()
 
-# 3b. Upload para S3 (in-memory)
 lake.write_parquet(conversations, "silver/conversations_enriched/")
 logger.info("Parquet uploaded para S3 silver/conversations_enriched/")
 

@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Gold: Sentiment Analysis (ML — pysentimiento)
+# MAGIC # Gold: Sentiment Analysis (ML -- pysentimiento)
 # MAGIC Upgrade da heuristica para modelo BERT pre-treinado em pt-BR.
 # MAGIC
 # MAGIC **Pre-requisito**: instalar no cluster:
@@ -14,41 +14,56 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 from pyspark.sql.types import FloatType, StringType
 
-logger = logging.getLogger("gold.sentiment_ml")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.sentiment_ml")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. CRIAR MODELO DE SENTIMENTO (broadcast para workers)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Criar Modelo de Sentimento (broadcast para workers)
+
+# COMMAND ----------
+
 from pysentimiento import create_analyzer
 
 analyzer = create_analyzer(task="sentiment", lang="pt")
 
-# Broadcast do analyzer para os workers
 analyzer_bc = spark.sparkContext.broadcast(analyzer)
 
 # COMMAND ----------
 
-# ============================================================
-# 2. PANDAS UDF PARA SENTIMENTO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Pandas UDF para Sentimento
+
+# COMMAND ----------
+
 import pandas as pd
 
 
@@ -62,8 +77,7 @@ def sentiment_score_udf(texts: pd.Series) -> pd.Series:
             scores.append(0.0)
             continue
         try:
-            result = model.predict(text[:512])  # Limitar a 512 tokens
-            # pysentimiento retorna probas para POS, NEG, NEU
+            result = model.predict(text[:512])
             pos = result.probas.get("POS", 0)
             neg = result.probas.get("NEG", 0)
             scores.append(round(pos - neg, 3))
@@ -91,9 +105,11 @@ def sentiment_label_udf(texts: pd.Series) -> pd.Series:
 
 # COMMAND ----------
 
-# ============================================================
-# 3. APLICAR SENTIMENTO NAS MENSAGENS INBOUND
-# ============================================================
+# MAGIC %md
+# MAGIC ## Aplicar Sentimento nas Mensagens Inbound
+
+# COMMAND ----------
+
 inbound = messages.filter(
     (F.col("direction") == "inbound")
     & (F.col("message_body").isNotNull())
@@ -109,9 +125,11 @@ msg_sentiment = inbound.withColumns(
 
 # COMMAND ----------
 
-# ============================================================
-# 4. AGREGAR POR CONVERSA
-# ============================================================
+# MAGIC %md
+# MAGIC ## Agregar por Conversa
+
+# COMMAND ----------
+
 conv_sentiment = msg_sentiment.groupBy("conversation_id").agg(
     F.avg("ml_sentiment_score").alias("sentiment_score"),
     F.count("*").alias("inbound_messages"),
@@ -133,15 +151,16 @@ conv_sentiment = conv_sentiment.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 5. SALVAR (sobrescreve a tabela de sentimento heuristico)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar (sobrescreve tabela de sentimento heuristico)
+
+# COMMAND ----------
+
 GOLD_TABLE = f"{CATALOG}.gold.sentiment"
 conv_sentiment.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(conv_sentiment, "gold/sentiment/")
 
 duration = round(time.time() - start_time, 2)

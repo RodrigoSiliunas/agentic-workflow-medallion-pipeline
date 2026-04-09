@@ -1,11 +1,18 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Quality Validation
-# MAGIC Verifica integridade Bronze→Silver→Gold apos cada execucao.
+# MAGIC Verifica integridade Bronze -> Silver -> Gold apos cada execucao.
+
+# COMMAND ----------
+
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+
+CATALOG = dbutils.widgets.get("catalog")
 
 # COMMAND ----------
 
 import logging
+import re
 import time
 
 from pyspark.sql import functions as F
@@ -14,9 +21,6 @@ logger = logging.getLogger("validation.checks")
 
 # COMMAND ----------
 
-# ============================================================
-# TASK VALUES
-# ============================================================
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -26,16 +30,17 @@ try:
 except Exception:
     pass
 
-CATALOG = "medallion"
 start_time = time.time()
 errors = []
 warnings = []
 
 # COMMAND ----------
 
-# ============================================================
-# 1. BRONZE CHECKS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Bronze Checks
+
+# COMMAND ----------
+
 try:
     bronze = spark.table(f"{CATALOG}.bronze.conversations")
     bronze_count = bronze.count()
@@ -50,29 +55,27 @@ except Exception as e:
 
 # COMMAND ----------
 
-# ============================================================
-# 2. SILVER CHECKS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Silver Checks
+
+# COMMAND ----------
+
 try:
     messages = spark.table(f"{CATALOG}.silver.messages_clean")
     messages_count = messages.count()
 
-    # Dedup deve ter removido linhas
     if bronze_count > 0 and messages_count >= bronze_count:
         warnings.append(
             f"Silver messages_clean ({messages_count}) >= Bronze ({bronze_count}). "
             "Dedup nao removeu linhas?"
         )
 
-    # Nao perder mais de 15%
     if bronze_count > 0 and messages_count < bronze_count * 0.85:
         errors.append(
             f"Silver perdeu mais de 15% das linhas: {messages_count}/{bronze_count}"
         )
 
     # Verificar que message_body nao contem PII em texto claro
-    # Amostra de 100 linhas para verificacao rapida
-    import re
     CPF_PATTERN = r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b"
     sample = messages.select("message_body").limit(500).collect()
     pii_found = 0
@@ -92,7 +95,6 @@ try:
     leads_count = leads.count()
     logger.info(f"Silver leads_profile: {leads_count} leads")
 
-    # Verificar colunas mascaradas existem
     lead_cols = set(leads.columns)
     expected = {"cpf_masked", "email_masked", "phone_masked", "plate_masked"}
     missing = expected - lead_cols
@@ -110,9 +112,11 @@ except Exception as e:
 
 # COMMAND ----------
 
-# ============================================================
-# 3. GOLD CHECKS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Gold Checks
+
+# COMMAND ----------
+
 gold_tables = [
     "funil_vendas", "agent_performance", "sentiment", "lead_scoring",
     "email_providers", "temporal_analysis", "competitor_intel", "campaign_roi",
@@ -153,9 +157,11 @@ except Exception:
 
 # COMMAND ----------
 
-# ============================================================
-# 4. RESULTADO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Resultado
+
+# COMMAND ----------
+
 duration = round(time.time() - start_time, 2)
 status = "PASS" if len(errors) == 0 else "FAIL"
 

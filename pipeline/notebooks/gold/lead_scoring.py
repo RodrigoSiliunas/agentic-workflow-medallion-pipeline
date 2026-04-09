@@ -5,19 +5,31 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.lead_scoring")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.lead_scoring")
 start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
@@ -26,9 +38,11 @@ leads = spark.table(f"{CATALOG}.silver.leads_profile")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. FEATURES PARA SCORING
-# ============================================================
+# MAGIC %md
+# MAGIC ## Features para Scoring
+
+# COMMAND ----------
+
 features = (
     conversations.join(sentiment.select("conversation_id", "sentiment_score"), on="conversation_id")
     .join(
@@ -45,10 +59,11 @@ features = (
 
 # COMMAND ----------
 
-# ============================================================
-# 2. SCORING (heuristica ponderada, 0-100)
-# ============================================================
-# Cada feature contribui com pontos para o score
+# MAGIC %md
+# MAGIC ## Scoring (heuristica ponderada, 0-100)
+
+# COMMAND ----------
+
 scored = features.withColumn(
     "raw_score",
     (
@@ -74,7 +89,6 @@ scored = features.withColumn(
     ),
 )
 
-# Normalizar para 0-100
 scored = scored.withColumn(
     "lead_score", F.least(F.greatest(F.col("raw_score"), F.lit(0)), F.lit(100)).cast("int")
 ).withColumn(
@@ -86,9 +100,11 @@ scored = scored.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 result = scored.select(
     "conversation_id",
     "outcome",
@@ -106,7 +122,6 @@ result = scored.select(
 GOLD_TABLE = f"{CATALOG}.gold.lead_scoring"
 result.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
 
-# Upload para S3 (in-memory)
 lake.write_parquet(result, "gold/lead_scoring/")
 
 duration = round(time.time() - start_time, 2)

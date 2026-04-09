@@ -5,20 +5,32 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.funnel")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.funnel")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
@@ -26,9 +38,11 @@ conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. DISTRIBUICAO DE OUTCOMES
-# ============================================================
+# MAGIC %md
+# MAGIC ## Distribuicao de Outcomes
+
+# COMMAND ----------
+
 outcome_dist = conversations.groupBy("outcome").agg(
     F.count("*").alias("total_conversations"),
     F.avg("total_messages").alias("avg_messages"),
@@ -43,9 +57,11 @@ outcome_dist = outcome_dist.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 2. MENSAGEM FATAL — ultima mensagem outbound antes de ghosting
-# ============================================================
+# MAGIC %md
+# MAGIC ## Mensagem Fatal (ultima outbound antes de ghosting)
+
+# COMMAND ----------
+
 ghost_convs = messages.filter(F.col("conversation_outcome") == "ghosting")
 
 w = Window.partitionBy("conversation_id").orderBy(F.col("timestamp").desc())
@@ -56,7 +72,6 @@ last_outbound = (
     .select("conversation_id", F.col("message_body").alias("fatal_message"))
 )
 
-# Agrupar mensagens fatais mais comuns (primeiras 50 palavras)
 fatal_patterns = (
     last_outbound.withColumn(
         "msg_truncated",
@@ -70,9 +85,11 @@ fatal_patterns = (
 
 # COMMAND ----------
 
-# ============================================================
-# 3. PONTO DE ABANDONO — em qual mensagem sequencial o lead para
-# ============================================================
+# MAGIC %md
+# MAGIC ## Ponto de Abandono
+
+# COMMAND ----------
+
 msg_seq = messages.withColumn(
     "msg_number",
     F.row_number().over(Window.partitionBy("conversation_id").orderBy("timestamp")),
@@ -97,20 +114,20 @@ abandonment_point = (
 
 # COMMAND ----------
 
-# ============================================================
-# 4. COMBINAR E SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Combinar e Salvar
+
+# COMMAND ----------
+
 funnel = outcome_dist.join(abandonment_point, on="outcome", how="left")
 
 GOLD_TABLE = f"{CATALOG}.gold.funil_vendas"
 funnel.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
 
-# Salvar fatal_patterns como tabela auxiliar
 fatal_patterns.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.fatal_messages"
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(funnel, "gold/funil_vendas/")
 lake.write_parquet(fatal_patterns, "gold/fatal_messages/")
 

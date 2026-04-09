@@ -5,28 +5,43 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
+from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.temporal_analysis")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.temporal_analysis")
 start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. HEATMAP: HORA x DIA DA SEMANA x CONVERSAO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Heatmap: Hora x Dia da Semana x Conversao
+
+# COMMAND ----------
+
 temporal = (
     conversations.withColumn("contact_hour", F.hour("first_message_at"))
     .withColumn("contact_dow", F.dayofweek("first_message_at"))
@@ -44,10 +59,10 @@ temporal = (
 
 # COMMAND ----------
 
-# ============================================================
-# 2. MELHOR HORARIO POR DIA
-# ============================================================
-from pyspark.sql import Window
+# MAGIC %md
+# MAGIC ## Melhor Horario por Dia
+
+# COMMAND ----------
 
 w = Window.partitionBy("contact_dow").orderBy(F.col("conversion_rate").desc())
 best_hours = temporal.withColumn("rank", F.row_number().over(w)).filter(F.col("rank") == 1).drop(
@@ -56,15 +71,16 @@ best_hours = temporal.withColumn("rank", F.row_number().over(w)).filter(F.col("r
 
 # COMMAND ----------
 
-# ============================================================
-# 3. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 GOLD_TABLE = f"{CATALOG}.gold.temporal_analysis"
 temporal.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(temporal, "gold/temporal_analysis/")
 
 duration = round(time.time() - start_time, 2)

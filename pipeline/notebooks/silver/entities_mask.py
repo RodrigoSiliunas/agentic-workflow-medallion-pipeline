@@ -6,20 +6,36 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, FloatType, StringType
 
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.storage import S3Lake
+from pipeline_lib.extractors import competitor, cpf, cep, email, phone, plate, price, vehicle
+
+lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("silver.entities_mask")
 
 # COMMAND ----------
 
-# ============================================================
-# TASK VALUES
-# ============================================================
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -31,19 +47,8 @@ except Exception:
 
 # COMMAND ----------
 
-# ============================================================
-# IMPORTAR LIB (via Databricks Repos ou wheel)
-# ============================================================
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-
-import os
-from pipeline_lib.storage import S3Lake
-from pipeline_lib.extractors import competitor, cpf, cep, email, phone, plate, price, vehicle
-
-lake = S3Lake(dbutils, spark)
-
-# Setar MASKING_SECRET do Databricks Secrets (hash_value precisa da env var)
-os.environ["MASKING_SECRET"] = dbutils.secrets.get("medallion-pipeline", "masking-secret")
+# MASKING_SECRET from Databricks Secrets
+os.environ["MASKING_SECRET"] = dbutils.secrets.get(SCOPE, "masking-secret")
 
 from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate
 from pipeline_lib.masking.hash_based import hash_value
@@ -51,10 +56,6 @@ from pipeline_lib.masking.redaction import redact_message_body
 
 # COMMAND ----------
 
-# ============================================================
-# CONFIGURACAO
-# ============================================================
-CATALOG = "medallion"
 SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"
 SILVER_LEADS = f"{CATALOG}.silver.leads_profile"
 
@@ -62,9 +63,11 @@ start_time = time.time()
 
 # COMMAND ----------
 
-# ============================================================
-# REGISTRAR UDFs
-# ============================================================
+# MAGIC %md
+# MAGIC ## Registrar UDFs
+
+# COMMAND ----------
+
 extract_cpf_udf = F.udf(cpf.extract, ArrayType(StringType()))
 extract_email_udf = F.udf(email.extract, ArrayType(StringType()))
 extract_phone_udf = F.udf(phone.extract, ArrayType(StringType()))
@@ -82,9 +85,11 @@ redact_udf = F.udf(redact_message_body, StringType())
 
 # COMMAND ----------
 
-# ============================================================
-# 1. LER MESSAGES_CLEAN (apenas inbound com texto)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Ler Messages Clean (inbound com texto)
+
+# COMMAND ----------
+
 df = spark.table(SILVER_MESSAGES)
 df_inbound = df.filter(
     (F.col("direction") == "inbound")
@@ -94,9 +99,11 @@ df_inbound = df.filter(
 
 # COMMAND ----------
 
-# ============================================================
-# 2. EXTRAIR ENTIDADES
-# ============================================================
+# MAGIC %md
+# MAGIC ## Extrair Entidades
+
+# COMMAND ----------
+
 df_entities = df_inbound.withColumns(
     {
         "cpfs_found": extract_cpf_udf("message_body"),
@@ -111,9 +118,11 @@ df_entities = df_inbound.withColumns(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. AGREGAR POR CONVERSA -> LEADS PROFILE
-# ============================================================
+# MAGIC %md
+# MAGIC ## Agregar por Conversa -> Leads Profile
+
+# COMMAND ----------
+
 leads = (
     df_entities.groupBy("conversation_id")
     .agg(
@@ -131,10 +140,11 @@ leads = (
 
 # COMMAND ----------
 
-# ============================================================
-# 4. MASCARAR DADOS SENSIVEIS (via pandas — serverless nao suporta
-#    F.transform(array, python_udf) com lambda)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Mascarar Dados Sensiveis
+
+# COMMAND ----------
+
 import pandas as pd
 
 leads_rows = leads.collect()
@@ -150,7 +160,6 @@ leads_pdf["phone_masked"] = leads_pdf["phones"].apply(lambda a: safe_map(a, mask
 leads_pdf["plate_masked"] = leads_pdf["plates"].apply(lambda a: safe_map(a, mask_plate))
 leads_pdf = leads_pdf.drop(columns=["cpfs", "emails", "phones", "plates"])
 
-# Schema explicito para evitar NullType em arrays vazios
 from pyspark.sql.types import StructType, StructField, LongType
 
 array_str = ArrayType(StringType())
@@ -172,12 +181,13 @@ leads_masked = spark.createDataFrame(leads_pdf, schema=schema)
 
 # COMMAND ----------
 
-# ============================================================
-# 5. REDACTION DO MESSAGE_BODY em messages_clean
-# ============================================================
+# MAGIC %md
+# MAGIC ## Redaction do message_body
+
+# COMMAND ----------
+
 df_redacted = df.withColumn("message_body", redact_udf("message_body"))
 
-# Sobrescrever messages_clean com message_body redacted (UC)
 (
     df_redacted.write.format("delta")
     .mode("overwrite")
@@ -185,15 +195,16 @@ df_redacted = df.withColumn("message_body", redact_udf("message_body"))
     .saveAsTable(SILVER_MESSAGES)
 )
 
-# Upload messages_clean redacted para S3 (in-memory, lê da UC table)
 lake.write_parquet(spark.table(SILVER_MESSAGES), "silver/messages_clean/")
 logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 
 # COMMAND ----------
 
-# ============================================================
-# 6. SALVAR LEADS PROFILE (UC + S3)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar Leads Profile
+
+# COMMAND ----------
+
 (
     leads_masked.write.format("delta")
     .mode("overwrite")
@@ -201,7 +212,6 @@ logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
     .saveAsTable(SILVER_LEADS)
 )
 
-# Upload leads_profile para S3 (in-memory, lê da UC table)
 lake.write_parquet(spark.table(SILVER_LEADS), "silver/leads_profile/")
 logger.info("Parquet uploaded para S3 silver/leads_profile/")
 

@@ -5,6 +5,14 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
 import time
 
@@ -13,9 +21,6 @@ start_time = time.time()
 
 # COMMAND ----------
 
-# ============================================================
-# TASK VALUES
-# ============================================================
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -27,28 +32,34 @@ except Exception:
 
 # COMMAND ----------
 
-# ============================================================
-# EXECUTAR NOTEBOOKS NA ORDEM DE DEPENDENCIAS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Executar Notebooks na Ordem de Dependencias
+
+# COMMAND ----------
+
+# Auto-detect repo path for sub-notebook calls
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+NOTEBOOK_BASE = f"{_repo_root}/pipeline/notebooks"
+
 TIMEOUT = 600  # 10 min por notebook
-REPO_BASE = "/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline/notebooks"
 
 notebooks = [
     # Phase 1: Core (sentimento primeiro, lead_scoring depende dele)
-    ("funnel", f"{REPO_BASE}/gold/funnel"),
-    ("agent_performance", f"{REPO_BASE}/gold/agent_performance"),
-    ("sentiment", f"{REPO_BASE}/gold/sentiment"),
-    ("email_providers", f"{REPO_BASE}/gold/email_providers"),
-    ("lead_scoring", f"{REPO_BASE}/gold/lead_scoring"),  # depende de sentiment
+    ("funnel", f"{NOTEBOOK_BASE}/gold/funnel"),
+    ("agent_performance", f"{NOTEBOOK_BASE}/gold/agent_performance"),
+    ("sentiment", f"{NOTEBOOK_BASE}/gold/sentiment"),
+    ("email_providers", f"{NOTEBOOK_BASE}/gold/email_providers"),
+    ("lead_scoring", f"{NOTEBOOK_BASE}/gold/lead_scoring"),
     # Phase 2: Analytics (campaign_roi depende de lead_scoring)
-    ("temporal_analysis", f"{REPO_BASE}/gold/temporal_analysis"),
-    ("competitor_intel", f"{REPO_BASE}/gold/competitor_intel"),
-    ("campaign_roi", f"{REPO_BASE}/gold/campaign_roi"),  # depende de lead_scoring
+    ("temporal_analysis", f"{NOTEBOOK_BASE}/gold/temporal_analysis"),
+    ("competitor_intel", f"{NOTEBOOK_BASE}/gold/competitor_intel"),
+    ("campaign_roi", f"{NOTEBOOK_BASE}/gold/campaign_roi"),
     # Phase 3: Diferenciais (segmentation depende de sentiment + lead_scoring)
-    ("segmentation", f"{REPO_BASE}/gold/segmentation"),  # depende de sentiment + lead_scoring
-    ("churn_reengagement", f"{REPO_BASE}/gold/churn_reengagement"),
-    ("negotiation_complexity", f"{REPO_BASE}/gold/negotiation_complexity"),
-    ("first_contact_resolution", f"{REPO_BASE}/gold/first_contact_resolution"),
+    ("segmentation", f"{NOTEBOOK_BASE}/gold/segmentation"),
+    ("churn_reengagement", f"{NOTEBOOK_BASE}/gold/churn_reengagement"),
+    ("negotiation_complexity", f"{NOTEBOOK_BASE}/gold/negotiation_complexity"),
+    ("first_contact_resolution", f"{NOTEBOOK_BASE}/gold/first_contact_resolution"),
 ]
 
 results = {}
@@ -68,9 +79,11 @@ for name, path in notebooks:
 
 # COMMAND ----------
 
-# ============================================================
-# RESUMO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Resumo
+
+# COMMAND ----------
+
 total = len(notebooks)
 succeeded = sum(1 for v in results.values() if v.startswith("SUCCESS"))
 failed = total - succeeded

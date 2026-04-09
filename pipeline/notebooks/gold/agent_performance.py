@@ -5,28 +5,43 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
+from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.agent_performance")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.agent_performance")
 start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. METRICAS POR AGENTE
-# ============================================================
+# MAGIC %md
+# MAGIC ## Metricas por Agente
+
+# COMMAND ----------
+
 agents = conversations.groupBy("agent_id").agg(
     F.count("*").alias("total_conversations"),
     F.sum(F.when(F.col("outcome") == "venda_fechada", 1).otherwise(0)).alias("wins"),
@@ -42,9 +57,11 @@ agents = conversations.groupBy("agent_id").agg(
 
 # COMMAND ----------
 
-# ============================================================
-# 2. TAXAS E SCORES
-# ============================================================
+# MAGIC %md
+# MAGIC ## Taxas e Scores
+
+# COMMAND ----------
+
 agents = agents.withColumns(
     {
         "win_rate": F.round(F.col("wins") / F.col("total_conversations") * 100, 2),
@@ -57,32 +74,35 @@ agents = agents.withColumns(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. PERCENTIS (ranking relativo)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Percentis (ranking relativo)
+
+# COMMAND ----------
+
 agents = agents.withColumns(
     {
         "win_rate_percentile": F.round(
-            F.percent_rank().over(F.Window.orderBy("win_rate")) * 100, 0
+            F.percent_rank().over(Window.orderBy("win_rate")) * 100, 0
         ),
         "response_time_percentile": F.round(
-            F.percent_rank().over(F.Window.orderBy(F.col("avg_response_time").desc())) * 100, 0
+            F.percent_rank().over(Window.orderBy(F.col("avg_response_time").desc())) * 100, 0
         ),
         "ghosting_rate_percentile": F.round(
-            F.percent_rank().over(F.Window.orderBy("ghosting_rate")) * 100, 0
+            F.percent_rank().over(Window.orderBy("ghosting_rate")) * 100, 0
         ),
     }
 )
 
 # COMMAND ----------
 
-# ============================================================
-# 4. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 GOLD_TABLE = f"{CATALOG}.gold.agent_performance"
 agents.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
 
-# Upload para S3 (in-memory)
 lake.write_parquet(agents, "gold/agent_performance/")
 
 duration = round(time.time() - start_time, 2)

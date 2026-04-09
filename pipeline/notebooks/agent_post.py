@@ -6,32 +6,36 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime
 
 from pyspark.sql import Row
 
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("agent_post")
 
 # COMMAND ----------
 
-# ============================================================
-# IMPORTAR S3Lake (boto3 + Databricks Secrets)
-# ============================================================
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-from pipeline_lib.storage import S3Lake
-
-lake = S3Lake(dbutils, spark)
-
-# COMMAND ----------
-
-# ============================================================
-# CONFIGURACAO
-# ============================================================
-CATALOG = "medallion"
 STATE_TABLE = f"{CATALOG}.pipeline.state"
 NOTIFICATIONS_TABLE = f"{CATALOG}.pipeline.notifications"
 METRICS_TABLE = f"{CATALOG}.pipeline.metrics"
@@ -39,9 +43,11 @@ MAX_CONSECUTIVE_FAILURES = 3
 
 # COMMAND ----------
 
-# ============================================================
-# 1. CRIAR TABELAS DE APOIO (se nao existirem)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Criar Tabelas de Apoio
+
+# COMMAND ----------
+
 spark.sql(f"""
     CREATE TABLE IF NOT EXISTS {NOTIFICATIONS_TABLE} (
         timestamp    STRING,
@@ -66,9 +72,11 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-# ============================================================
-# 2. CARREGAR CONTEXTO DO AGENT_PRE
-# ============================================================
+# MAGIC %md
+# MAGIC ## Carregar Contexto do Agent Pre
+
+# COMMAND ----------
+
 def load_state() -> dict:
     if spark.catalog.tableExists(STATE_TABLE):
         from pyspark.sql import functions as F
@@ -102,7 +110,6 @@ except Exception:
     run_id = "standalone"
     delta_versions = {}
 
-# Se nao havia dados novos, apenas registrar skip
 if not should_process:
     save_row = Row(
         run_at=datetime.now().isoformat(),
@@ -112,15 +119,16 @@ if not should_process:
         delta_versions="{}",
     )
     spark.createDataFrame([save_row]).write.format("delta").mode("append").saveAsTable(STATE_TABLE)
-    # Upload state para S3
     lake.write_parquet(spark.table(STATE_TABLE), "pipeline/state/")
     dbutils.notebook.exit("SKIP: no new data to process")
 
 # COMMAND ----------
 
-# ============================================================
-# 3. COLETAR RESULTADOS DE TODAS AS TASKS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Coletar Resultados das Tasks
+
+# COMMAND ----------
+
 TASK_KEYS = [
     "bronze_ingestion",
     "silver_dedup",
@@ -150,9 +158,11 @@ logger.info(f"Failed: {failed_tasks}")
 
 # COMMAND ----------
 
-# ============================================================
-# 4. FUNCOES DE PERSISTENCIA E NOTIFICACAO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Persistencia e Notificacao
+
+# COMMAND ----------
+
 def save_state(bronze_hash: str, status: str, failures: int):
     row = Row(
         run_at=datetime.now().isoformat(),
@@ -163,8 +173,6 @@ def save_state(bronze_hash: str, status: str, failures: int):
     )
     state_df = spark.createDataFrame([row])
     state_df.write.format("delta").mode("append").saveAsTable(STATE_TABLE)
-
-    # Upload state para S3
     lake.write_parquet(spark.table(STATE_TABLE), "pipeline/state/")
 
 def send_notification(level: str, subject: str, body: str):
@@ -181,8 +189,6 @@ def send_notification(level: str, subject: str, body: str):
         NOTIFICATIONS_TABLE
     )
     logger.info(f"[{level}] {subject}")
-
-    # Upload notifications para S3
     lake.write_parquet(spark.table(NOTIFICATIONS_TABLE), "pipeline/notifications/")
 
 def build_success_body() -> str:
@@ -218,9 +224,11 @@ def build_failure_body(error: str, failures: int) -> str:
 
 # COMMAND ----------
 
-# ============================================================
-# 5. FUNCAO DE RECOVERY
-# ============================================================
+# MAGIC %md
+# MAGIC ## Recovery (Rollback Delta)
+
+# COMMAND ----------
+
 TASK_TO_TABLE = {
     "bronze_ingestion": f"{CATALOG}.bronze.conversations",
     "silver_dedup": f"{CATALOG}.silver.messages_clean",
@@ -240,19 +248,18 @@ def attempt_recovery(failed: list) -> list:
             actions.append(f"Rollback {table} para versao {version}")
 
         elif task == "gold_analytics":
-            # Se Silver esta OK, re-executar Gold
             silver_ok = all(
                 task_results.get(t) == "SUCCESS"
                 for t in ["silver_dedup", "silver_entities", "silver_enrichment"]
             )
             if silver_ok:
-                result = dbutils.notebook.run("/notebooks/gold/analytics", 600)
+                _notebook_base = f"{_repo_root}/pipeline/notebooks"
+                result = dbutils.notebook.run(f"{_notebook_base}/gold/analytics", 600)
                 actions.append(f"Re-executou gold/analytics: {result}")
             else:
                 raise Exception("Silver com falha, nao pode recalcular Gold")
 
         elif task == "quality_validation":
-            # Rollback todas as Gold
             for tbl, ver in delta_versions.items():
                 if ".gold." in tbl:
                     spark.sql(f"RESTORE TABLE {tbl} TO VERSION AS OF {ver}")
@@ -262,10 +269,10 @@ def attempt_recovery(failed: list) -> list:
 
 # COMMAND ----------
 
-# ============================================================
-# 6. FUNCOES DO AGENTE DE IA (LLM + GitHub PR)
-# ============================================================
-# (sys.path ja configurado no topo do notebook para S3Lake)
+# MAGIC %md
+# MAGIC ## Agente de IA (LLM + GitHub PR)
+
+# COMMAND ----------
 
 def ai_diagnose_and_fix(failed: list) -> dict:
     """Usa Claude API para diagnosticar o erro e criar PR com correcao."""
@@ -275,7 +282,6 @@ def ai_diagnose_and_fix(failed: list) -> dict:
     results = {"diagnosis": None, "pr": None, "actions": []}
 
     for task in failed:
-        # Coletar contexto do erro
         try:
             error_msg = dbutils.jobs.taskValues.get(
                 taskKey=task, key="error", default="Unknown error"
@@ -283,7 +289,6 @@ def ai_diagnose_and_fix(failed: list) -> dict:
         except Exception:
             error_msg = f"Task {task} falhou (sem detalhes de erro)"
 
-        # Ler codigo do notebook que falhou
         task_to_notebook = {
             "bronze_ingestion": "notebooks/bronze/ingest.py",
             "silver_dedup": "notebooks/silver/dedup_clean.py",
@@ -295,11 +300,10 @@ def ai_diagnose_and_fix(failed: list) -> dict:
         notebook_path = task_to_notebook.get(task, "unknown")
 
         try:
-            notebook_code = open(f"/Workspace/Repos/{notebook_path}").read()
+            notebook_code = open(f"{PIPELINE_ROOT}/{notebook_path}").read()
         except Exception:
             notebook_code = f"[Nao foi possivel ler {notebook_path}]"
 
-        # Coletar schema info
         try:
             schema_info = str(spark.sql(f"SHOW TABLES IN {CATALOG}.bronze").collect())
             schema_info += "\n" + str(spark.sql(f"SHOW TABLES IN {CATALOG}.silver").collect())
@@ -307,11 +311,10 @@ def ai_diagnose_and_fix(failed: list) -> dict:
         except Exception:
             schema_info = "[Schema info indisponivel]"
 
-        # Chamar Claude API para diagnostico
         logger.info(f"Chamando Claude API para diagnosticar {task}...")
         diagnosis = diagnose_error(
             error_message=error_msg,
-            stack_trace=error_msg,  # Em producao, capturar stack trace completo
+            stack_trace=error_msg,
             failed_task=task,
             notebook_code=notebook_code,
             schema_info=schema_info,
@@ -327,7 +330,6 @@ def ai_diagnose_and_fix(failed: list) -> dict:
         logger.info(f"Diagnostico: {diagnosis.get('diagnosis', 'N/A')}")
         logger.info(f"Confianca: {diagnosis.get('confidence', 0)}")
 
-        # Se tem codigo corrigido e confianca razoavel, criar PR
         if diagnosis.get("fixed_code") and diagnosis.get("file_to_fix"):
             logger.info(f"Criando PR com correcao para {diagnosis['file_to_fix']}...")
             try:
@@ -348,7 +350,6 @@ def ai_diagnose_and_fix(failed: list) -> dict:
                 logger.error(f"Erro ao criar PR: {pr_error}")
                 results["actions"].append(f"Falha ao criar PR: {pr_error}")
 
-        # Processar apenas a primeira task com falha (uma de cada vez)
         break
 
     return results
@@ -403,11 +404,12 @@ def build_ai_notification_body(diagnosis: dict, pr: dict | None) -> str:
 
 # COMMAND ----------
 
-# ============================================================
-# 7. LOGICA DE DECISAO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Logica de Decisao
+
+# COMMAND ----------
+
 if all_ok:
-    # === CENARIO 1: SUCESSO ===
     save_state(bronze_hash, "SUCCESS", 0)
     send_notification(
         level="INFO",
@@ -416,12 +418,9 @@ if all_ok:
     )
     dbutils.notebook.exit(f"SUCCESS: run_id={run_id}")
 
-# === CENARIO 2+3: FALHA ===
 failures = state.get("consecutive_failures", 0) + 1
 
-# Guardrail: 3+ falhas -> para de tentar, mas ainda diagnostica
 if failures >= MAX_CONSECUTIVE_FAILURES:
-    # Mesmo no guardrail, tenta diagnosticar com LLM
     try:
         ai_result = ai_diagnose_and_fix(failed_tasks)
         diagnosis = ai_result.get("diagnosis", {})
@@ -439,11 +438,9 @@ if failures >= MAX_CONSECUTIVE_FAILURES:
     )
     dbutils.notebook.exit(f"CRITICAL: {failures} failures, PR={'created' if pr else 'none'}")
 
-# Tentar recovery (rollback Delta)
 try:
     recovery_actions = attempt_recovery(failed_tasks)
 
-    # Recovery de dados funcionou
     save_state(bronze_hash, "RECOVERED", 0)
     send_notification(
         level="WARNING",
@@ -453,7 +450,6 @@ try:
     dbutils.notebook.exit(f"RECOVERED: run_id={run_id}, actions={recovery_actions}")
 
 except Exception as recovery_error:
-    # Recovery de dados falhou -> acionar agente de IA
     logger.warning(f"Rollback falhou: {recovery_error}. Acionando agente de IA...")
 
     try:
@@ -474,7 +470,6 @@ except Exception as recovery_error:
         )
 
     except Exception as ai_error:
-        # Nem rollback nem AI funcionaram
         save_state(bronze_hash, "FAILED", failures)
         send_notification(
             level="CRITICAL",

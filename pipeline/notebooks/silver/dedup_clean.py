@@ -5,30 +5,35 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("silver.dedup_clean")
 
 # COMMAND ----------
 
-# ============================================================
-# IMPORTAR S3Lake (boto3 + Databricks Secrets)
-# ============================================================
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-from pipeline_lib.storage import S3Lake
-
-lake = S3Lake(dbutils, spark)
-
-# COMMAND ----------
-
-# ============================================================
-# TASK VALUES DO AGENTE
-# ============================================================
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -41,10 +46,6 @@ except Exception:
 
 # COMMAND ----------
 
-# ============================================================
-# CONFIGURACAO
-# ============================================================
-CATALOG = "medallion"
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 SILVER_TABLE = f"{CATALOG}.silver.messages_clean"
 
@@ -52,18 +53,22 @@ start_time = time.time()
 
 # COMMAND ----------
 
-# ============================================================
-# 1. LER BRONZE
-# ============================================================
+# MAGIC %md
+# MAGIC ## Ler Bronze
+
+# COMMAND ----------
+
 df = spark.table(BRONZE_TABLE)
 bronze_count = df.count()
 logger.info(f"Bronze: {bronze_count} linhas")
 
 # COMMAND ----------
 
-# ============================================================
-# 2. DEDUPLICACAO (sent + delivered -> manter status mais avancado)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Deduplicacao
+
+# COMMAND ----------
+
 status_priority = (
     F.when(F.col("status") == "read", 3)
     .when(F.col("status") == "delivered", 2)
@@ -82,9 +87,11 @@ logger.info(f"Dedup: {removed} duplicatas removidas. {dedup_count} linhas restan
 
 # COMMAND ----------
 
-# ============================================================
-# 3. NORMALIZACAO DE sender_name
-# ============================================================
+# MAGIC %md
+# MAGIC ## Normalizacao de sender_name
+
+# COMMAND ----------
+
 df_clean = df_dedup.withColumn(
     "sender_name_normalized",
     F.when(
@@ -98,9 +105,11 @@ df_clean = df_dedup.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 4. PARSE METADATA JSON
-# ============================================================
+# MAGIC %md
+# MAGIC ## Parse Metadata JSON
+
+# COMMAND ----------
+
 df_parsed = df_clean.withColumns(
     {
         "meta_device": F.get_json_object("metadata", "$.device"),
@@ -118,10 +127,11 @@ df_parsed = df_clean.withColumns(
 
 # COMMAND ----------
 
-# ============================================================
-# 5. SALVAR COMO DELTA TABLE (UC + S3)
-# ============================================================
-# 5a. Unity Catalog
+# MAGIC %md
+# MAGIC ## Salvar como Delta Table + S3
+
+# COMMAND ----------
+
 (
     df_parsed.write.format("delta")
     .mode("overwrite")
@@ -131,7 +141,6 @@ df_parsed = df_clean.withColumns(
 
 silver_count = spark.table(SILVER_TABLE).count()
 
-# 5b. Upload para S3 (in-memory)
 lake.write_parquet(df_parsed, "silver/messages_clean/")
 logger.info("Parquet uploaded para S3 silver/messages_clean/")
 
@@ -140,9 +149,11 @@ logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s")
 
 # COMMAND ----------
 
-# ============================================================
-# 6. METRICAS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Metricas
+
+# COMMAND ----------
+
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
     dbutils.jobs.taskValues.set(key="rows_input", value=bronze_count)

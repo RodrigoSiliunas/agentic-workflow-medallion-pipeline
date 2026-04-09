@@ -5,28 +5,42 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.negotiation_complexity")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.negotiation_complexity")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. CONTAR PERGUNTAS POR CONVERSA (mensagens com ?)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Contar Perguntas por Conversa
+
+# COMMAND ----------
+
 inbound = messages.filter(
     (F.col("direction") == "inbound") & (F.col("message_body").isNotNull())
 )
@@ -61,9 +75,11 @@ complexity = complexity.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 2. CORRELACAO PERGUNTAS vs OUTCOME
-# ============================================================
+# MAGIC %md
+# MAGIC ## Correlacao Perguntas vs Outcome
+
+# COMMAND ----------
+
 by_outcome = complexity.groupBy("outcome").agg(
     F.avg("total_questions").alias("avg_questions"),
     F.avg("price_questions").alias("avg_price_questions"),
@@ -74,9 +90,11 @@ by_outcome = complexity.groupBy("outcome").agg(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 complexity.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     f"{CATALOG}.gold.negotiation_complexity"
 )
@@ -85,7 +103,6 @@ by_outcome.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.negotiation_by_outcome"
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(complexity, "gold/negotiation_complexity/")
 lake.write_parquet(by_outcome, "gold/negotiation_by_outcome/")
 

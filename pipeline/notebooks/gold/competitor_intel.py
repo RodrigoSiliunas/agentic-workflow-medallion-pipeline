@@ -5,19 +5,31 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.competitor_intel")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.competitor_intel")
 start_time = time.time()
 
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
@@ -25,9 +37,11 @@ conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. EXPLODIR CONCORRENTES POR CONVERSA
-# ============================================================
+# MAGIC %md
+# MAGIC ## Explodir Concorrentes por Conversa
+
+# COMMAND ----------
+
 leads_with_outcome = leads.join(
     conversations.select("conversation_id", "outcome"), on="conversation_id"
 )
@@ -41,9 +55,11 @@ competitors = leads_with_outcome.select(
 
 # COMMAND ----------
 
-# ============================================================
-# 2. METRICAS POR CONCORRENTE
-# ============================================================
+# MAGIC %md
+# MAGIC ## Metricas por Concorrente
+
+# COMMAND ----------
+
 comp_stats = competitors.groupBy("competitor").agg(
     F.count("*").alias("mention_count"),
     F.sum(
@@ -68,15 +84,16 @@ comp_stats = comp_stats.withColumns(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 GOLD_TABLE = f"{CATALOG}.gold.competitor_intel"
 comp_stats.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(comp_stats, "gold/competitor_intel/")
 
 duration = round(time.time() - start_time, 2)

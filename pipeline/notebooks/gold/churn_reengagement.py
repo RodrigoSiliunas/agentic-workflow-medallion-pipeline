@@ -5,29 +5,43 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.churn_reengagement")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.churn_reengagement")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. DETECTAR GAPS DE SILENCIO DO LEAD (> 2h entre mensagens inbound)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Detectar Gaps de Silencio do Lead
+
+# COMMAND ----------
+
 inbound = messages.filter(F.col("direction") == "inbound").select(
     "conversation_id", "timestamp", "message_body", "conversation_outcome"
 )
@@ -45,16 +59,17 @@ churn_events = inbound_with_gap.filter(F.col("gap_minutes") > 120)
 
 # COMMAND ----------
 
-# ============================================================
-# 2. MENSAGEM DE REATIVACAO (outbound logo antes do retorno)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Mensagem de Reativacao
+
+# COMMAND ----------
+
 outbound = messages.filter(F.col("direction") == "outbound").select(
     "conversation_id",
     F.col("timestamp").alias("out_timestamp"),
     F.col("message_body").alias("reactivation_message"),
 )
 
-# Para cada retorno do lead, encontrar a ultima mensagem outbound antes dele
 reactivated = churn_events.join(outbound, on="conversation_id").filter(
     (F.col("out_timestamp") < F.col("timestamp"))
     & (F.col("out_timestamp") > F.col("prev_timestamp"))
@@ -72,9 +87,11 @@ reactivation_msgs = (
 
 # COMMAND ----------
 
-# ============================================================
-# 3. RESUMO
-# ============================================================
+# MAGIC %md
+# MAGIC ## Resumo
+
+# COMMAND ----------
+
 churn_summary = (
     churn_events.groupBy("conversation_id")
     .agg(
@@ -91,15 +108,16 @@ churn_summary = (
 
 # COMMAND ----------
 
-# ============================================================
-# 4. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 GOLD_TABLE = f"{CATALOG}.gold.churn_reengagement"
 churn_summary.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(churn_summary, "gold/churn_reengagement/")
 
 duration = round(time.time() - start_time, 2)

@@ -1,55 +1,38 @@
-"""Upload do Parquet Bronze para Databricks Volumes.
+"""Upload do Parquet Bronze para S3 data lake.
 
 Uso: python deploy/upload_data.py <local_parquet_path>
 
-Requer env vars: DATABRICKS_HOST, DATABRICKS_TOKEN
+Requer:
+  - AWS CLI configurado (aws configure) OU env vars AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
+  - Env var S3_BUCKET (default: namastex-medallion-datalake)
 """
 
 import os
 import sys
 
-from databricks.sdk import WorkspaceClient
+import boto3
 
 
 def upload(local_path: str):
-    w = WorkspaceClient(
-        host=os.environ["DATABRICKS_HOST"],
-        token=os.environ["DATABRICKS_TOKEN"],
-    )
+    bucket = os.environ.get("S3_BUCKET", "namastex-medallion-datalake")
+    region = os.environ.get("AWS_REGION", "us-east-2")
 
-    catalog = "medallion"
-    volume_path = f"/Volumes/{catalog}/bronze/raw/"
+    s3 = boto3.client("s3", region_name=region)
 
-    # Criar volume se nao existir
-    try:
-        w.volumes.create(
-            catalog_name=catalog,
-            schema_name="bronze",
-            name="raw",
-            volume_type="MANAGED",
-            comment="Dados brutos Parquet",
-        )
-        print(f"Volume '{catalog}.bronze.raw' criado")
-    except Exception as e:
-        if "already exists" in str(e).lower():
-            print(f"Volume '{catalog}.bronze.raw' ja existe")
-        else:
-            raise
-
-    # Upload do arquivo
     filename = os.path.basename(local_path)
-    dest_path = f"{volume_path}{filename}"
+    s3_key = f"bronze/{filename}"
 
-    print(f"Uploading {local_path} -> {dest_path}")
-    with open(local_path, "rb") as f:
-        w.files.upload(dest_path, f, overwrite=True)
+    file_size = os.path.getsize(local_path)
+    print(f"Uploading {local_path} -> s3://{bucket}/{s3_key}")
+    print(f"  Size: {file_size / 1024 / 1024:.1f} MB")
 
-    print(f"Upload completo: {dest_path}")
-    print(f"Tamanho: {os.path.getsize(local_path) / 1024 / 1024:.1f} MB")
+    s3.upload_file(local_path, bucket, s3_key)
+
+    print(f"Upload completo: s3://{bucket}/{s3_key}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Uso: python deploy/upload_data.py conversations_bronze.parquet")
+        print("Uso: python deploy/upload_data.py <path_to_parquet>")
         sys.exit(1)
     upload(sys.argv[1])

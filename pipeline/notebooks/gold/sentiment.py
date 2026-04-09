@@ -5,28 +5,42 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.sentiment")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.sentiment")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
 # COMMAND ----------
 
-# ============================================================
-# KEYWORDS DE SENTIMENTO (pt-BR informal, WhatsApp)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Keywords de Sentimento (pt-BR informal, WhatsApp)
+
+# COMMAND ----------
+
 POSITIVE = [
     "otimo", "perfeito", "excelente", "maravilha", "fechado", "aceito",
     "pode fazer", "vamos fechar", "gostei", "muito bom", "top",
@@ -45,9 +59,11 @@ NEGATIVE = [
 
 # COMMAND ----------
 
-# ============================================================
-# 1. CALCULAR SENTIMENTO POR MENSAGEM INBOUND
-# ============================================================
+# MAGIC %md
+# MAGIC ## Calcular Sentimento por Mensagem Inbound
+
+# COMMAND ----------
+
 positive_pattern = "|".join(POSITIVE)
 negative_pattern = "|".join(NEGATIVE)
 
@@ -66,9 +82,11 @@ msg_sentiment = messages.filter(
 
 # COMMAND ----------
 
-# ============================================================
-# 2. AGREGAR POR CONVERSA
-# ============================================================
+# MAGIC %md
+# MAGIC ## Agregar por Conversa
+
+# COMMAND ----------
+
 conv_sentiment = msg_sentiment.groupBy("conversation_id").agg(
     F.sum("positive_hits").alias("total_positive"),
     F.sum("negative_hits").alias("total_negative"),
@@ -76,7 +94,6 @@ conv_sentiment = msg_sentiment.groupBy("conversation_id").agg(
     F.first("conversation_outcome").alias("outcome"),
 )
 
-# Score: -1.0 (muito negativo) a +1.0 (muito positivo)
 conv_sentiment = conv_sentiment.withColumn(
     "sentiment_score",
     F.when(
@@ -98,15 +115,16 @@ conv_sentiment = conv_sentiment.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. SALVAR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 GOLD_TABLE = f"{CATALOG}.gold.sentiment"
 conv_sentiment.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(conv_sentiment, "gold/sentiment/")
 
 duration = round(time.time() - start_time, 2)

@@ -5,39 +5,39 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")
+
+# COMMAND ----------
+
 import hashlib
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime
 
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("agent_pre")
 
 # COMMAND ----------
 
-# ============================================================
-# IMPORTAR S3Lake (boto3 + Databricks Secrets)
-# ============================================================
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-from pipeline_lib.storage import S3Lake
-
-lake = S3Lake(dbutils, spark)
-
-# COMMAND ----------
-
-# ============================================================
-# CONFIGURACAO
-# ============================================================
-CATALOG = "medallion"
-BRONZE_PREFIX = "bronze/"
 STATE_TABLE = f"{CATALOG}.pipeline.state"
 
-# COMMAND ----------
-
-# ============================================================
-# 1. CRIAR TABELA DE ESTADO (se nao existir)
-# ============================================================
 spark.sql(f"""
     CREATE TABLE IF NOT EXISTS {STATE_TABLE} (
         run_at                STRING,
@@ -51,9 +51,11 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-# ============================================================
-# 2. CARREGAR ESTADO ANTERIOR
-# ============================================================
+# MAGIC %md
+# MAGIC ## Carregar Estado Anterior
+
+# COMMAND ----------
+
 def load_state() -> dict:
     """Carrega o estado da ultima execucao."""
     if spark.catalog.tableExists(STATE_TABLE):
@@ -75,9 +77,11 @@ logger.info(f"Estado anterior: status={state.get('status')}, "
 
 # COMMAND ----------
 
-# ============================================================
-# 3. VERIFICAR DADOS NOVOS (fingerprint via metadata)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Verificar Dados Novos
+
+# COMMAND ----------
+
 def get_bronze_fingerprint(prefix: str) -> str:
     """Gera fingerprint dos dados Bronze via metadata do S3 (boto3)."""
     try:
@@ -103,9 +107,11 @@ logger.info(f"Dados novos detectados! Hash: {current_hash[:16]}...")
 
 # COMMAND ----------
 
-# ============================================================
-# 4. CAPTURAR VERSOES DELTA (para rollback no agent_post)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Capturar Versoes Delta
+
+# COMMAND ----------
+
 TRACKED_TABLES = [
     f"{CATALOG}.bronze.conversations",
     f"{CATALOG}.silver.messages_clean",
@@ -142,9 +148,11 @@ logger.info(f"Versoes Delta capturadas: {len(delta_versions)} tabelas")
 
 # COMMAND ----------
 
-# ============================================================
-# 5. SETAR TASK VALUES
-# ============================================================
+# MAGIC %md
+# MAGIC ## Setar Task Values
+
+# COMMAND ----------
+
 run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 dbutils.jobs.taskValues.set(key="should_process", value=True)

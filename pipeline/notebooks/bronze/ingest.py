@@ -5,37 +5,44 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import hashlib
 import logging
+import os
 import sys
 import time
 
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("bronze.ingest")
 
 # COMMAND ----------
 
-# ============================================================
-# IMPORTAR S3Lake (boto3 + Databricks Secrets)
-# ============================================================
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-from pipeline_lib.storage import S3Lake
-
-lake = S3Lake(dbutils, spark)
-
-# COMMAND ----------
-
-# ============================================================
-# CONFIGURACAO
-# ============================================================
-BRONZE_S3_PREFIX = "bronze/"
-CATALOG = "medallion"
+BRONZE_S3_PREFIX = dbutils.widgets.get("bronze_prefix")
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 
 # COMMAND ----------
 
-# ============================================================
-# 1. VERIFICAR TASK VALUES DO AGENTE (se rodando via Workflow)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Verificar Task Values do Agente
+
+# COMMAND ----------
+
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -46,15 +53,16 @@ try:
         taskKey="agent_pre", key="bronze_prefix", default=BRONZE_S3_PREFIX
     )
 except Exception:
-    # Execucao standalone (sem Workflow) — usar config default
     bronze_prefix = BRONZE_S3_PREFIX
     logger.info("Executando standalone (sem agent_pre)")
 
 # COMMAND ----------
 
-# ============================================================
-# 2. LER PARQUET DO S3 (via boto3 in-memory → Spark DataFrame)
-# ============================================================
+# MAGIC %md
+# MAGIC ## Ler Parquet do S3
+
+# COMMAND ----------
+
 start_time = time.time()
 
 df = lake.read_parquet(bronze_prefix)
@@ -66,10 +74,11 @@ logger.info(f"Colunas encontradas: {sorted(columns)}")
 
 # COMMAND ----------
 
-# ============================================================
-# 3. VALIDAR SCHEMA COM EVOLUTION
-# ============================================================
-# Importar lib de validacao (ja no sys.path via S3Lake import acima)
+# MAGIC %md
+# MAGIC ## Validar Schema
+
+# COMMAND ----------
+
 from pipeline_lib.schema.contracts import REQUIRED_COLUMNS
 from pipeline_lib.schema.validator import validate_schema
 
@@ -91,12 +100,13 @@ if validation.warnings:
 
 # COMMAND ----------
 
-# ============================================================
-# 4. SALVAR COMO DELTA TABLE (com schema evolution) + S3
-# ============================================================
+# MAGIC %md
+# MAGIC ## Salvar como Delta Table + S3
+
+# COMMAND ----------
+
 logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
 
-# 4a. Salvar no Unity Catalog (para queries SQL no Databricks)
 (
     df.write
     .format("delta")
@@ -105,20 +115,19 @@ logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
     .saveAsTable(BRONZE_TABLE)
 )
 
-# Verificar resultado
 saved_count = int(spark.table(BRONZE_TABLE).count())
 logger.info(f"Delta Table salva (UC): {saved_count} linhas")
 
-# 4b. Upload para S3 (data lake persistente, in-memory)
-# Lemos da tabela UC (DF limpo, sem plan metrics do Spark)
 lake.write_parquet(spark.table(BRONZE_TABLE), "bronze/conversations/")
 logger.info("Parquet uploaded para S3 bronze/conversations/")
 
 # COMMAND ----------
 
-# ============================================================
-# 5. FINGERPRINT VIA S3 METADATA
-# ============================================================
+# MAGIC %md
+# MAGIC ## Fingerprint via S3 Metadata
+
+# COMMAND ----------
+
 def get_s3_fingerprint(prefix: str) -> str:
     """Gera fingerprint dos arquivos no S3 via metadata (boto3)."""
     items = lake.get_metadata(prefix)
@@ -137,9 +146,11 @@ except Exception as e:
 
 # COMMAND ----------
 
-# ============================================================
-# 6. METRICAS E TASK VALUES
-# ============================================================
+# MAGIC %md
+# MAGIC ## Metricas e Task Values
+
+# COMMAND ----------
+
 duration_sec = round(time.time() - start_time, 2)
 
 metrics = {
@@ -163,6 +174,6 @@ try:
         value=str(validation.warnings) if validation.warnings else "none",
     )
 except Exception:
-    pass  # Execucao standalone
+    pass
 
 dbutils.notebook.exit(f"SUCCESS: {saved_count} rows ingested in {duration_sec}s")

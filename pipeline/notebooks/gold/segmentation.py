@@ -5,19 +5,31 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
 import logging
+import os
 import sys
 import time
 
 from pyspark.sql import functions as F
 
-logger = logging.getLogger("gold.segmentation")
+# Auto-detect repo path from this notebook's location
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:5])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+sys.path.insert(0, PIPELINE_ROOT)
 
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils, spark)
-CATALOG = "medallion"
+lake = S3Lake(dbutils, spark, scope=SCOPE)
+logger = logging.getLogger("gold.segmentation")
 start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
@@ -27,9 +39,11 @@ leads = spark.table(f"{CATALOG}.silver.leads_profile")
 
 # COMMAND ----------
 
-# ============================================================
-# 1. COMBINAR FEATURES
-# ============================================================
+# MAGIC %md
+# MAGIC ## Combinar Features
+
+# COMMAND ----------
+
 combined = (
     conversations.join(sentiment.select("conversation_id", "sentiment_score"), on="conversation_id")
     .join(lead_scores.select("conversation_id", "lead_score"), on="conversation_id")
@@ -48,9 +62,11 @@ combined = (
 
 # COMMAND ----------
 
-# ============================================================
-# 2. CLASSIFICACAO EM PERSONAS
-# ============================================================
+# MAGIC %md
+# MAGIC ## Classificacao em Personas
+
+# COMMAND ----------
+
 personas = combined.withColumn(
     "persona",
     F.when(
@@ -84,9 +100,11 @@ personas = combined.withColumn(
 
 # COMMAND ----------
 
-# ============================================================
-# 3. RESUMO POR PERSONA
-# ============================================================
+# MAGIC %md
+# MAGIC ## Resumo por Persona
+
+# COMMAND ----------
+
 persona_summary = personas.groupBy("persona").agg(
     F.count("*").alias("total"),
     F.avg("lead_score").alias("avg_lead_score"),
@@ -97,10 +115,11 @@ persona_summary = personas.groupBy("persona").agg(
 
 # COMMAND ----------
 
-# ============================================================
-# 4. SALVAR
-# ============================================================
-# Tabela detalhada (por conversa)
+# MAGIC %md
+# MAGIC ## Salvar
+
+# COMMAND ----------
+
 personas_result = personas.select(
     "conversation_id", "persona", "outcome", "lead_score", "sentiment_score",
     "total_messages", "campaign_id", "agent_id",
@@ -109,12 +128,10 @@ personas_result.write.format("delta").mode("overwrite").option("mergeSchema", "t
     f"{CATALOG}.gold.personas"
 )
 
-# Tabela resumo
 persona_summary.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.persona_summary"
 )
 
-# Upload para S3 (in-memory)
 lake.write_parquet(personas_result, "gold/personas/")
 lake.write_parquet(persona_summary, "gold/persona_summary/")
 
