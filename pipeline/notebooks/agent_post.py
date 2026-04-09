@@ -166,12 +166,14 @@ def collect_task_results() -> dict:
     return results
 
 task_results = collect_task_results()
-# Identifica quais tasks falharam
-# Status aceitos: SUCCESS, SKIP, PASS (quality_validation), PARTIAL (gold com falhas parciais)
-ACCEPTED_STATUS = ("SUCCESS", "SKIP", "PASS")
+# Status que indicam sucesso ou que a task nao precisa de acao
+# UNKNOWN = task nunca rodou (upstream failure) — nao eh uma falha propria
+ACCEPTED_STATUS = ("SUCCESS", "SKIP", "PASS", "UNKNOWN")
 failed_tasks = [t for t, s in task_results.items() if s not in ACCEPTED_STATUS]
 all_ok = len(failed_tasks) == 0
 
+print(f"\n  Task results: {task_results}")
+print(f"  Failed (excluindo UNKNOWN): {failed_tasks}")
 logger.info(f"Task results: {task_results}")
 logger.info(f"Failed: {failed_tasks}")
 
