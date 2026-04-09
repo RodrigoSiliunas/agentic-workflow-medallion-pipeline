@@ -127,17 +127,25 @@ leads = (
 # COMMAND ----------
 
 # ============================================================
-# 4. MASCARAR DADOS SENSIVEIS
+# 4. MASCARAR DADOS SENSIVEIS (via pandas — serverless nao suporta
+#    F.transform(array, python_udf) com lambda)
 # ============================================================
-leads_masked = leads.withColumns(
-    {
-        "cpf_masked": F.transform("cpfs", mask_cpf_udf),
-        "cpf_hash": F.transform("cpfs", hash_udf),
-        "email_masked": F.transform("emails", mask_email_udf),
-        "phone_masked": F.transform("phones", mask_phone_udf),
-        "plate_masked": F.transform("plates", mask_plate_udf),
-    }
-).drop("cpfs", "emails", "phones", "plates")
+import pandas as pd
+
+leads_rows = leads.collect()
+leads_pdf = pd.DataFrame([r.asDict() for r in leads_rows])
+
+def safe_map(arr, fn):
+    return [fn(x) for x in (arr or [])] if arr else []
+
+leads_pdf["cpf_masked"] = leads_pdf["cpfs"].apply(lambda a: safe_map(a, mask_cpf))
+leads_pdf["cpf_hash"] = leads_pdf["cpfs"].apply(lambda a: safe_map(a, hash_value))
+leads_pdf["email_masked"] = leads_pdf["emails"].apply(lambda a: safe_map(a, mask_email))
+leads_pdf["phone_masked"] = leads_pdf["phones"].apply(lambda a: safe_map(a, mask_phone))
+leads_pdf["plate_masked"] = leads_pdf["plates"].apply(lambda a: safe_map(a, mask_plate))
+leads_pdf = leads_pdf.drop(columns=["cpfs", "emails", "phones", "plates"])
+
+leads_masked = spark.createDataFrame(leads_pdf)
 
 # COMMAND ----------
 
@@ -154,8 +162,8 @@ df_redacted = df.withColumn("message_body", redact_udf("message_body"))
     .saveAsTable(SILVER_MESSAGES)
 )
 
-# Upload messages_clean redacted para S3 (in-memory)
-lake.write_parquet(df_redacted, "silver/messages_clean/")
+# Upload messages_clean redacted para S3 (in-memory, lê da UC table)
+lake.write_parquet(spark.table(SILVER_MESSAGES), "silver/messages_clean/")
 logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 
 # COMMAND ----------
@@ -170,8 +178,8 @@ logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
     .saveAsTable(SILVER_LEADS)
 )
 
-# Upload leads_profile para S3 (in-memory)
-lake.write_parquet(leads_masked, "silver/leads_profile/")
+# Upload leads_profile para S3 (in-memory, lê da UC table)
+lake.write_parquet(spark.table(SILVER_LEADS), "silver/leads_profile/")
 logger.info("Parquet uploaded para S3 silver/leads_profile/")
 
 leads_count = spark.table(SILVER_LEADS).count()
