@@ -18,7 +18,6 @@ from databricks.sdk.service.jobs import (
     RunIf,
     Task,
     TaskDependency,
-    WebhookNotifications,
 )
 
 # ============================================================
@@ -153,11 +152,13 @@ def create_workflow():
     job = w.jobs.create(
         name="medallion_pipeline_whatsapp",
         description=(
-            "Pipeline Medallion agentico para analise de conversas WhatsApp de seguro auto.\n\n"
-            "Fluxo: agent_pre → bronze (ingestao S3) → silver (dedup + entities/masking + enrichment) "
-            "→ gold (12 tabelas analiticas) → validation → agent_post (recovery + notifications).\n\n"
-            "Dados persistem em S3 (data lake) e Unity Catalog (queries SQL).\n"
-            "Acesso S3 via boto3 + Databricks Secrets (multi-tenant ready)."
+            "Pipeline Medallion agentico para analise de conversas "
+            "WhatsApp de seguro auto.\n\n"
+            "Fluxo: agent_pre > bronze > silver (dedup + entities "
+            "+ enrichment) > gold (12 tabelas) > validation > "
+            "agent_post (recovery + notifications).\n\n"
+            "Dados em S3 (lake) e Unity Catalog (queries SQL).\n"
+            "S3 via boto3 + Databricks Secrets (multi-tenant)."
         ),
         tasks=tasks,
         tags={
@@ -184,14 +185,14 @@ def create_workflow():
 
     print("Workflow criado com sucesso!")
     print(f"  Job ID:      {job.job_id}")
-    print(f"  Nome:        medallion_pipeline_whatsapp")
+    print("  Nome:        medallion_pipeline_whatsapp")
     print(f"  Admin:       {ADMIN_EMAIL}")
     print(f"  Catalog:     {CATALOG}")
     print(f"  Scope:       {SECRET_SCOPE}")
-    print(f"  Timeout:     3600s (job) + per-task")
-    print(f"  Schedule:    06:00 diario (Sao Paulo)")
-    print(f"  Tags:        Project, Team, CostCenter, Environment, DataDomain")
-    print(f"  Alerts:      on_start + on_failure + duration_warning > 40min")
+    print("  Timeout:     3600s (job) + per-task")
+    print("  Schedule:    06:00 diario (Sao Paulo)")
+    print("  Tags:        Project, Team, CostCenter, Environment")
+    print("  Alerts:      on_start + on_failure + duration_warning")
     print(f"  Tasks:       {len(tasks)}")
 
     return job.job_id
