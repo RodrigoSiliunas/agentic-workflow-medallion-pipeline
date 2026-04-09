@@ -1,4 +1,4 @@
-"""Extrator de dados de veiculo (marca, modelo, ano)."""
+"""Extrator de dados de veículo (marca, modelo, ano)."""
 
 import re
 

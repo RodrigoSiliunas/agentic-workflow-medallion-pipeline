@@ -1,4 +1,4 @@
-"""Extrator de placa de veiculo (Mercosul e antiga)."""
+"""Extrator de placa de veículo (Mercosul e antiga)."""
 
 import re
 

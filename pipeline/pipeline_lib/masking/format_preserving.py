@@ -1,4 +1,4 @@
-"""Mascaramento preservando formato e dimensoes."""
+"""Mascaramento preservando formato e dimensões."""
 
 import re
 

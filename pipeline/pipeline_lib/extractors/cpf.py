@@ -13,7 +13,7 @@ def extract(text: str | None) -> list[str]:
 
 
 def validate(cpf: str) -> bool:
-    """Valida CPF pelos digitos verificadores."""
+    """Valida CPF pelos dígitos verificadores."""
     digits = re.sub(r"\D", "", cpf)
     if len(digits) != 11 or len(set(digits)) == 1:
         return False

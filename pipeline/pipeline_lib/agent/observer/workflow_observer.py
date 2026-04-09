@@ -155,7 +155,7 @@ class WorkflowObserver:
         return "\n".join(parts)
 
     def build_context(self, failure: dict) -> dict:
-        """Constroi contexto completo para o LLM provider."""
+        """Constrói contexto completo para o LLM provider."""
         run_id = failure["run_id"]
         codes = self.collect_notebook_code(run_id)
         schema = self.collect_schema_info()

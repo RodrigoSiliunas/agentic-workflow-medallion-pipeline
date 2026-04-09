@@ -1,4 +1,4 @@
-"""Redaction de PII no message_body (texto livre)."""
+"""Redação de PII no message_body (texto livre)."""
 
 import re
 
@@ -9,13 +9,13 @@ from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_pl
 
 
 def redact_message_body(text: str | None) -> str | None:
-    """Substitui dados sensiveis no texto livre por versoes mascaradas."""
+    """Substitui dados sensíveis no texto livre por versões mascaradas."""
     if text is None:
         return None
     if not text:
         return text
 
-    # CPF primeiro (antes de telefone, para evitar conflito de digitos)
+    # CPF primeiro (antes de telefone, para evitar conflito de dígitos)
     text = re.sub(CPF_PATTERN, lambda m: mask_cpf(m.group()), text)
 
     # Email

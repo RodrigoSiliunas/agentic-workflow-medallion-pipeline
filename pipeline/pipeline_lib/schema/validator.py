@@ -1,4 +1,4 @@
-"""Validacao de schema com suporte a evolution."""
+"""Validação de schema com suporte a evolution."""
 
 from dataclasses import dataclass, field
 
@@ -13,10 +13,10 @@ class SchemaValidationResult:
 
 
 def validate_schema(df_columns: set[str]) -> SchemaValidationResult:
-    """Valida schema contra colunas obrigatorias, aceitando colunas novas.
+    """Valida schema contra colunas obrigatórias, aceitando colunas novas.
 
-    Retorna is_valid=True se todas as colunas obrigatorias estao presentes.
-    Colunas extras geram warnings (schema evolution), nao erros.
+    Retorna is_valid=True se todas as colunas obrigatórias estão presentes.
+    Colunas extras geram warnings (schema evolution), não erros.
     """
     missing = REQUIRED_COLUMNS - df_columns
     new_cols = df_columns - REQUIRED_COLUMNS
@@ -25,12 +25,12 @@ def validate_schema(df_columns: set[str]) -> SchemaValidationResult:
     warnings = []
 
     if missing:
-        errors.append(f"Colunas obrigatorias ausentes: {sorted(missing)}")
+        errors.append(f"Colunas obrigatórias ausentes: {sorted(missing)}")
 
     if new_cols:
         warnings.append(
             f"{len(new_cols)} colunas novas detectadas: {sorted(new_cols)}. "
-            "Serao preservadas nas camadas subsequentes."
+            "Serão preservadas nas camadas subsequentes."
         )
 
     return SchemaValidationResult(

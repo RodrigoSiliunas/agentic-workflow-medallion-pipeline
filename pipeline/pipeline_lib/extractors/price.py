@@ -1,4 +1,4 @@
-"""Extrator de valores monetarios (R$)."""
+"""Extrator de valores monetários (R$)."""
 
 import re
 
