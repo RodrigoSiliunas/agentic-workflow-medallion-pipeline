@@ -491,55 +491,35 @@ if all_ok:
     exit_status = "SUCCESS"
     exit_details = f"run_id={run_id}"
 else:
-    # Falha detectada — inicia recovery
+    # =============================================================
+    # FALHA DETECTADA — Fluxo agentico:
+    #   1. Rollback Delta (protege os dados imediatamente)
+    #   2. AI SEMPRE (diagnostica o erro + cria PR com fix)
+    # Rollback e AI sao complementares, nao alternativos.
+    # =============================================================
     failures = state.get("consecutive_failures", 0) + 1
-    log.append(f"FALHA: {len(failed_tasks)} tasks, consecutivas={failures}/{MAX_CONSECUTIVE_FAILURES}")
+    log.append(f"FALHA: {len(failed_tasks)} tasks, consecutivas={failures}")
 
-    # Detectar chaos mode para decidir estrategia
-    chaos_active = False
-    try:
-        chaos_active = dbutils.jobs.taskValues.get(
-            taskKey="agent_pre", key="chaos_mode", default="off"
-        ) != "off"
-    except Exception:
-        pass
-
-    # Passo 1: Rollback Delta (pula se chaos — bug de codigo nao se resolve com rollback)
-    recovery_ok = False
+    # Passo 1: Rollback Delta — protege os dados
+    log.append("[1/2] ROLLBACK DELTA (protecao de dados)")
     recovery_actions = []
-    if chaos_active:
-        log.append("ROLLBACK PULADO: chaos mode ativo (bug de codigo precisa de AI)")
-    else:
-        log.append("TENTATIVA 1: Rollback Delta")
-        try:
-            recovery_actions = attempt_recovery(failed_tasks)
-            recovery_ok = True
-            log.append(f"ROLLBACK OK: {recovery_actions}")
-        except Exception as e:
-            log.append(f"ROLLBACK FALHOU: {e}")
+    try:
+        recovery_actions = attempt_recovery(failed_tasks)
+        log.append(f"ROLLBACK OK: {recovery_actions}")
+    except Exception as e:
+        log.append(f"ROLLBACK FALHOU: {e}")
 
-    # Passo 2: Se rollback falhou/pulado OU muitas falhas, aciona AI
-    ai_needed = not recovery_ok or failures >= MAX_CONSECUTIVE_FAILURES
+    # Passo 2: Agente AI — SEMPRE chamado quando ha erro
+    # O rollback protegeu os dados, agora o AI corrige o codigo
+    log.append("[2/2] AGENTE AI (diagnostico + PR)")
     ai_result = None
-    if ai_needed:
-        log.append("TENTATIVA 2: Agente AI (Claude Opus + GitHub PR)")
-        try:
-            ai_result = ai_diagnose_and_fix(failed_tasks, log)
-        except Exception as e:
-            log.append(f"AGENTE AI FALHOU: {e}")
+    try:
+        ai_result = ai_diagnose_and_fix(failed_tasks, log)
+    except Exception as e:
+        log.append(f"AGENTE AI FALHOU: {e}")
 
-    # Decidir resultado final e persistir
-    if recovery_ok and not ai_needed:
-        save_state(bronze_hash, "RECOVERED", 0)
-        send_notification(
-            level="WARNING",
-            subject="[Pipeline] Correcao automatica (rollback)",
-            body=build_recovery_body(recovery_actions),
-        )
-        exit_status = "RECOVERED"
-        exit_details = f"actions={recovery_actions}"
-
-    elif ai_result and ai_result.get("diagnosis"):
+    # Persistir resultado
+    if ai_result and ai_result.get("diagnosis"):
         diagnosis = ai_result.get("diagnosis", {})
         pr = ai_result.get("pr")
         pr_url = pr["pr_url"] if pr else "none"
@@ -552,17 +532,22 @@ else:
             body=build_ai_notification_body(diagnosis, pr),
         )
         exit_status = "AI_DIAGNOSED"
-        exit_details = f"pr={pr_url}, confidence={conf:.0%}"
-
+        exit_details = (
+            f"rollback={len(recovery_actions)} tabelas, "
+            f"pr={pr_url}, confidence={conf:.0%}"
+        )
     else:
         save_state(bronze_hash, "FAILED", failures)
         send_notification(
             level="CRITICAL",
-            subject="[Pipeline] FALHA TOTAL",
-            body=build_failure_body("Recovery e AI falharam", failures),
+            subject="[Pipeline] Agente AI falhou",
+            body=build_failure_body(
+                "Rollback executado mas AI nao conseguiu diagnosticar",
+                failures,
+            ),
         )
         exit_status = "FAILED"
-        exit_details = "all recovery methods exhausted"
+        exit_details = f"rollback={len(recovery_actions)}, ai=falhou"
 
 # Unico ponto de saida — FORA de qualquer try/except
 log_str = " | ".join(log)
