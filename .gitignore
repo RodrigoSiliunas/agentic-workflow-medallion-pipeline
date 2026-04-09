@@ -50,6 +50,12 @@ platform/backend/venv/
 # Design system repo (submodule/reference)
 platform/design/
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+
 # Secrets
 *.pem
 *.key

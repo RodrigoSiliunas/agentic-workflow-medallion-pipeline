@@ -20,7 +20,7 @@ from databricks.sdk.service.jobs import (
 # ============================================================
 # CONFIGURACAO
 # ============================================================
-REPO_PATH = "/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline"
+REPO_PATH = "/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline"
 EMAIL = "rodrigosiliunas1@gmail.com"
 
 

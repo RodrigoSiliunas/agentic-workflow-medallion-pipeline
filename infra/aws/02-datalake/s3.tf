@@ -59,6 +59,52 @@ resource "aws_s3_bucket_logging" "datalake" {
   target_prefix = "_logs/"
 }
 
+# --- Bucket policy: acesso via Databricks role e Pipeline agent ---
+resource "aws_s3_bucket_policy" "datalake" {
+  bucket = aws_s3_bucket.datalake.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DatabricksRoleAccess"
+        Effect = "Allow"
+        Principal = {
+          AWS = local.databricks_role_arn
+        }
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+        ]
+        Resource = [
+          aws_s3_bucket.datalake.arn,
+          "${aws_s3_bucket.datalake.arn}/*",
+        ]
+      },
+      {
+        Sid    = "PipelineAgentAccess"
+        Effect = "Allow"
+        Principal = {
+          AWS = local.pipeline_agent_arn
+        }
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+        ]
+        Resource = [
+          aws_s3_bucket.datalake.arn,
+          "${aws_s3_bucket.datalake.arn}/*",
+        ]
+      }
+    ]
+  })
+}
+
 # =============================================================================
 # Lifecycle Rules — otimizacao de custo por camada
 # =============================================================================
@@ -114,7 +160,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "datalake" {
     }
   }
 
-  # Versoes anteriores: deletar apos 30 dias (todas as camadas)
+  # Versoes anteriores: deletar apos 30 dias
   rule {
     id     = "noncurrent-cleanup"
     status = "Enabled"

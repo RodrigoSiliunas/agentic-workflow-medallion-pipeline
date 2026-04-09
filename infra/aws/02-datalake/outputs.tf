@@ -1,3 +1,7 @@
+# =============================================================================
+# Outputs — 02-datalake
+# =============================================================================
+
 output "bucket_name" {
   description = "Nome do S3 bucket"
   value       = aws_s3_bucket.datalake.id
@@ -18,7 +22,7 @@ output "bucket_url" {
   value       = "s3://${aws_s3_bucket.datalake.id}"
 }
 
-output "iam_policy_arn" {
-  description = "ARN da IAM policy para Databricks"
-  value       = aws_iam_policy.databricks_s3_access.arn
+output "databricks_role_arn" {
+  description = "ARN da role Databricks (do foundation)"
+  value       = local.databricks_role_arn
 }

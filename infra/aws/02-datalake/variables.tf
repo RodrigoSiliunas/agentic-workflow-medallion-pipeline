@@ -1,3 +1,7 @@
+# =============================================================================
+# Variaveis — 02-datalake
+# =============================================================================
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
@@ -20,10 +24,4 @@ variable "bucket_name" {
   description = "Nome do S3 bucket do data lake"
   type        = string
   default     = "namastex-medallion-datalake"
-}
-
-variable "databricks_account_id" {
-  description = "Databricks account ID (para IAM trust policy)"
-  type        = string
-  default     = ""
 }

@@ -1,3 +1,7 @@
+# =============================================================================
+# Terraform + Provider — 02-datalake
+# =============================================================================
+
 terraform {
   required_version = ">= 1.5"
 
@@ -18,6 +22,7 @@ provider "aws" {
       Environment = var.environment
       Team        = "data-engineering"
       ManagedBy   = "terraform"
+      Module      = "datalake"
     }
   }
 }
