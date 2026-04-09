@@ -21,7 +21,7 @@ logger = logging.getLogger("silver.enrichment")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 
 # COMMAND ----------
 
@@ -101,12 +101,9 @@ conversations = conversations.withColumn(
 
 conv_count = spark.table(SILVER_CONVERSATIONS).count()
 
-# 3b. Upload Delta para S3
-delta_tmp = lake.make_temp_dir("silver_enriched_")
-local_delta = f"{delta_tmp}/conversations_enriched"
-conversations.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_delta)
-n_files = lake.upload_dir(local_delta, "silver/conversations_enriched/")
-logger.info(f"Delta uploaded para S3 silver/conversations_enriched/: {n_files} arquivos")
+# 3b. Upload para S3 (in-memory)
+lake.write_parquet(conversations, "silver/conversations_enriched/")
+logger.info("Parquet uploaded para S3 silver/conversations_enriched/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Silver conversations_enriched: {conv_count} conversas em {duration}s")

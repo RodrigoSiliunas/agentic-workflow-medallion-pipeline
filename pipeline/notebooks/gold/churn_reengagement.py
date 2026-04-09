@@ -17,7 +17,7 @@ logger = logging.getLogger("gold.churn_reengagement")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -99,11 +99,8 @@ churn_summary.write.format("delta").mode("overwrite").option("mergeSchema", "tru
     GOLD_TABLE
 )
 
-# Upload para S3
-tmp = lake.make_temp_dir("gold_churn_")
-local_path = f"{tmp}/churn_reengagement"
-churn_summary.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
-lake.upload_dir(local_path, "gold/churn_reengagement/")
+# Upload para S3 (in-memory)
+lake.write_parquet(churn_summary, "gold/churn_reengagement/")
 
 duration = round(time.time() - start_time, 2)
 count = churn_summary.count()

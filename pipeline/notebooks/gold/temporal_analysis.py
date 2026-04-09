@@ -16,7 +16,7 @@ logger = logging.getLogger("gold.temporal_analysis")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -64,11 +64,8 @@ temporal.write.format("delta").mode("overwrite").option("mergeSchema", "true").s
     GOLD_TABLE
 )
 
-# Upload para S3
-tmp = lake.make_temp_dir("gold_temporal_")
-local_path = f"{tmp}/temporal_analysis"
-temporal.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
-lake.upload_dir(local_path, "gold/temporal_analysis/")
+# Upload para S3 (in-memory)
+lake.write_parquet(temporal, "gold/temporal_analysis/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold temporal_analysis em {duration}s")

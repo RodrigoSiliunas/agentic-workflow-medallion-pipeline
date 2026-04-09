@@ -24,7 +24,7 @@ logger = logging.getLogger("agent_post")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 
 # COMMAND ----------
 
@@ -113,10 +113,7 @@ if not should_process:
     )
     spark.createDataFrame([save_row]).write.format("delta").mode("append").saveAsTable(STATE_TABLE)
     # Upload state para S3
-    _tmp = lake.make_temp_dir("pipeline_state_skip_")
-    _local = f"{_tmp}/state"
-    spark.table(STATE_TABLE).write.format("delta").mode("overwrite").save(_local)
-    lake.upload_dir(_local, "pipeline/state/")
+    lake.write_parquet(spark.table(STATE_TABLE), "pipeline/state/")
     dbutils.notebook.exit("SKIP: no new data to process")
 
 # COMMAND ----------
@@ -168,10 +165,7 @@ def save_state(bronze_hash: str, status: str, failures: int):
     state_df.write.format("delta").mode("append").saveAsTable(STATE_TABLE)
 
     # Upload state para S3
-    tmp = lake.make_temp_dir("pipeline_state_")
-    local_path = f"{tmp}/state"
-    spark.table(STATE_TABLE).write.format("delta").mode("overwrite").save(local_path)
-    lake.upload_dir(local_path, "pipeline/state/")
+    lake.write_parquet(spark.table(STATE_TABLE), "pipeline/state/")
 
 def send_notification(level: str, subject: str, body: str):
     """Persiste notificacao em Delta Table e loga."""
@@ -189,10 +183,7 @@ def send_notification(level: str, subject: str, body: str):
     logger.info(f"[{level}] {subject}")
 
     # Upload notifications para S3
-    tmp = lake.make_temp_dir("pipeline_notif_")
-    local_path = f"{tmp}/notifications"
-    spark.table(NOTIFICATIONS_TABLE).write.format("delta").mode("overwrite").save(local_path)
-    lake.upload_dir(local_path, "pipeline/notifications/")
+    lake.write_parquet(spark.table(NOTIFICATIONS_TABLE), "pipeline/notifications/")
 
 def build_success_body() -> str:
     lines = [f"Run ID: {run_id}", f"Timestamp: {datetime.now().isoformat()}", ""]

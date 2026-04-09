@@ -39,7 +39,7 @@ sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow
 from pipeline_lib.storage import S3Lake
 from pipeline_lib.extractors import competitor, cpf, cep, email, phone, plate, price, vehicle
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate
 from pipeline_lib.masking.hash_based import hash_value
 from pipeline_lib.masking.redaction import redact_message_body
@@ -154,12 +154,9 @@ df_redacted = df.withColumn("message_body", redact_udf("message_body"))
     .saveAsTable(SILVER_MESSAGES)
 )
 
-# Upload messages_clean redacted para S3
-msg_tmp = lake.make_temp_dir("silver_msg_redacted_")
-local_msg = f"{msg_tmp}/messages_clean"
-df_redacted.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_msg)
-n_msg = lake.upload_dir(local_msg, "silver/messages_clean/")
-logger.info(f"Delta uploaded para S3 silver/messages_clean/ (redacted): {n_msg} arquivos")
+# Upload messages_clean redacted para S3 (in-memory)
+lake.write_parquet(df_redacted, "silver/messages_clean/")
+logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 
 # COMMAND ----------
 
@@ -173,12 +170,9 @@ logger.info(f"Delta uploaded para S3 silver/messages_clean/ (redacted): {n_msg} 
     .saveAsTable(SILVER_LEADS)
 )
 
-# Upload leads_profile para S3
-leads_tmp = lake.make_temp_dir("silver_leads_")
-local_leads = f"{leads_tmp}/leads_profile"
-leads_masked.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_leads)
-n_leads = lake.upload_dir(local_leads, "silver/leads_profile/")
-logger.info(f"Delta uploaded para S3 silver/leads_profile/: {n_leads} arquivos")
+# Upload leads_profile para S3 (in-memory)
+lake.write_parquet(leads_masked, "silver/leads_profile/")
+logger.info("Parquet uploaded para S3 silver/leads_profile/")
 
 leads_count = spark.table(SILVER_LEADS).count()
 duration = round(time.time() - start_time, 2)

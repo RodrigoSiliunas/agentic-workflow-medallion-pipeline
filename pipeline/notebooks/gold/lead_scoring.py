@@ -16,7 +16,7 @@ logger = logging.getLogger("gold.lead_scoring")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -106,11 +106,8 @@ result = scored.select(
 GOLD_TABLE = f"{CATALOG}.gold.lead_scoring"
 result.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
 
-# Upload para S3
-tmp = lake.make_temp_dir("gold_lead_scoring_")
-local_path = f"{tmp}/lead_scoring"
-result.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
-lake.upload_dir(local_path, "gold/lead_scoring/")
+# Upload para S3 (in-memory)
+lake.write_parquet(result, "gold/lead_scoring/")
 
 duration = round(time.time() - start_time, 2)
 count = result.count()

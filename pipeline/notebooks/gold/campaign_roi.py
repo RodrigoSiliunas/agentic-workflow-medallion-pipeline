@@ -16,7 +16,7 @@ logger = logging.getLogger("gold.campaign_roi")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -81,16 +81,9 @@ geo_campaign.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.campaign_geo"
 )
 
-# Upload para S3
-tmp1 = lake.make_temp_dir("gold_campaign_roi_")
-local1 = f"{tmp1}/campaign_roi"
-campaign_stats.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local1)
-lake.upload_dir(local1, "gold/campaign_roi/")
-
-tmp2 = lake.make_temp_dir("gold_campaign_geo_")
-local2 = f"{tmp2}/campaign_geo"
-geo_campaign.write.format("delta").mode("overwrite").save(local2)
-lake.upload_dir(local2, "gold/campaign_geo/")
+# Upload para S3 (in-memory)
+lake.write_parquet(campaign_stats, "gold/campaign_roi/")
+lake.write_parquet(geo_campaign, "gold/campaign_geo/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold campaign_roi em {duration}s")

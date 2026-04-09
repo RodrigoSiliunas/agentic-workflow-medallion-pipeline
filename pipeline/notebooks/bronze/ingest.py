@@ -20,7 +20,7 @@ logger = logging.getLogger("bronze.ingest")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 
 # COMMAND ----------
 
@@ -53,29 +53,11 @@ except Exception:
 # COMMAND ----------
 
 # ============================================================
-# 2. LER PARQUET DO S3 (via boto3 download → local → spark.read)
+# 2. LER PARQUET DO S3 (via boto3 in-memory → Spark DataFrame)
 # ============================================================
 start_time = time.time()
 
-# Descobrir arquivo parquet no prefix
-s3_keys = lake.list_keys(bronze_prefix)
-parquet_keys = [k for k in s3_keys if k.endswith(".parquet")]
-
-if not parquet_keys:
-    raise FileNotFoundError(f"Nenhum arquivo .parquet encontrado em s3://{lake.bucket}/{bronze_prefix}")
-
-# Download parquet para temp local
-tmp_dir = lake.make_temp_dir("bronze_input_")
-local_paths = []
-for key in parquet_keys:
-    filename = key.split("/")[-1]
-    local_path = f"{tmp_dir}/{filename}"
-    lake.download(key, local_path)
-    local_paths.append(local_path)
-    logger.info(f"Download S3: {key} → {local_path}")
-
-logger.info(f"Lendo {len(local_paths)} Parquet(s) do temp local")
-df = spark.read.parquet(*local_paths)
+df = lake.read_parquet(bronze_prefix)
 row_count = df.count()
 columns = set(df.columns)
 
@@ -127,12 +109,9 @@ logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
 saved_count = spark.table(BRONZE_TABLE).count()
 logger.info(f"Delta Table salva (UC): {saved_count} linhas")
 
-# 4b. Salvar Delta local e upload para S3 (data lake persistente)
-delta_tmp = lake.make_temp_dir("bronze_delta_")
-local_delta_path = f"{delta_tmp}/conversations"
-df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_delta_path)
-n_files = lake.upload_dir(local_delta_path, "bronze/conversations/")
-logger.info(f"Delta uploaded para S3 bronze/conversations/: {n_files} arquivos")
+# 4b. Upload para S3 (data lake persistente, in-memory)
+lake.write_parquet(df, "bronze/conversations/")
+logger.info("Parquet uploaded para S3 bronze/conversations/")
 
 # COMMAND ----------
 

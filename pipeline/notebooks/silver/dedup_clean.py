@@ -22,7 +22,7 @@ logger = logging.getLogger("silver.dedup_clean")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 
 # COMMAND ----------
 
@@ -131,12 +131,9 @@ df_parsed = df_clean.withColumns(
 
 silver_count = spark.table(SILVER_TABLE).count()
 
-# 5b. Upload Delta para S3
-delta_tmp = lake.make_temp_dir("silver_messages_")
-local_delta = f"{delta_tmp}/messages_clean"
-df_parsed.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_delta)
-n_files = lake.upload_dir(local_delta, "silver/messages_clean/")
-logger.info(f"Delta uploaded para S3 silver/messages_clean/: {n_files} arquivos")
+# 5b. Upload para S3 (in-memory)
+lake.write_parquet(df_parsed, "silver/messages_clean/")
+logger.info("Parquet uploaded para S3 silver/messages_clean/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s")

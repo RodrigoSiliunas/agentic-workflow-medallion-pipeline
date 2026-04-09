@@ -16,7 +16,7 @@ logger = logging.getLogger("gold.segmentation")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -114,16 +114,9 @@ persona_summary.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.persona_summary"
 )
 
-# Upload para S3
-tmp1 = lake.make_temp_dir("gold_personas_")
-local1 = f"{tmp1}/personas"
-personas_result.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local1)
-lake.upload_dir(local1, "gold/personas/")
-
-tmp2 = lake.make_temp_dir("gold_persona_summary_")
-local2 = f"{tmp2}/persona_summary"
-persona_summary.write.format("delta").mode("overwrite").save(local2)
-lake.upload_dir(local2, "gold/persona_summary/")
+# Upload para S3 (in-memory)
+lake.write_parquet(personas_result, "gold/personas/")
+lake.write_parquet(persona_summary, "gold/persona_summary/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold personas em {duration}s")

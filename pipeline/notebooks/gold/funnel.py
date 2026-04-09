@@ -17,7 +17,7 @@ logger = logging.getLogger("gold.funnel")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -110,16 +110,9 @@ fatal_patterns.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.fatal_messages"
 )
 
-# Upload para S3
-tmp1 = lake.make_temp_dir("gold_funnel_")
-local1 = f"{tmp1}/funil_vendas"
-funnel.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local1)
-lake.upload_dir(local1, "gold/funil_vendas/")
-
-tmp2 = lake.make_temp_dir("gold_fatal_")
-local2 = f"{tmp2}/fatal_messages"
-fatal_patterns.write.format("delta").mode("overwrite").save(local2)
-lake.upload_dir(local2, "gold/fatal_messages/")
+# Upload para S3 (in-memory)
+lake.write_parquet(funnel, "gold/funil_vendas/")
+lake.write_parquet(fatal_patterns, "gold/fatal_messages/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold funil_vendas: {funnel.count()} rows em {duration}s")

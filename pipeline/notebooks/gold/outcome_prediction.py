@@ -26,7 +26,7 @@ logger = logging.getLogger("gold.outcome_prediction")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -148,16 +148,9 @@ metrics_row.write.format("delta").mode("append").saveAsTable(
     f"{CATALOG}.gold.model_metrics"
 )
 
-# Upload para S3
-tmp1 = lake.make_temp_dir("gold_outcome_pred_")
-local1 = f"{tmp1}/outcome_prediction"
-result_df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local1)
-lake.upload_dir(local1, "gold/outcome_prediction/")
-
-tmp2 = lake.make_temp_dir("gold_model_metrics_")
-local2 = f"{tmp2}/model_metrics"
-metrics_row.write.format("delta").mode("overwrite").save(local2)
-lake.upload_dir(local2, "gold/model_metrics/")
+# Upload para S3 (in-memory)
+lake.write_parquet(result_df, "gold/outcome_prediction/")
+lake.write_parquet(metrics_row, "gold/model_metrics/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold outcome_prediction: accuracy={accuracy:.3f} em {duration}s")

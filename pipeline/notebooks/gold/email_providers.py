@@ -16,7 +16,7 @@ logger = logging.getLogger("gold.email_providers")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -67,11 +67,8 @@ provider_stats.write.format("delta").mode("overwrite").option("mergeSchema", "tr
     GOLD_TABLE
 )
 
-# Upload para S3
-tmp = lake.make_temp_dir("gold_email_")
-local_path = f"{tmp}/email_providers"
-provider_stats.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
-lake.upload_dir(local_path, "gold/email_providers/")
+# Upload para S3 (in-memory)
+lake.write_parquet(provider_stats, "gold/email_providers/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold email_providers: {provider_stats.count()} providers em {duration}s")

@@ -16,7 +16,7 @@ logger = logging.getLogger("gold.sentiment")
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 from pipeline_lib.storage import S3Lake
 
-lake = S3Lake(dbutils)
+lake = S3Lake(dbutils, spark)
 CATALOG = "medallion"
 start_time = time.time()
 
@@ -106,11 +106,8 @@ conv_sentiment.write.format("delta").mode("overwrite").option("mergeSchema", "tr
     GOLD_TABLE
 )
 
-# Upload para S3
-tmp = lake.make_temp_dir("gold_sentiment_")
-local_path = f"{tmp}/sentiment"
-conv_sentiment.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
-lake.upload_dir(local_path, "gold/sentiment/")
+# Upload para S3 (in-memory)
+lake.write_parquet(conv_sentiment, "gold/sentiment/")
 
 duration = round(time.time() - start_time, 2)
 count = conv_sentiment.count()
