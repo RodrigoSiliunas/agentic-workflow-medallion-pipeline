@@ -36,10 +36,15 @@ except Exception:
 # ============================================================
 sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 
+import os
 from pipeline_lib.storage import S3Lake
 from pipeline_lib.extractors import competitor, cpf, cep, email, phone, plate, price, vehicle
 
 lake = S3Lake(dbutils, spark)
+
+# Setar MASKING_SECRET do Databricks Secrets (hash_value precisa da env var)
+os.environ["MASKING_SECRET"] = dbutils.secrets.get("medallion-pipeline", "masking-secret")
+
 from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate
 from pipeline_lib.masking.hash_based import hash_value
 from pipeline_lib.masking.redaction import redact_message_body
