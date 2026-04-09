@@ -110,11 +110,14 @@ def get_bronze_fingerprint(prefix: str) -> str:
 current_hash = get_bronze_fingerprint(BRONZE_PREFIX)
 has_new_data = current_hash != state.get("last_bronze_hash")
 
-if not has_new_data:
-    # Sem alteracoes no S3 - sinaliza para o workflow pular todas as tasks
+if not has_new_data and CHAOS_MODE == "off":
+    # Sem alteracoes no S3 e sem chaos mode - pula processamento
     logger.info("Sem dados novos. Encerrando.")
     dbutils.jobs.taskValues.set(key="should_process", value=False)
     dbutils.notebook.exit("SKIP: no new data")
+
+if CHAOS_MODE != "off":
+    logger.warning(f"CHAOS MODE ativo ({CHAOS_MODE}) — forcando processamento")
 
 logger.info(f"Dados novos detectados! Hash: {current_hash[:16]}...")
 
