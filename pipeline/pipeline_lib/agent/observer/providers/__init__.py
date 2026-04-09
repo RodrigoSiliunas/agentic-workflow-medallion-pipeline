@@ -9,12 +9,14 @@ Uso:
     result = llm.diagnose(request)
     pr = git.create_fix_pr(result, "bronze_ingestion")
 
-Providers disponiveis:
+Providers disponíveis:
     LLM: anthropic, openai, ollama
     Git: github
 """
 
 from __future__ import annotations
+
+import contextlib
 
 from pipeline_lib.agent.observer.providers.base import (
     DiagnosisRequest as DiagnosisRequest,
@@ -38,7 +40,7 @@ _git_registry: dict[str, type[GitProvider]] = {}
 
 
 def register_llm_provider(name: str):
-    """Decorator para registrar um LLM provider no factory."""
+    """Decorator para registrar um LLM provider na factory."""
     def decorator(cls: type[LLMProvider]):
         _llm_registry[name] = cls
         return cls
@@ -46,7 +48,7 @@ def register_llm_provider(name: str):
 
 
 def register_git_provider(name: str):
-    """Decorator para registrar um Git provider no factory."""
+    """Decorator para registrar um Git provider na factory."""
     def decorator(cls: type[GitProvider]):
         _git_registry[name] = cls
         return cls
@@ -54,14 +56,14 @@ def register_git_provider(name: str):
 
 
 def create_llm_provider(name: str, **kwargs) -> LLMProvider:
-    """Factory: cria instancia de LLM provider pelo nome.
+    """Factory: cria instância de LLM provider pelo nome.
 
     Args:
         name: Nome do provider (anthropic, openai, ollama)
-        **kwargs: Parametros do provider (api_key, model, base_url, etc)
+        **kwargs: Parâmetros do provider (api_key, model, base_url, etc)
 
     Raises:
-        ValueError: Se provider nao registrado
+        ValueError: Se provider não registrado
     """
     # Lazy import dos providers para registrar no registry
     _ensure_providers_loaded()
@@ -69,29 +71,29 @@ def create_llm_provider(name: str, **kwargs) -> LLMProvider:
     if name not in _llm_registry:
         available = ", ".join(_llm_registry.keys()) or "nenhum"
         raise ValueError(
-            f"LLM provider '{name}' nao encontrado. "
-            f"Disponiveis: {available}"
+            f"LLM provider '{name}' não encontrado. "
+            f"Disponíveis: {available}"
         )
     return _llm_registry[name](**kwargs)
 
 
 def create_git_provider(name: str, **kwargs) -> GitProvider:
-    """Factory: cria instancia de Git provider pelo nome.
+    """Factory: cria instância de Git provider pelo nome.
 
     Args:
         name: Nome do provider (github, gitlab)
-        **kwargs: Parametros do provider (token, repo, base_branch, etc)
+        **kwargs: Parâmetros do provider (token, repo, base_branch, etc)
 
     Raises:
-        ValueError: Se provider nao registrado
+        ValueError: Se provider não registrado
     """
     _ensure_providers_loaded()
 
     if name not in _git_registry:
         available = ", ".join(_git_registry.keys()) or "nenhum"
         raise ValueError(
-            f"Git provider '{name}' nao encontrado. "
-            f"Disponiveis: {available}"
+            f"Git provider '{name}' não encontrado. "
+            f"Disponíveis: {available}"
         )
     return _git_registry[name](**kwargs)
 
@@ -106,9 +108,7 @@ def list_providers() -> dict[str, list[str]]:
 
 
 def _ensure_providers_loaded():
-    """Lazy import dos modulos de providers para popular o registry."""
-    import contextlib
-
+    """Lazy import dos módulos de providers para popular o registry."""
     if not _llm_registry:
         with contextlib.suppress(ImportError):
             import pipeline_lib.agent.observer.providers.anthropic_provider  # noqa: F401

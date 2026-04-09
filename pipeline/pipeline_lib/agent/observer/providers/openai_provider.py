@@ -1,6 +1,6 @@
 """Provider LLM: OpenAI (GPT-4o, GPT-4, o1, etc).
 
-Compativel com qualquer API OpenAI-compatible (Azure, Together, etc).
+Compatível com qualquer API OpenAI-compatible (Azure, Together, etc).
 """
 
 from __future__ import annotations
@@ -16,12 +16,13 @@ from pipeline_lib.agent.observer.providers.base import (
     DiagnosisRequest,
     DiagnosisResult,
     LLMProvider,
+    with_retry,
 )
 
 
 @register_llm_provider("openai")
 class OpenAIProvider(LLMProvider):
-    """OpenAI API (GPT-4o, GPT-4, etc). Compativel com Azure OpenAI."""
+    """OpenAI API (GPT-4o, GPT-4, etc). Compatível com Azure OpenAI."""
 
     def __init__(
         self,
@@ -39,12 +40,14 @@ class OpenAIProvider(LLMProvider):
     def name(self) -> str:
         return "openai"
 
+    @with_retry(max_retries=3, base_delay=2.0)
     def diagnose(self, request: DiagnosisRequest) -> DiagnosisResult:
         try:
+            # Lazy import: optional dependency
             from openai import OpenAI
         except ImportError as e:
             raise ImportError(
-                "openai package nao instalado. "
+                "openai package não instalado. "
                 "Instale com: pip install openai"
             ) from e
 
@@ -85,13 +88,13 @@ class OpenAIProvider(LLMProvider):
         )
 
     def _build_prompt(self, req: DiagnosisRequest) -> str:
-        return f"""O pipeline falhou. Diagnostico e correcao necessarios.
+        return f"""O pipeline falhou. Diagnóstico e correção necessários.
 
 Task: {req.failed_task}
 Erro: {req.error_message}
 Stack: {req.stack_trace}
 
-Codigo:
+Código:
 ```python
 {req.notebook_code}
 ```

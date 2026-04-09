@@ -9,6 +9,7 @@ from pipeline_lib.agent.observer.providers.base import (
     DiagnosisResult,
     GitProvider,
     PRResult,
+    with_retry,
 )
 
 
@@ -30,23 +31,25 @@ class GitHubProvider(GitProvider):
     def name(self) -> str:
         return "github"
 
+    @with_retry(max_retries=3, base_delay=2.0)
     def create_fix_pr(
         self,
         diagnosis: DiagnosisResult,
         failed_task: str,
     ) -> PRResult:
         try:
+            # Lazy import: optional dependency
             from github import Auth, Github
         except ImportError as e:
             raise ImportError(
-                "PyGithub nao instalado. "
+                "PyGithub não instalado. "
                 "Instale com: pip install PyGithub"
             ) from e
 
         gh = Github(auth=Auth.Token(self._token))
         repo = gh.get_repo(self._repo_name)
 
-        # Branch unica baseada em timestamp
+        # Branch única baseada em timestamp
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         task_slug = failed_task.replace("_", "-")
         branch_name = f"fix/agent-auto-{task_slug}-{ts}"
@@ -60,7 +63,7 @@ class GitHubProvider(GitProvider):
         # Commit o fix
         file_path = diagnosis.file_to_fix or "unknown"
         commit_msg = (
-            f"fix: correcao automatica em {failed_task}\n\n"
+            f"fix: correção automática em {failed_task}\n\n"
             f"{diagnosis.fix_description}"
         )
 
@@ -90,17 +93,17 @@ class GitHubProvider(GitProvider):
                 main_ref.object.sha,
             )
 
-        # PR com diagnostico
+        # PR com diagnóstico
         conf = diagnosis.confidence
         emoji = (
             "🟢" if conf >= 0.8 else "🟡" if conf >= 0.5 else "🔴"
         )
 
         pr = repo.create_pull(
-            title=f"fix: [{failed_task}] correcao automatica",
+            title=f"fix: [{failed_task}] correção automática",
             body=(
-                f"## Correcao Automatica — Observer Agent\n\n"
-                f"{emoji} **Confianca: {conf:.0%}** "
+                f"## Correção Automática — Observer Agent\n\n"
+                f"{emoji} **Confiança: {conf:.0%}** "
                 f"(provider: {diagnosis.provider}, "
                 f"model: {diagnosis.model})\n\n"
                 f"### Problema\n{diagnosis.diagnosis}\n\n"

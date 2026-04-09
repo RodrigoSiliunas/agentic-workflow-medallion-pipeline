@@ -1,19 +1,53 @@
 """Interfaces base para providers do Observer Agent.
 
-Define os contratos que LLM providers e Git providers devem implementar.
-Novos providers sao adicionados implementando estas ABCs e registrando
+Define os contratos que LLM e Git providers devem implementar.
+Novos providers são adicionados implementando estas ABCs e registrando
 no factory via decorator @register_llm_provider / @register_git_provider.
 """
 
 from __future__ import annotations
 
+import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from functools import wraps
+
+logger = logging.getLogger(__name__)
+
+
+def with_retry(max_retries: int = 3, base_delay: float = 2.0):
+    """Decorator: retry com exponential backoff para chamadas externas.
+
+    Retenta em exceções transientes (rede, rate limit, timeout).
+    Não retenta em erros de lógica (ValueError, KeyError, etc).
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ValueError, KeyError, TypeError, ImportError):
+                    raise  # Erros de lógica — não retenta
+                except Exception as e:
+                    last_error = e
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Tentativa {attempt + 1}/{max_retries} falhou: {e}. "
+                        f"Retentando em {delay:.0f}s..."
+                    )
+                    time.sleep(delay)
+            raise last_error  # type: ignore[misc]
+        return wrapper
+    return decorator
 
 
 @dataclass
 class DiagnosisResult:
-    """Resultado padronizado de um diagnostico LLM.
+    """Resultado padronizado de um diagnóstico LLM.
 
     Todos os providers retornam este objeto independente do modelo usado.
     """
@@ -52,7 +86,7 @@ class DiagnosisResult:
 
 @dataclass
 class DiagnosisRequest:
-    """Contexto completo enviado ao LLM para diagnostico."""
+    """Contexto completo enviado ao LLM para diagnóstico."""
 
     error_message: str
     stack_trace: str
@@ -64,7 +98,7 @@ class DiagnosisRequest:
 
 @dataclass
 class PRResult:
-    """Resultado padronizado da criacao de um PR."""
+    """Resultado padronizado da criação de um PR."""
 
     pr_url: str
     pr_number: int
@@ -87,7 +121,7 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def diagnose(self, request: DiagnosisRequest) -> DiagnosisResult:
-        """Envia contexto ao LLM e retorna diagnostico estruturado."""
+        """Envia contexto ao LLM e retorna diagnóstico estruturado."""
         ...
 
     @property

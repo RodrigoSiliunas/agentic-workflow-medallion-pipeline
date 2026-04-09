@@ -12,23 +12,24 @@ from pipeline_lib.agent.observer.providers.base import (
     DiagnosisRequest,
     DiagnosisResult,
     LLMProvider,
+    with_retry,
 )
 
 SYSTEM_PROMPT = (
-    "Voce e um engenheiro de dados senior especializado em "
+    "Você é um engenheiro de dados senior especializado em "
     "PySpark, Delta Lake, Databricks e pipelines Medallion.\n\n"
-    "Seu trabalho e diagnosticar erros em pipelines de dados "
-    "e propor correcoes de codigo COMPLETAS e funcionais.\n\n"
+    "Seu trabalho é diagnosticar erros em pipelines de dados "
+    "e propor correções de código COMPLETAS e funcionais.\n\n"
     "Regras:\n"
-    "- Responda SEMPRE em JSON valido\n"
-    "- Seja especifico e tecnico sobre a causa raiz\n"
+    "- Responda SEMPRE em JSON válido\n"
+    "- Seja específico e técnico sobre a causa raiz\n"
     "- O campo fixed_code deve conter o notebook COMPLETO "
-    "corrigido (nao apenas o trecho alterado)\n"
+    "corrigido (não apenas o trecho alterado)\n"
     "- O campo file_to_fix deve ser o path relativo ao repo "
     "(ex: pipeline/notebooks/bronze/ingest.py)\n"
-    "- Indique confianca realista (0.0 a 1.0)\n"
-    "- Se nao tiver certeza, diga e sugira investigacao\n"
-    "- NUNCA invente informacoes sobre schema ou dados"
+    "- Indique confiança realista (0.0 a 1.0)\n"
+    "- Se não tiver certeza, diga e sugira investigação\n"
+    "- NUNCA invente informações sobre schema ou dados"
 )
 
 
@@ -50,12 +51,13 @@ class AnthropicProvider(LLMProvider):
     def name(self) -> str:
         return "anthropic"
 
+    @with_retry(max_retries=3, base_delay=2.0)
     def diagnose(self, request: DiagnosisRequest) -> DiagnosisResult:
         client = anthropic.Anthropic(api_key=self._api_key)
 
         user_prompt = self._build_prompt(request)
 
-        # Streaming obrigatorio para Opus com max_tokens alto
+        # Streaming obrigatório para Opus com max_tokens alto
         text = ""
         input_tokens = 0
         output_tokens = 0
@@ -91,7 +93,7 @@ class AnthropicProvider(LLMProvider):
         )
 
     def _build_prompt(self, req: DiagnosisRequest) -> str:
-        return f"""O pipeline falhou. Preciso de diagnostico e correcao.
+        return f"""O pipeline falhou. Preciso de diagnóstico e correção.
 
 ## Task que falhou
 {req.failed_task}
@@ -102,7 +104,7 @@ class AnthropicProvider(LLMProvider):
 ## Stack Trace
 {req.stack_trace}
 
-## Codigo fonte do notebook
+## Código fonte do notebook
 ```python
 {req.notebook_code}
 ```
@@ -120,7 +122,7 @@ class AnthropicProvider(LLMProvider):
     "diagnosis": "...",
     "root_cause": "...",
     "fix_description": "...",
-    "fixed_code": "codigo completo corrigido",
+    "fixed_code": "código completo corrigido",
     "file_to_fix": "pipeline/notebooks/...",
     "confidence": 0.0,
     "requires_human_review": true,
@@ -137,7 +139,7 @@ class AnthropicProvider(LLMProvider):
                 return json.loads(match.group(1))
             return {
                 "diagnosis": text[:500],
-                "root_cause": "Resposta nao estruturada",
+                "root_cause": "Resposta não estruturada",
                 "confidence": 0.3,
                 "requires_human_review": True,
             }

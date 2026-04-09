@@ -1,9 +1,9 @@
-"""Workflow Observer — agente generico que monitora workflows Databricks.
+"""Workflow Observer — agente genérico que monitora workflows Databricks.
 
 Detecta falhas em qualquer workflow do workspace, coleta contexto
-completo (logs, codigo, schema) para enviar ao LLM provider.
+completo (logs, código, schema) para enviar ao LLM provider.
 
-Desacoplado de qualquer pipeline especifico.
+Desacoplado de qualquer pipeline específico.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class WorkflowObserver:
         hours: int = 1,
         workflow_name: str | None = None,
     ) -> list[dict]:
-        """Encontra runs que falharam nas ultimas N horas."""
+        """Encontra runs que falharam nas últimas N horas."""
         failures = []
         start_time = int(
             (datetime.now() - timedelta(hours=hours)).timestamp() * 1000
@@ -65,7 +65,7 @@ class WorkflowObserver:
         job_id: int = 0,
         job_name: str = "unknown",
     ) -> dict:
-        """Constroi dict de falha a partir de um run_id.
+        """Constrói dict de falha a partir de um run_id.
 
         Pode ser chamado diretamente (modo triggered) ou via
         find_recent_failures (modo busca).
@@ -96,7 +96,7 @@ class WorkflowObserver:
         }
 
     def collect_notebook_code(self, run_id: int) -> dict[str, str]:
-        """Le codigo fonte de cada notebook via Workspace API."""
+        """Lê código fonte de cada notebook via Workspace API."""
         codes = {}
         run = self.w.jobs.get_run(run_id=run_id)
 
@@ -111,10 +111,10 @@ class WorkflowObserver:
                 if export.content:
                     code = base64.b64decode(export.content).decode("utf-8")
                     codes[task.task_key] = code
-                    logger.info(f"Codigo: {task.task_key} ({len(code)} chars)")
+                    logger.info(f"Código: {task.task_key} ({len(code)} chars)")
             except Exception as e:
                 codes[task.task_key] = f"[Erro ao ler {nb_path}: {e}]"
-                logger.warning(f"Nao leu {nb_path}: {e}")
+                logger.warning(f"Não leu {nb_path}: {e}")
 
         return codes
 
@@ -123,13 +123,13 @@ class WorkflowObserver:
         catalog: str = "medallion",
         schemas: list[str] | None = None,
     ) -> str:
-        """Coleta schema detalhado das tabelas do catalogo.
+        """Coleta schema detalhado das tabelas do catálogo.
 
         Args:
-            catalog: Nome do catalogo no Unity Catalog
+            catalog: Nome do catálogo no Unity Catalog
             schemas: Lista de schemas a coletar. Se None, descobre automaticamente.
         """
-        # Se nao especificado, descobre schemas do catalogo
+        # Se não especificado, descobre schemas do catálogo
         if schemas is None:
             try:
                 discovered = list(self.w.schemas.list(catalog_name=catalog))
@@ -150,7 +150,7 @@ class WorkflowObserver:
                     ]
                     parts.append(f"{catalog}.{schema}.{t.name}: [{', '.join(cols)}]")
             except Exception:
-                parts.append(f"{catalog}.{schema}: [indisponivel]")
+                parts.append(f"{catalog}.{schema}: [indisponível]")
 
         return "\n".join(parts)
 
@@ -165,7 +165,7 @@ class WorkflowObserver:
         return {
             "failed_task": first_failed,
             "error_message": failure["errors"].get(first_failed, "Unknown"),
-            "notebook_code": codes.get(first_failed, "[codigo nao disponivel]"),
+            "notebook_code": codes.get(first_failed, "[código não disponível]"),
             "schema_info": schema,
             "all_codes": codes,
             "pipeline_state": {

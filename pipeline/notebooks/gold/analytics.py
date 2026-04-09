@@ -37,43 +37,72 @@ NOTEBOOK_BASE = f"{_repo_root}/pipeline/notebooks"
 
 TIMEOUT = 600  # 10 min por notebook
 
-# Notebooks organizados em 3 fases por ordem de dependencia:
-# Phase 1 (Core): sentiment precisa rodar antes de lead_scoring que depende dele
-# Phase 2 (Analytics): campaign_roi depende de lead_scoring
-# Phase 3 (Diferenciais): segmentation depende de sentiment + lead_scoring
-notebooks = [
-    # Phase 1: Core (sentimento primeiro, lead_scoring depende dele)
-    ("funnel", f"{NOTEBOOK_BASE}/gold/funnel"),
-    ("agent_performance", f"{NOTEBOOK_BASE}/gold/agent_performance"),
-    ("sentiment", f"{NOTEBOOK_BASE}/gold/sentiment"),
-    ("email_providers", f"{NOTEBOOK_BASE}/gold/email_providers"),
-    ("lead_scoring", f"{NOTEBOOK_BASE}/gold/lead_scoring"),
-    # Phase 2: Analytics (campaign_roi depende de lead_scoring)
-    ("temporal_analysis", f"{NOTEBOOK_BASE}/gold/temporal_analysis"),
-    ("competitor_intel", f"{NOTEBOOK_BASE}/gold/competitor_intel"),
-    ("campaign_roi", f"{NOTEBOOK_BASE}/gold/campaign_roi"),
-    # Phase 3: Diferenciais (segmentation depende de sentiment + lead_scoring)
-    ("segmentation", f"{NOTEBOOK_BASE}/gold/segmentation"),
-    ("churn_reengagement", f"{NOTEBOOK_BASE}/gold/churn_reengagement"),
-    ("negotiation_complexity", f"{NOTEBOOK_BASE}/gold/negotiation_complexity"),
-    ("first_contact_resolution", f"{NOTEBOOK_BASE}/gold/first_contact_resolution"),
+# Fases organizadas por dependência:
+# Notebooks dentro da mesma fase rodam em PARALELO (ThreadPoolExecutor).
+# Fases rodam em SEQUÊNCIA (phase 2 depende de phase 1).
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+phases = [
+    # Phase 1: Core (sem dependências entre si)
+    {
+        "name": "Core",
+        "notebooks": [
+            ("funnel", f"{NOTEBOOK_BASE}/gold/funnel"),
+            ("agent_performance", f"{NOTEBOOK_BASE}/gold/agent_performance"),
+            ("sentiment", f"{NOTEBOOK_BASE}/gold/sentiment"),
+            ("email_providers", f"{NOTEBOOK_BASE}/gold/email_providers"),
+        ],
+    },
+    # Phase 2: Depende de sentiment (phase 1)
+    {
+        "name": "Scoring + Analytics",
+        "notebooks": [
+            ("lead_scoring", f"{NOTEBOOK_BASE}/gold/lead_scoring"),
+            ("temporal_analysis", f"{NOTEBOOK_BASE}/gold/temporal_analysis"),
+            ("competitor_intel", f"{NOTEBOOK_BASE}/gold/competitor_intel"),
+        ],
+    },
+    # Phase 3: Depende de lead_scoring (phase 2)
+    {
+        "name": "Avançado",
+        "notebooks": [
+            ("campaign_roi", f"{NOTEBOOK_BASE}/gold/campaign_roi"),
+            ("segmentation", f"{NOTEBOOK_BASE}/gold/segmentation"),
+            ("churn_reengagement", f"{NOTEBOOK_BASE}/gold/churn_reengagement"),
+            ("negotiation_complexity", f"{NOTEBOOK_BASE}/gold/negotiation_complexity"),
+            ("first_contact_resolution", f"{NOTEBOOK_BASE}/gold/first_contact_resolution"),
+        ],
+    },
 ]
 
-# Executa cada notebook sequencialmente, coletando resultados e erros
 results = {}
 errors = []
 
-for name, path in notebooks:
+def run_notebook(name_path):
+    """Executa um notebook e retorna (nome, resultado_ou_erro)."""
+    name, path = name_path
     try:
-        logger.info(f"Executando: {name}")
         result = dbutils.notebook.run(path, TIMEOUT)
-        results[name] = result
-        logger.info(f"  OK: {result}")
+        return (name, result)
     except Exception as e:
-        error_msg = f"{name} falhou: {e}"
-        logger.error(error_msg)
-        errors.append(error_msg)
-        results[name] = f"FAILED: {e}"
+        return (name, f"FAILED: {e}")
+
+# Executa fases sequencialmente, notebooks dentro de cada fase em paralelo
+for phase in phases:
+    phase_name = phase["name"]
+    nbs = phase["notebooks"]
+    logger.info(f"Phase: {phase_name} ({len(nbs)} notebooks em paralelo)")
+
+    with ThreadPoolExecutor(max_workers=len(nbs)) as executor:
+        futures = {executor.submit(run_notebook, nb): nb[0] for nb in nbs}
+        for future in as_completed(futures):
+            name, result = future.result()
+            results[name] = result
+            if result.startswith("FAILED"):
+                errors.append(f"{name} falhou: {result}")
+                logger.error(f"  FALHOU: {name}")
+            else:
+                logger.info(f"  OK: {name}")
 
 # COMMAND ----------
 
