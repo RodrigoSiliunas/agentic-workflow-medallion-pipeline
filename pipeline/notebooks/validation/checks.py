@@ -1,16 +1,18 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Quality Validation
-# MAGIC Verifica integridade Bronze -> Silver -> Gold apos cada execucao.
+# MAGIC Verifica integridade de todas as camadas Bronze -> Silver -> Gold apos cada
+# MAGIC execucao do pipeline. Checa contagem de linhas, presenca de PII em texto claro,
+# MAGIC colunas obrigatorias, range de scores, e existencia de tabelas Gold.
+# MAGIC
+# MAGIC **Camada:** Validacao | **Dependencia:** todas as tabelas do pipeline
+# MAGIC **Output:** task values com status PASS/FAIL, lista de erros e warnings
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-
-CATALOG = dbutils.widgets.get("catalog")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import re
 import time
@@ -21,6 +23,15 @@ logger = logging.getLogger("validation.checks")
 
 # COMMAND ----------
 
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+
+CATALOG = dbutils.widgets.get("catalog")
+
+# COMMAND ----------
+
+# DBTITLE 1,Verificar Task Values do Agente
+# Verifica se o agent_pre autorizou o processamento
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -30,17 +41,15 @@ try:
 except Exception:
     pass
 
+# Inicializa contadores de tempo, erros e warnings
 start_time = time.time()
 errors = []
 warnings = []
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Bronze Checks
-
-# COMMAND ----------
-
+# DBTITLE 1,Bronze Checks
+# Verifica se a tabela Bronze existe e tem dados
 try:
     bronze = spark.table(f"{CATALOG}.bronze.conversations")
     bronze_count = bronze.count()
@@ -55,27 +64,27 @@ except Exception as e:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Silver Checks
-
-# COMMAND ----------
-
+# DBTITLE 1,Silver Checks
+# Verifica messages_clean: contagem, dedup, e PII residual
 try:
     messages = spark.table(f"{CATALOG}.silver.messages_clean")
     messages_count = messages.count()
 
+    # Se Silver tem mais linhas que Bronze, dedup pode nao ter funcionado
     if bronze_count > 0 and messages_count >= bronze_count:
         warnings.append(
             f"Silver messages_clean ({messages_count}) >= Bronze ({bronze_count}). "
             "Dedup nao removeu linhas?"
         )
 
+    # Se Silver perdeu mais de 15% das linhas, algo esta errado
     if bronze_count > 0 and messages_count < bronze_count * 0.85:
         errors.append(
             f"Silver perdeu mais de 15% das linhas: {messages_count}/{bronze_count}"
         )
 
-    # Verificar que message_body nao contem PII em texto claro
+    # Verifica que message_body nao contem PII em texto claro (CPF)
+    # Amostra 500 mensagens para nao sobrecarregar o cluster
     CPF_PATTERN = r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b"
     sample = messages.select("message_body").limit(500).collect()
     pii_found = 0
@@ -90,11 +99,13 @@ try:
 except Exception as e:
     errors.append(f"Silver messages_clean nao existe: {e}")
 
+# Verifica leads_profile: existencia e colunas de mascaramento obrigatorias
 try:
     leads = spark.table(f"{CATALOG}.silver.leads_profile")
     leads_count = leads.count()
     logger.info(f"Silver leads_profile: {leads_count} leads")
 
+    # Colunas de mascaramento sao obrigatorias -- sem elas, PII pode vazar
     lead_cols = set(leads.columns)
     expected = {"cpf_masked", "email_masked", "phone_masked", "plate_masked"}
     missing = expected - lead_cols
@@ -103,6 +114,7 @@ try:
 except Exception as e:
     errors.append(f"Silver leads_profile nao existe: {e}")
 
+# Verifica conversations_enriched: existencia basica
 try:
     convs = spark.table(f"{CATALOG}.silver.conversations_enriched")
     convs_count = convs.count()
@@ -112,11 +124,8 @@ except Exception as e:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Gold Checks
-
-# COMMAND ----------
-
+# DBTITLE 1,Gold Checks
+# Verifica existencia e dados de todas as tabelas Gold
 gold_tables = [
     "funil_vendas", "agent_performance", "sentiment", "lead_scoring",
     "email_providers", "temporal_analysis", "competitor_intel", "campaign_roi",
@@ -135,7 +144,7 @@ for table_name in gold_tables:
     except Exception as e:
         errors.append(f"Gold {table_name} nao existe: {e}")
 
-# Lead scoring range check
+# Verifica range do lead_score (deve ser 0-100)
 try:
     scores = spark.table(f"{CATALOG}.gold.lead_scoring")
     min_score = scores.agg(F.min("lead_score")).first()[0]
@@ -145,7 +154,7 @@ try:
 except Exception:
     pass
 
-# Sentiment range check
+# Verifica range do sentiment_score (deve ser -1.0 a +1.0)
 try:
     sent = spark.table(f"{CATALOG}.gold.sentiment")
     min_s = sent.agg(F.min("sentiment_score")).first()[0]
@@ -157,12 +166,9 @@ except Exception:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Resultado
-
-# COMMAND ----------
-
+# DBTITLE 1,Resultado Final da Validacao
 duration = round(time.time() - start_time, 2)
+# PASS se nenhum erro critico; FAIL se houver qualquer erro
 status = "PASS" if len(errors) == 0 else "FAIL"
 
 result = {
@@ -174,6 +180,7 @@ result = {
 
 logger.info(f"Validation: {status} ({len(errors)} errors, {len(warnings)} warnings) em {duration}s")
 
+# Seta task values para o agent_post coletar
 try:
     dbutils.jobs.taskValues.set(key="status", value=status)
     dbutils.jobs.taskValues.set(key="errors", value=str(errors) if errors else "none")

@@ -2,17 +2,16 @@
 # MAGIC %md
 # MAGIC # Gold: Analytics Orchestrator
 # MAGIC Executa todos os notebooks Gold na ordem correta de dependencias.
+# MAGIC Cada notebook e executado via `dbutils.notebook.run()` com timeout de 10 min.
+# MAGIC
+# MAGIC **Camada:** Gold (orquestrador) | **Dependencia:** todas as tabelas Silver
+# MAGIC **Output:** todas as tabelas Gold (funil, agent_performance, sentiment, etc.)
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import time
 
@@ -21,6 +20,17 @@ start_time = time.time()
 
 # COMMAND ----------
 
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# COMMAND ----------
+
+# DBTITLE 1,Verificar Task Values do Agente
+# Verifica se o agent_pre autorizou o processamento
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -32,11 +42,7 @@ except Exception:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Executar Notebooks na Ordem de Dependencias
-
-# COMMAND ----------
-
+# DBTITLE 1,Executar Notebooks na Ordem de Dependencias
 # Auto-detect repo path for sub-notebook calls
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 _repo_root = "/".join(_nb_path.split("/")[:5])
@@ -44,6 +50,10 @@ NOTEBOOK_BASE = f"{_repo_root}/pipeline/notebooks"
 
 TIMEOUT = 600  # 10 min por notebook
 
+# Notebooks organizados em 3 fases por ordem de dependencia:
+# Phase 1 (Core): sentiment precisa rodar antes de lead_scoring que depende dele
+# Phase 2 (Analytics): campaign_roi depende de lead_scoring
+# Phase 3 (Diferenciais): segmentation depende de sentiment + lead_scoring
 notebooks = [
     # Phase 1: Core (sentimento primeiro, lead_scoring depende dele)
     ("funnel", f"{NOTEBOOK_BASE}/gold/funnel"),
@@ -62,6 +72,7 @@ notebooks = [
     ("first_contact_resolution", f"{NOTEBOOK_BASE}/gold/first_contact_resolution"),
 ]
 
+# Executa cada notebook sequencialmente, coletando resultados e erros
 results = {}
 errors = []
 
@@ -79,11 +90,8 @@ for name, path in notebooks:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Resumo
-
-# COMMAND ----------
-
+# DBTITLE 1,Resumo da Execucao
+# Calcula estatisticas de sucesso/falha
 total = len(notebooks)
 succeeded = sum(1 for v in results.values() if v.startswith("SUCCESS"))
 failed = total - succeeded
@@ -93,6 +101,7 @@ duration = round(time.time() - start_time, 2)
 summary = f"{succeeded}/{total} notebooks OK, {failed} falhas, {duration}s"
 logger.info(summary)
 
+# Seta task values para o agent_post coletar
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS" if failed == 0 else "PARTIAL")
     dbutils.jobs.taskValues.set(key="succeeded", value=succeeded)

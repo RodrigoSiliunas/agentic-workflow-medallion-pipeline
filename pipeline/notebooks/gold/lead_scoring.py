@@ -1,18 +1,18 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Gold: Lead Scoring
-# MAGIC Score 0-100 baseado em features da conversa + sentimento.
+# MAGIC Score de 0-100 para cada lead baseado em features da conversa, sentimento,
+# MAGIC dados fornecidos (CPF, email, placa), response time e engajamento.
+# MAGIC Classifica leads em tiers: hot (>=70), warm (>=40), cold (<40).
+# MAGIC
+# MAGIC **Camada:** Gold | **Dependencia:** silver.conversations_enriched, gold.sentiment, silver.leads_profile
+# MAGIC **Output:** `gold.lead_scoring`
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import os
 import sys
@@ -28,26 +28,38 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# Inicializa lake client e logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("gold.lead_scoring")
 start_time = time.time()
 
+# COMMAND ----------
+
+# DBTITLE 1,Carregar Tabelas de Dependencia
+# Combina dados de 3 fontes para construir features de scoring
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 sentiment = spark.table(f"{CATALOG}.gold.sentiment")
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Features para Scoring
-
-# COMMAND ----------
-
+# DBTITLE 1,Montar Features para Scoring
+# Join das 3 tabelas: conversas + sentimento + entidades fornecidas pelo lead
 features = (
     conversations.join(sentiment.select("conversation_id", "sentiment_score"), on="conversation_id")
     .join(
         leads.select(
             "conversation_id",
+            # Conta quantos dados sensiveis o lead forneceu (indica confianca)
             F.size("cpf_masked").alias("has_cpf"),
             F.size("email_masked").alias("has_email"),
             F.size("plate_masked").alias("has_plate"),
@@ -59,11 +71,14 @@ features = (
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Scoring (heuristica ponderada, 0-100)
-
-# COMMAND ----------
-
+# DBTITLE 1,Scoring Heuristico Ponderado (0-100)
+# Formula de scoring com pesos por categoria:
+# - Engajamento: ate 30 pts (3 pts por mensagem inbound, cap em 30)
+# - Sentimento: ate 20 pts (normaliza -1/+1 para 0-20)
+# - Dados fornecidos: ate 20 pts (CPF=8, email=6, placa=6)
+# - Response time: ate 15 pts (rapido = mais pontos)
+# - Horario comercial: ate 5 pts (bonus se respondeu em horario util)
+# - Conversa longa: ate 10 pts (bonus para conversas com muitas mensagens)
 scored = features.withColumn(
     "raw_score",
     (
@@ -89,6 +104,7 @@ scored = features.withColumn(
     ),
 )
 
+# Clamp no range 0-100 e classifica em tiers
 scored = scored.withColumn(
     "lead_score", F.least(F.greatest(F.col("raw_score"), F.lit(0)), F.lit(100)).cast("int")
 ).withColumn(
@@ -100,11 +116,8 @@ scored = scored.withColumn(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Salvar
-
-# COMMAND ----------
-
+# DBTITLE 1,Salvar no Unity Catalog e S3
+# Seleciona apenas colunas relevantes para a tabela final
 result = scored.select(
     "conversation_id",
     "outcome",
@@ -122,6 +135,7 @@ result = scored.select(
 GOLD_TABLE = f"{CATALOG}.gold.lead_scoring"
 result.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
 
+# Backup em Parquet no S3
 lake.write_parquet(result, "gold/lead_scoring/")
 
 duration = round(time.time() - start_time, 2)

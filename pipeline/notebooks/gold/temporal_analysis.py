@@ -1,18 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Gold: Temporal Analysis
-# MAGIC Heatmap de conversao por hora x dia da semana. Horarios otimos de contato.
+# MAGIC Heatmap de conversao por hora x dia da semana. Identifica horarios otimos
+# MAGIC de contato para maximizar taxa de conversao e melhor horario por dia.
+# MAGIC
+# MAGIC **Camada:** Gold | **Dependencia:** silver.conversations_enriched
+# MAGIC **Output:** `gold.temporal_analysis`
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import os
 import sys
@@ -29,19 +28,30 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# Inicializa lake client e logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("gold.temporal_analysis")
 start_time = time.time()
 
+# COMMAND ----------
+
+# DBTITLE 1,Carregar Conversas Enriquecidas
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Heatmap: Hora x Dia da Semana x Conversao
-
-# COMMAND ----------
-
+# DBTITLE 1,Heatmap: Hora x Dia da Semana x Conversao
+# Agrupa por hora e dia da semana do primeiro contato para criar heatmap
+# Calcula total de contatos, vendas, response time e media de mensagens
 temporal = (
     conversations.withColumn("contact_hour", F.hour("first_message_at"))
     .withColumn("contact_dow", F.dayofweek("first_message_at"))
@@ -53,17 +63,15 @@ temporal = (
         F.avg("avg_response_time_sec").alias("avg_response_time"),
         F.avg("total_messages").alias("avg_messages"),
     )
+    # Taxa de conversao percentual para cada slot hora x dia
     .withColumn("conversion_rate", F.round(F.col("wins") / F.col("total_contacts") * 100, 2))
     .orderBy("contact_dow", "contact_hour")
 )
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Melhor Horario por Dia
-
-# COMMAND ----------
-
+# DBTITLE 1,Melhor Horario por Dia da Semana
+# Para cada dia da semana, identifica a hora com maior taxa de conversao
 w = Window.partitionBy("contact_dow").orderBy(F.col("conversion_rate").desc())
 best_hours = temporal.withColumn("rank", F.row_number().over(w)).filter(F.col("rank") == 1).drop(
     "rank"
@@ -71,16 +79,13 @@ best_hours = temporal.withColumn("rank", F.row_number().over(w)).filter(F.col("r
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Salvar
-
-# COMMAND ----------
-
+# DBTITLE 1,Salvar no Unity Catalog e S3
 GOLD_TABLE = f"{CATALOG}.gold.temporal_analysis"
 temporal.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
+# Backup em Parquet no S3
 lake.write_parquet(temporal, "gold/temporal_analysis/")
 
 duration = round(time.time() - start_time, 2)

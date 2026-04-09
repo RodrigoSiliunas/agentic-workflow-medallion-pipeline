@@ -1,18 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Gold: Competitor Intelligence
-# MAGIC Concorrentes mencionados, price gap, loss rate por concorrente.
+# MAGIC Analisa concorrentes mencionados pelos leads nas conversas: frequencia de mencao,
+# MAGIC taxa de perda quando mencionado, precos citados, e taxa de venda apesar da mencao.
+# MAGIC
+# MAGIC **Camada:** Gold | **Dependencia:** silver.leads_profile, silver.conversations_enriched
+# MAGIC **Output:** `gold.competitor_intel`
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import os
 import sys
@@ -28,24 +27,35 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# Inicializa lake client e logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("gold.competitor_intel")
 start_time = time.time()
 
+# COMMAND ----------
+
+# DBTITLE 1,Carregar Tabelas Silver
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Explodir Concorrentes por Conversa
-
-# COMMAND ----------
-
+# DBTITLE 1,Explodir Concorrentes por Conversa
+# Junta leads com outcome da conversa e explode o array de concorrentes mencionados
 leads_with_outcome = leads.join(
     conversations.select("conversation_id", "outcome"), on="conversation_id"
 )
 
+# Cada mencao de concorrente vira uma linha separada
 competitors = leads_with_outcome.select(
     "conversation_id",
     "outcome",
@@ -55,22 +65,23 @@ competitors = leads_with_outcome.select(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Metricas por Concorrente
-
-# COMMAND ----------
-
+# DBTITLE 1,Metricas por Concorrente
+# Calcula para cada concorrente: contagem de mencoes, perdas, vendas e preco medio
 comp_stats = competitors.groupBy("competitor").agg(
     F.count("*").alias("mention_count"),
+    # Quantas vezes perdemos quando este concorrente foi mencionado
     F.sum(
         F.when(F.col("outcome").isin("perdido_concorrente", "perdido_preco"), 1).otherwise(0)
     ).alias("losses_when_mentioned"),
+    # Quantas vezes ganhamos apesar da mencao ao concorrente
     F.sum(F.when(F.col("outcome") == "venda_fechada", 1).otherwise(0)).alias(
         "wins_despite_mention"
     ),
+    # Preco medio mencionado (primeiro preco de cada conversa como proxy)
     F.avg(F.col("prices_mentioned").getItem(0)).alias("avg_competitor_price_mentioned"),
 )
 
+# Calcula taxas percentuais de perda e vitoria
 comp_stats = comp_stats.withColumns(
     {
         "loss_rate": F.round(
@@ -84,16 +95,13 @@ comp_stats = comp_stats.withColumns(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Salvar
-
-# COMMAND ----------
-
+# DBTITLE 1,Salvar no Unity Catalog e S3
 GOLD_TABLE = f"{CATALOG}.gold.competitor_intel"
 comp_stats.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
+# Backup em Parquet no S3
 lake.write_parquet(comp_stats, "gold/competitor_intel/")
 
 duration = round(time.time() - start_time, 2)

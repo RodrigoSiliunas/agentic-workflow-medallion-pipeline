@@ -1,18 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Gold: Sentiment Analysis (Heuristica pt-BR)
-# MAGIC Sentimento por conversa baseado em keywords positivas/negativas.
+# MAGIC Analise de sentimento por conversa baseada em keywords positivas/negativas
+# MAGIC do portugues informal usado em WhatsApp. Score normalizado de -1 a +1.
+# MAGIC
+# MAGIC **Camada:** Gold | **Dependencia:** silver.messages_clean
+# MAGIC **Output:** `gold.sentiment`
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import os
 import sys
@@ -28,19 +27,29 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# Inicializa lake client e logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("gold.sentiment")
 start_time = time.time()
 
+# COMMAND ----------
+
+# DBTITLE 1,Carregar Mensagens
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Keywords de Sentimento (pt-BR informal, WhatsApp)
-
-# COMMAND ----------
-
+# DBTITLE 1,Keywords de Sentimento (pt-BR informal WhatsApp)
+# Keywords positivas: indicam interesse, satisfacao, decisao de compra
 POSITIVE = [
     "otimo", "perfeito", "excelente", "maravilha", "fechado", "aceito",
     "pode fazer", "vamos fechar", "gostei", "muito bom", "top",
@@ -49,6 +58,7 @@ POSITIVE = [
     "confianca", "seguranca", "tranquilidade", "protecao",
 ]
 
+# Keywords negativas: indicam insatisfacao, desistencia, objecao de preco
 NEGATIVE = [
     "caro", "muito caro", "absurdo", "nao quero", "desisto",
     "nao tenho interesse", "vou pensar", "ta ruim", "pessimo",
@@ -59,14 +69,12 @@ NEGATIVE = [
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Calcular Sentimento por Mensagem Inbound
-
-# COMMAND ----------
-
+# DBTITLE 1,Calcular Sentimento por Mensagem Inbound
+# Monta regex patterns a partir das listas de keywords
 positive_pattern = "|".join(POSITIVE)
 negative_pattern = "|".join(NEGATIVE)
 
+# Conta hits positivos e negativos em cada mensagem inbound com texto
 msg_sentiment = messages.filter(
     (F.col("direction") == "inbound") & (F.col("message_body").isNotNull())
 ).withColumns(
@@ -82,11 +90,8 @@ msg_sentiment = messages.filter(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Agregar por Conversa
-
-# COMMAND ----------
-
+# DBTITLE 1,Agregar por Conversa
+# Soma hits positivos e negativos por conversa e calcula score normalizado
 conv_sentiment = msg_sentiment.groupBy("conversation_id").agg(
     F.sum("positive_hits").alias("total_positive"),
     F.sum("negative_hits").alias("total_negative"),
@@ -94,6 +99,8 @@ conv_sentiment = msg_sentiment.groupBy("conversation_id").agg(
     F.first("conversation_outcome").alias("outcome"),
 )
 
+# Score normalizado: (pos - neg) / (pos + neg), range -1 a +1
+# Quando nao ha hits, score = 0 (neutro)
 conv_sentiment = conv_sentiment.withColumn(
     "sentiment_score",
     F.when(
@@ -107,6 +114,7 @@ conv_sentiment = conv_sentiment.withColumn(
         )
     ),
 ).withColumn(
+    # Label categorico baseado em thresholds de +/- 0.2
     "sentiment_label",
     F.when(F.col("sentiment_score") > 0.2, "positivo")
     .when(F.col("sentiment_score") < -0.2, "negativo")
@@ -115,16 +123,13 @@ conv_sentiment = conv_sentiment.withColumn(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Salvar
-
-# COMMAND ----------
-
+# DBTITLE 1,Salvar no Unity Catalog e S3
 GOLD_TABLE = f"{CATALOG}.gold.sentiment"
 conv_sentiment.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
 
+# Backup em Parquet no S3
 lake.write_parquet(conv_sentiment, "gold/sentiment/")
 
 duration = round(time.time() - start_time, 2)

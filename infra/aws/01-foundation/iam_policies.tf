@@ -130,3 +130,144 @@ resource "aws_iam_role_policy_attachment" "databricks_sts" {
   role       = aws_iam_role.databricks_cross_account.name
   policy_arn = aws_iam_policy.databricks_sts.arn
 }
+
+# --- EC2/VPC para Databricks criar clusters e gerenciar rede ---
+resource "aws_iam_policy" "databricks_ec2_vpc" {
+  name        = "${var.project_name}-databricks-ec2-vpc"
+  description = "Permissoes EC2/VPC para Databricks gerenciar clusters e networking"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EC2Instances"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeImages",
+          "ec2:DescribeSpotPriceHistory",
+          "ec2:DescribeSpotInstanceRequests",
+          "ec2:DescribeFleetInstances",
+          "ec2:RunInstances",
+          "ec2:TerminateInstances",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+          "ec2:RequestSpotInstances",
+          "ec2:CancelSpotInstanceRequests",
+          "ec2:CreateFleet",
+          "ec2:DeleteFleet",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "VPCManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVpc",
+          "ec2:DeleteVpc",
+          "ec2:CreateSubnet",
+          "ec2:DeleteSubnet",
+          "ec2:CreateInternetGateway",
+          "ec2:DeleteInternetGateway",
+          "ec2:AttachInternetGateway",
+          "ec2:DetachInternetGateway",
+          "ec2:CreateNatGateway",
+          "ec2:DeleteNatGateway",
+          "ec2:DescribeNatGateways",
+          "ec2:CreateRouteTable",
+          "ec2:DeleteRouteTable",
+          "ec2:CreateRoute",
+          "ec2:DeleteRoute",
+          "ec2:AssociateRouteTable",
+          "ec2:DisassociateRouteTable",
+          "ec2:AllocateAddress",
+          "ec2:ReleaseAddress",
+          "ec2:DescribeAddresses",
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:CreateVpcEndpoint",
+          "ec2:DeleteVpcEndpoints",
+          "ec2:DescribeVpcEndpoints",
+          "ec2:ModifyVpcAttribute",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "IAMPassRole"
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = "arn:aws:iam::051457670776:role/service-roles/${var.project_name}-*"
+      },
+      {
+        Sid    = "IAMCreateServiceLinkedRole"
+        Effect = "Allow"
+        Action = "iam:CreateServiceLinkedRole"
+        Resource = "arn:aws:iam::*:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "spot.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    CostCenter = "pipeline-001"
+  }
+}
+
+# Attach EC2/VPC policy ao Databricks role
+resource "aws_iam_role_policy_attachment" "databricks_ec2_vpc" {
+  role       = aws_iam_role.databricks_cross_account.name
+  policy_arn = aws_iam_policy.databricks_ec2_vpc.arn
+}
+
+# --- S3 Root Storage para Databricks ---
+resource "aws_iam_policy" "databricks_root_storage" {
+  name        = "${var.project_name}-databricks-root-storage"
+  description = "Acesso ao bucket root do Databricks (assets, libs, logs)"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "RootStorageAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+        ]
+        Resource = [
+          "arn:aws:s3:::namastex-databricks-root",
+          "arn:aws:s3:::namastex-databricks-root/*",
+        ]
+      }
+    ]
+  })
+
+  tags = {
+    CostCenter = "pipeline-001"
+  }
+}
+
+# Attach root storage policy ao Databricks role
+resource "aws_iam_role_policy_attachment" "databricks_root_storage" {
+  role       = aws_iam_role.databricks_cross_account.name
+  policy_arn = aws_iam_policy.databricks_root_storage.arn
+}

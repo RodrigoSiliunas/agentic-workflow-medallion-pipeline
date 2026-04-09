@@ -1,18 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Silver Task 2c: Conversation Enrichment
-# MAGIC Metricas agregadas por conversa: total mensagens, duracao, response_time medio, etc.
+# MAGIC Agrega metricas por conversa a partir das mensagens limpas: total de mensagens,
+# MAGIC duracao, response_time medio, contagem inbound/outbound, tipos de mensagem, etc.
+# MAGIC
+# MAGIC **Camada:** Silver | **Dependencia:** silver.messages_clean
+# MAGIC **Output:** `silver.conversations_enriched`
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import os
 import sys
@@ -28,11 +27,23 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# Inicializa lake client e logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("silver.enrichment")
 
 # COMMAND ----------
 
+# DBTITLE 1,Verificar Task Values do Agente
+# Verifica se o agent_pre autorizou o processamento
 try:
     should_process = dbutils.jobs.taskValues.get(
         taskKey="agent_pre", key="should_process", default=True
@@ -44,27 +55,28 @@ except Exception:
 
 # COMMAND ----------
 
+# DBTITLE 1,Configuracao de Tabelas
+# Tabela de entrada (messages_clean) e saida (conversations_enriched)
 SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"
 SILVER_CONVERSATIONS = f"{CATALOG}.silver.conversations_enriched"
 
+# Marca inicio para medir duracao
 start_time = time.time()
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Ler Messages Clean
-
-# COMMAND ----------
-
+# DBTITLE 1,Ler Messages Clean
 df = spark.table(SILVER_MESSAGES)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Agregar Metricas por Conversa
-
-# COMMAND ----------
-
+# DBTITLE 1,Agregar Metricas por Conversa
+# Calcula metricas agregadas para cada conversation_id:
+# - Contagens: total, inbound, outbound
+# - Timestamps: primeiro e ultimo contato
+# - Contexto: outcome, campanha, agente, cidade, estado, device, lead_source
+# - Performance: response time medio, mensagens em horario comercial
+# - Tipos: lista de message_types usados na conversa
 conversations = df.groupBy("conversation_id").agg(
     F.count("*").alias("total_messages"),
     F.sum(F.when(F.col("direction") == "inbound", 1).otherwise(0)).alias("inbound_count"),
@@ -85,6 +97,7 @@ conversations = df.groupBy("conversation_id").agg(
     F.collect_set("message_type").alias("message_types_used"),
 )
 
+# Calcula duracao da conversa em minutos (diferenca entre ultima e primeira mensagem)
 conversations = conversations.withColumn(
     "duration_minutes",
     (F.unix_timestamp("last_message_at") - F.unix_timestamp("first_message_at")) / 60,
@@ -92,11 +105,8 @@ conversations = conversations.withColumn(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Salvar (UC + S3)
-
-# COMMAND ----------
-
+# DBTITLE 1,Salvar no Unity Catalog e S3
+# Salva com merge de schema para aceitar colunas novas
 (
     conversations.write.format("delta")
     .mode("overwrite")
@@ -106,12 +116,17 @@ conversations = conversations.withColumn(
 
 conv_count = spark.table(SILVER_CONVERSATIONS).count()
 
+# Backup em Parquet no S3
 lake.write_parquet(conversations, "silver/conversations_enriched/")
 logger.info("Parquet uploaded para S3 silver/conversations_enriched/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Silver conversations_enriched: {conv_count} conversas em {duration}s")
 
+# COMMAND ----------
+
+# DBTITLE 1,Metricas e Task Values
+# Seta task values para o agent_post coletar
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
     dbutils.jobs.taskValues.set(key="rows_output", value=conv_count)

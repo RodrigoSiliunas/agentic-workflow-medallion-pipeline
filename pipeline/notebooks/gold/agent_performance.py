@@ -1,18 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Gold: Agent Performance
-# MAGIC Scoring com percentis entre os 20 agentes, recomendacoes automatizadas.
+# MAGIC Scoring dos 20 agentes com percentis relativos, taxas de conversao/ghosting/perda,
+# MAGIC e metricas de engajamento. Permite ranking comparativo entre agentes.
+# MAGIC
+# MAGIC **Camada:** Gold | **Dependencia:** silver.conversations_enriched
+# MAGIC **Output:** `gold.agent_performance`
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import logging
 import os
 import sys
@@ -29,19 +28,30 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+
+# Inicializa lake client e logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("gold.agent_performance")
 start_time = time.time()
 
+# COMMAND ----------
+
+# DBTITLE 1,Carregar Conversas Enriquecidas
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Metricas por Agente
-
-# COMMAND ----------
-
+# DBTITLE 1,Metricas por Agente
+# Calcula metricas brutas para cada agente: conversas, vendas, ghosting, perdas,
+# media de mensagens, duracao e response time
 agents = conversations.groupBy("agent_id").agg(
     F.count("*").alias("total_conversations"),
     F.sum(F.when(F.col("outcome") == "venda_fechada", 1).otherwise(0)).alias("wins"),
@@ -57,11 +67,8 @@ agents = conversations.groupBy("agent_id").agg(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Taxas e Scores
-
-# COMMAND ----------
-
+# DBTITLE 1,Taxas de Conversao, Ghosting e Perda
+# Calcula taxas percentuais para facilitar comparacao entre agentes
 agents = agents.withColumns(
     {
         "win_rate": F.round(F.col("wins") / F.col("total_conversations") * 100, 2),
@@ -74,19 +81,19 @@ agents = agents.withColumns(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Percentis (ranking relativo)
-
-# COMMAND ----------
-
+# DBTITLE 1,Percentis (ranking relativo entre agentes)
+# Percentis permitem saber onde cada agente se posiciona em relacao aos demais
+# Ex: win_rate_percentile=80 significa que o agente e melhor que 80% dos outros
 agents = agents.withColumns(
     {
         "win_rate_percentile": F.round(
             F.percent_rank().over(Window.orderBy("win_rate")) * 100, 0
         ),
+        # Response time invertido: menor tempo = melhor percentil
         "response_time_percentile": F.round(
             F.percent_rank().over(Window.orderBy(F.col("avg_response_time").desc())) * 100, 0
         ),
+        # Ghosting invertido: menor taxa de ghosting = melhor
         "ghosting_rate_percentile": F.round(
             F.percent_rank().over(Window.orderBy("ghosting_rate")) * 100, 0
         ),
@@ -95,14 +102,11 @@ agents = agents.withColumns(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Salvar
-
-# COMMAND ----------
-
+# DBTITLE 1,Salvar no Unity Catalog e S3
 GOLD_TABLE = f"{CATALOG}.gold.agent_performance"
 agents.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
 
+# Backup em Parquet no S3
 lake.write_parquet(agents, "gold/agent_performance/")
 
 duration = round(time.time() - start_time, 2)

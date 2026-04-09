@@ -1,20 +1,16 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Agent Pre-Check (Task 0)
-# MAGIC Verifica dados novos, captura versoes Delta para rollback, seta task values.
+# MAGIC Verifica se existem dados novos no S3, captura versoes Delta de todas as tabelas
+# MAGIC rastreadas para possibilitar rollback, e seta task values para o restante do workflow.
+# MAGIC
+# MAGIC **Camada:** Orquestrador | **Output:** task values (should_process, bronze_hash, run_id, delta_versions)
+# MAGIC
+# MAGIC _Ultima atualizacao: 2026-04-09_
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")
-
-# COMMAND ----------
-
+# DBTITLE 1,Imports e Setup
 import hashlib
 import json
 import logging
@@ -31,11 +27,26 @@ sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
 
+# COMMAND ----------
+
+# DBTITLE 1,Parametros
+# Widgets permitem parametrizar o notebook ao ser chamado pelo workflow
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCOPE = dbutils.widgets.get("scope")
+BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")
+
+# Inicializa o lake client (boto3 wrapper) e o logger
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("agent_pre")
 
 # COMMAND ----------
 
+# DBTITLE 1,Criar Tabela de Estado do Pipeline
+# Tabela que persiste o estado entre execucoes (hash anterior, falhas consecutivas, etc.)
 STATE_TABLE = f"{CATALOG}.pipeline.state"
 
 spark.sql(f"""
@@ -51,13 +62,10 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Carregar Estado Anterior
-
-# COMMAND ----------
-
+# DBTITLE 1,Carregar Estado Anterior
 def load_state() -> dict:
-    """Carrega o estado da ultima execucao."""
+    """Carrega o estado da ultima execucao a partir da tabela de estado.
+    Retorna dict com campos do ultimo registro ou defaults se vazia."""
     if spark.catalog.tableExists(STATE_TABLE):
         from pyspark.sql import functions as F
         row = spark.table(STATE_TABLE).orderBy(
@@ -65,6 +73,7 @@ def load_state() -> dict:
         ).first()
         if row:
             return row.asDict()
+    # Estado default quando nao existe historico
     return {
         "last_bronze_hash": None,
         "last_run_at": None,
@@ -77,15 +86,14 @@ logger.info(f"Estado anterior: status={state.get('status')}, "
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Verificar Dados Novos
-
-# COMMAND ----------
-
+# DBTITLE 1,Verificar Dados Novos
 def get_bronze_fingerprint(prefix: str) -> str:
-    """Gera fingerprint dos dados Bronze via metadata do S3 (boto3)."""
+    """Gera fingerprint dos dados Bronze via metadata do S3 (boto3).
+    Combina key, size e last_modified de cada arquivo em um hash SHA-256
+    para detectar qualquer alteracao nos dados de entrada."""
     try:
         items = lake.get_metadata(prefix)
+        # Ordena por key para garantir hash deterministico
         fingerprint = "|".join(
             f"{item['key']}:{item['size']}:{item['last_modified']}"
             for item in sorted(items, key=lambda x: x["key"])
@@ -93,12 +101,15 @@ def get_bronze_fingerprint(prefix: str) -> str:
         return hashlib.sha256(fingerprint.encode()).hexdigest()
     except Exception as e:
         logger.warning(f"Nao conseguiu ler S3 prefix {prefix}: {e}")
+        # Retorna hash baseado em timestamp para forcar reprocessamento
         return f"error_{int(time.time())}"
 
+# Compara fingerprint atual com o da ultima execucao
 current_hash = get_bronze_fingerprint(BRONZE_PREFIX)
 has_new_data = current_hash != state.get("last_bronze_hash")
 
 if not has_new_data:
+    # Sem alteracoes no S3 - sinaliza para o workflow pular todas as tasks
     logger.info("Sem dados novos. Encerrando.")
     dbutils.jobs.taskValues.set(key="should_process", value=False)
     dbutils.notebook.exit("SKIP: no new data")
@@ -107,11 +118,10 @@ logger.info(f"Dados novos detectados! Hash: {current_hash[:16]}...")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Capturar Versoes Delta
-
-# COMMAND ----------
-
+# DBTITLE 1,Capturar Versoes Delta para Rollback
+# Lista de todas as tabelas que o pipeline escreve
+# Usada para capturar a versao atual de cada tabela antes da execucao,
+# permitindo rollback granular em caso de falha
 TRACKED_TABLES = [
     f"{CATALOG}.bronze.conversations",
     f"{CATALOG}.silver.messages_clean",
@@ -132,7 +142,8 @@ TRACKED_TABLES = [
 ]
 
 def capture_delta_versions(tables: list) -> dict:
-    """Captura a versao atual de cada Delta Table para rollback."""
+    """Captura a versao atual de cada Delta Table para rollback.
+    Tabelas que nao existem ainda sao ignoradas silenciosamente."""
     versions = {}
     for table in tables:
         try:
@@ -140,6 +151,7 @@ def capture_delta_versions(tables: list) -> dict:
                 history = spark.sql(f"DESCRIBE HISTORY {table} LIMIT 1").first()
                 versions[table] = history["version"]
         except Exception:
+            # Tabela pode existir mas ter problemas de acesso -- segue em frente
             pass
     return versions
 
@@ -148,13 +160,11 @@ logger.info(f"Versoes Delta capturadas: {len(delta_versions)} tabelas")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Setar Task Values
-
-# COMMAND ----------
-
+# DBTITLE 1,Setar Task Values para o Workflow
+# Gera run_id unico baseado no timestamp da execucao
 run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+# Task values sao passados via dbutils para as tasks seguintes do workflow
 dbutils.jobs.taskValues.set(key="should_process", value=True)
 dbutils.jobs.taskValues.set(key="bronze_prefix", value=BRONZE_PREFIX)
 dbutils.jobs.taskValues.set(key="bronze_hash", value=current_hash)
