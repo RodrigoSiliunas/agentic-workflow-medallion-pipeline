@@ -229,7 +229,7 @@ def attempt_recovery(failed: list) -> list:
 # 6. FUNCOES DO AGENTE DE IA (LLM + GitHub PR)
 # ============================================================
 import sys
-sys.path.insert(0, "/Workspace/Repos/pipeline_lib")
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 
 def ai_diagnose_and_fix(failed: list) -> dict:
     """Usa Claude API para diagnosticar o erro e criar PR com correcao."""

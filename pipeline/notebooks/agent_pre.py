@@ -15,7 +15,7 @@ logger = logging.getLogger("agent_pre")
 # CONFIGURACAO
 # ============================================================
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
-BRONZE_PATH = spark.conf.get("pipeline.bronze_path", f"/Volumes/{CATALOG}/bronze/raw/")
+BRONZE_PATH = spark.conf.get("pipeline.bronze_path", "s3://namastex-medallion-datalake/bronze/")
 STATE_TABLE = f"{CATALOG}.pipeline.state"
 
 # ============================================================

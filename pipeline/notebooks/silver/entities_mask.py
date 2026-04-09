@@ -28,7 +28,7 @@ except Exception:
 # ============================================================
 # IMPORTAR LIB (via Databricks Repos ou wheel)
 # ============================================================
-sys.path.insert(0, "/Workspace/Repos/pipeline_lib")
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 
 from pipeline_lib.extractors import competitor, cpf, cep, email, phone, plate, price, vehicle
 from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate

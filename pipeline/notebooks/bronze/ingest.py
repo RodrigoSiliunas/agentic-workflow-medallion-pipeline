@@ -12,7 +12,7 @@ logger = logging.getLogger("bronze.ingest")
 # ============================================================
 # CONFIGURACAO
 # ============================================================
-BRONZE_S3_PATH = spark.conf.get("pipeline.bronze_s3_path", "s3://medallion-pipeline/bronze/")
+BRONZE_S3_PATH = spark.conf.get("pipeline.bronze_s3_path", "s3://namastex-medallion-datalake/bronze/")
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 
@@ -51,7 +51,7 @@ logger.info(f"Colunas encontradas: {sorted(columns)}")
 # ============================================================
 # Importar lib de validacao (deployada via Databricks Repos ou wheel)
 import sys
-sys.path.insert(0, "/Workspace/Repos/pipeline_lib")  # Ajustar path conforme deploy
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
 
 from pipeline_lib.schema.contracts import REQUIRED_COLUMNS
 from pipeline_lib.schema.validator import validate_schema
