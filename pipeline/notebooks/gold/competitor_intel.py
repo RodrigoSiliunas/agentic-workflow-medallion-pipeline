@@ -3,6 +3,8 @@
 # MAGIC # Gold: Competitor Intelligence
 # MAGIC Concorrentes mencionados, price gap, loss rate por concorrente.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -21,6 +23,8 @@ start_time = time.time()
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. EXPLODIR CONCORRENTES POR CONVERSA
 # ============================================================
@@ -34,6 +38,8 @@ competitors = leads_with_outcome.select(
     F.explode_outer("competitors_mentioned").alias("competitor"),
     "prices_mentioned",
 ).filter(F.col("competitor").isNotNull())
+
+# COMMAND ----------
 
 # ============================================================
 # 2. METRICAS POR CONCORRENTE
@@ -59,6 +65,8 @@ comp_stats = comp_stats.withColumns(
         ),
     }
 ).orderBy(F.col("mention_count").desc())
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

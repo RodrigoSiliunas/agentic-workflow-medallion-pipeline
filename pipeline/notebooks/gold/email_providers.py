@@ -3,6 +3,8 @@
 # MAGIC # Gold: Email Providers
 # MAGIC Distribuicao de provedores de email dos leads.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -19,6 +21,8 @@ CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
+
+# COMMAND ----------
 
 # ============================================================
 # 1. EXTRAIR DOMINIO DOS EMAILS MASCARADOS
@@ -39,6 +43,8 @@ providers = emails_exploded.withColumn(
     .otherwise("Outros"),
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 2. AGREGAR
 # ============================================================
@@ -50,6 +56,8 @@ total_emails = providers.count()
 provider_stats = provider_stats.withColumn(
     "pct_of_total", F.round(F.col("total_leads") / F.lit(total_emails) * 100, 2)
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

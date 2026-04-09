@@ -3,6 +3,8 @@
 # MAGIC # Gold: Lead Scoring
 # MAGIC Score 0-100 baseado em features da conversa + sentimento.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -22,6 +24,8 @@ conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 sentiment = spark.table(f"{CATALOG}.gold.sentiment")
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. FEATURES PARA SCORING
 # ============================================================
@@ -38,6 +42,8 @@ features = (
         how="left",
     )
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 2. SCORING (heuristica ponderada, 0-100)
@@ -77,6 +83,8 @@ scored = scored.withColumn(
     .when(F.col("lead_score") >= 40, "warm")
     .otherwise("cold"),
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

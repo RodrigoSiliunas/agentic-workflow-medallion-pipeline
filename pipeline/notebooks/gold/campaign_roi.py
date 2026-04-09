@@ -3,6 +3,8 @@
 # MAGIC # Gold: Campaign ROI
 # MAGIC Eficacia das 10 campanhas, conversion rate, lead quality, analise geografica.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -20,6 +22,8 @@ start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 lead_scores = spark.table(f"{CATALOG}.gold.lead_scoring")
+
+# COMMAND ----------
 
 # ============================================================
 # 1. METRICAS POR CAMPANHA
@@ -49,6 +53,8 @@ campaign_stats = campaign_stats.withColumns(
     }
 ).orderBy(F.col("conversion_rate").desc())
 
+# COMMAND ----------
+
 # ============================================================
 # 2. ANALISE GEOGRAFICA POR CAMPANHA
 # ============================================================
@@ -60,6 +66,8 @@ geo_campaign = (
     )
     .withColumn("conversion_rate", F.round(F.col("conversions") / F.col("leads") * 100, 2))
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

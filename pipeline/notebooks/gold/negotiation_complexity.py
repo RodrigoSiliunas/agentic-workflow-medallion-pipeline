@@ -3,6 +3,8 @@
 # MAGIC # Gold: Negotiation Complexity
 # MAGIC Correlacao entre numero de perguntas e tipo de perguntas com outcome.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -19,6 +21,8 @@ CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
+
+# COMMAND ----------
 
 # ============================================================
 # 1. CONTAR PERGUNTAS POR CONVERSA (mensagens com ?)
@@ -55,6 +59,8 @@ complexity = complexity.withColumn(
     "question_rate", F.round(F.col("total_questions") / F.col("total_inbound_messages"), 3)
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 2. CORRELACAO PERGUNTAS vs OUTCOME
 # ============================================================
@@ -65,6 +71,8 @@ by_outcome = complexity.groupBy("outcome").agg(
     F.avg("question_rate").alias("avg_question_rate"),
     F.count("*").alias("conversations"),
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

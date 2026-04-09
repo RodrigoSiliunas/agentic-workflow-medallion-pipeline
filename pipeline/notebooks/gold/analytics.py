@@ -3,11 +3,15 @@
 # MAGIC # Gold: Analytics Orchestrator
 # MAGIC Executa todos os notebooks Gold na ordem correta de dependencias.
 
+# COMMAND ----------
+
 import logging
 import time
 
 logger = logging.getLogger("gold.analytics")
 start_time = time.time()
+
+# COMMAND ----------
 
 # ============================================================
 # TASK VALUES
@@ -20,6 +24,8 @@ try:
         dbutils.notebook.exit("SKIP")
 except Exception:
     pass
+
+# COMMAND ----------
 
 # ============================================================
 # EXECUTAR NOTEBOOKS NA ORDEM DE DEPENDENCIAS
@@ -58,6 +64,8 @@ for name, path in notebooks:
         logger.error(error_msg)
         errors.append(error_msg)
         results[name] = f"FAILED: {e}"
+
+# COMMAND ----------
 
 # ============================================================
 # RESUMO

@@ -3,6 +3,8 @@
 # MAGIC # Gold: Churn & Reengagement
 # MAGIC Leads que pararam de responder e depois voltaram. Mensagens de reativacao.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -21,6 +23,8 @@ start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. DETECTAR GAPS DE SILENCIO DO LEAD (> 2h entre mensagens inbound)
 # ============================================================
@@ -38,6 +42,8 @@ inbound_with_gap = inbound.withColumn(
 
 # Gap > 120 min = potencial churn temporario
 churn_events = inbound_with_gap.filter(F.col("gap_minutes") > 120)
+
+# COMMAND ----------
 
 # ============================================================
 # 2. MENSAGEM DE REATIVACAO (outbound logo antes do retorno)
@@ -64,6 +70,8 @@ reactivation_msgs = (
     .drop("rn")
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 3. RESUMO
 # ============================================================
@@ -80,6 +88,8 @@ churn_summary = (
         F.col("outcome").isin("venda_fechada", "em_negociacao", "proposta_enviada"),
     )
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. SALVAR

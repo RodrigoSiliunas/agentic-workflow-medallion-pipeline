@@ -4,6 +4,8 @@
 # MAGIC Extrai entidades (CPF, email, phone, plate, vehicle, CEP, competitor, price),
 # MAGIC mascara dados sensiveis, e aplica redaction no message_body.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -12,6 +14,8 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, FloatType, StringType
 
 logger = logging.getLogger("silver.entities_mask")
+
+# COMMAND ----------
 
 # ============================================================
 # TASK VALUES
@@ -24,6 +28,8 @@ try:
         dbutils.notebook.exit("SKIP")
 except Exception:
     pass
+
+# COMMAND ----------
 
 # ============================================================
 # IMPORTAR LIB (via Databricks Repos ou wheel)
@@ -38,6 +44,8 @@ from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_ph
 from pipeline_lib.masking.hash_based import hash_value
 from pipeline_lib.masking.redaction import redact_message_body
 
+# COMMAND ----------
+
 # ============================================================
 # CONFIGURACAO
 # ============================================================
@@ -46,6 +54,8 @@ SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"
 SILVER_LEADS = f"{CATALOG}.silver.leads_profile"
 
 start_time = time.time()
+
+# COMMAND ----------
 
 # ============================================================
 # REGISTRAR UDFs
@@ -65,6 +75,8 @@ mask_plate_udf = F.udf(mask_plate, StringType())
 hash_udf = F.udf(hash_value, StringType())
 redact_udf = F.udf(redact_message_body, StringType())
 
+# COMMAND ----------
+
 # ============================================================
 # 1. LER MESSAGES_CLEAN (apenas inbound com texto)
 # ============================================================
@@ -74,6 +86,8 @@ df_inbound = df.filter(
     & (F.col("message_body").isNotNull())
     & (F.col("message_body") != "")
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 2. EXTRAIR ENTIDADES
@@ -89,6 +103,8 @@ df_entities = df_inbound.withColumns(
         "prices_found": extract_price_udf("message_body"),
     }
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. AGREGAR POR CONVERSA -> LEADS PROFILE
@@ -108,6 +124,8 @@ leads = (
     )
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 4. MASCARAR DADOS SENSIVEIS
 # ============================================================
@@ -120,6 +138,8 @@ leads_masked = leads.withColumns(
         "plate_masked": F.transform("plates", mask_plate_udf),
     }
 ).drop("cpfs", "emails", "phones", "plates")
+
+# COMMAND ----------
 
 # ============================================================
 # 5. REDACTION DO MESSAGE_BODY em messages_clean
@@ -140,6 +160,8 @@ local_msg = f"{msg_tmp}/messages_clean"
 df_redacted.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_msg)
 n_msg = lake.upload_dir(local_msg, "silver/messages_clean/")
 logger.info(f"Delta uploaded para S3 silver/messages_clean/ (redacted): {n_msg} arquivos")
+
+# COMMAND ----------
 
 # ============================================================
 # 6. SALVAR LEADS PROFILE (UC + S3)

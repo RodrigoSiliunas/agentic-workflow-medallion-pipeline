@@ -4,6 +4,8 @@
 # MAGIC Verifica resultados, recovery com rollback Delta, notificacoes por email.
 # MAGIC **run_if: ALL_DONE** — roda SEMPRE, mesmo se tasks anteriores falharam.
 
+# COMMAND ----------
+
 import json
 import logging
 import sys
@@ -14,6 +16,8 @@ from pyspark.sql import Row
 
 logger = logging.getLogger("agent_post")
 
+# COMMAND ----------
+
 # ============================================================
 # IMPORTAR S3Lake (boto3 + Databricks Secrets)
 # ============================================================
@@ -21,6 +25,8 @@ sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow
 from pipeline_lib.storage import S3Lake
 
 lake = S3Lake(dbutils)
+
+# COMMAND ----------
 
 # ============================================================
 # CONFIGURACAO
@@ -30,6 +36,8 @@ STATE_TABLE = f"{CATALOG}.pipeline.state"
 NOTIFICATIONS_TABLE = f"{CATALOG}.pipeline.notifications"
 METRICS_TABLE = f"{CATALOG}.pipeline.metrics"
 MAX_CONSECUTIVE_FAILURES = 3
+
+# COMMAND ----------
 
 # ============================================================
 # 1. CRIAR TABELAS DE APOIO (se nao existirem)
@@ -55,6 +63,8 @@ spark.sql(f"""
         duration_sec DOUBLE
     ) USING DELTA
 """)
+
+# COMMAND ----------
 
 # ============================================================
 # 2. CARREGAR CONTEXTO DO AGENT_PRE
@@ -108,6 +118,8 @@ if not should_process:
     lake.upload_dir(_local, "pipeline/state/")
     dbutils.notebook.exit("SKIP: no new data to process")
 
+# COMMAND ----------
+
 # ============================================================
 # 3. COLETAR RESULTADOS DE TODAS AS TASKS
 # ============================================================
@@ -137,6 +149,8 @@ all_ok = len(failed_tasks) == 0
 
 logger.info(f"Task results: {task_results}")
 logger.info(f"Failed: {failed_tasks}")
+
+# COMMAND ----------
 
 # ============================================================
 # 4. FUNCOES DE PERSISTENCIA E NOTIFICACAO
@@ -210,6 +224,8 @@ def build_failure_body(error: str, failures: int) -> str:
         lines.append("Intervencao manual necessaria.")
     return "\n".join(lines)
 
+# COMMAND ----------
+
 # ============================================================
 # 5. FUNCAO DE RECOVERY
 # ============================================================
@@ -251,6 +267,8 @@ def attempt_recovery(failed: list) -> list:
                     actions.append(f"Rollback {tbl} para versao {ver}")
 
     return actions
+
+# COMMAND ----------
 
 # ============================================================
 # 6. FUNCOES DO AGENTE DE IA (LLM + GitHub PR)
@@ -390,6 +408,8 @@ def build_ai_notification_body(diagnosis: dict, pr: dict | None) -> str:
         lines.append(f"  - {task}: {status}")
 
     return "\n".join(lines)
+
+# COMMAND ----------
 
 # ============================================================
 # 7. LOGICA DE DECISAO

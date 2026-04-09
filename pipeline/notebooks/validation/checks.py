@@ -3,12 +3,16 @@
 # MAGIC # Quality Validation
 # MAGIC Verifica integridade Bronze→Silver→Gold apos cada execucao.
 
+# COMMAND ----------
+
 import logging
 import time
 
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("validation.checks")
+
+# COMMAND ----------
 
 # ============================================================
 # TASK VALUES
@@ -27,6 +31,8 @@ start_time = time.time()
 errors = []
 warnings = []
 
+# COMMAND ----------
+
 # ============================================================
 # 1. BRONZE CHECKS
 # ============================================================
@@ -41,6 +47,8 @@ try:
 except Exception as e:
     errors.append(f"Bronze nao existe ou erro: {e}")
     bronze_count = 0
+
+# COMMAND ----------
 
 # ============================================================
 # 2. SILVER CHECKS
@@ -100,6 +108,8 @@ try:
 except Exception as e:
     errors.append(f"Silver conversations_enriched nao existe: {e}")
 
+# COMMAND ----------
+
 # ============================================================
 # 3. GOLD CHECKS
 # ============================================================
@@ -140,6 +150,8 @@ try:
         errors.append(f"Sentiment fora do range -1/+1: min={min_s}, max={max_s}")
 except Exception:
     pass
+
+# COMMAND ----------
 
 # ============================================================
 # 4. RESULTADO

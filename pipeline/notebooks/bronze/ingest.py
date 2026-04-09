@@ -3,12 +3,16 @@
 # MAGIC # Bronze Ingestion
 # MAGIC Le Parquet cru do S3 `/bronze/`, valida schema, e salva como Delta Table `bronze.conversations`.
 
+# COMMAND ----------
+
 import hashlib
 import logging
 import sys
 import time
 
 logger = logging.getLogger("bronze.ingest")
+
+# COMMAND ----------
 
 # ============================================================
 # IMPORTAR S3Lake (boto3 + Databricks Secrets)
@@ -18,12 +22,16 @@ from pipeline_lib.storage import S3Lake
 
 lake = S3Lake(dbutils)
 
+# COMMAND ----------
+
 # ============================================================
 # CONFIGURACAO
 # ============================================================
 BRONZE_S3_PREFIX = "bronze/"
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
+
+# COMMAND ----------
 
 # ============================================================
 # 1. VERIFICAR TASK VALUES DO AGENTE (se rodando via Workflow)
@@ -41,6 +49,8 @@ except Exception:
     # Execucao standalone (sem Workflow) — usar config default
     bronze_prefix = BRONZE_S3_PREFIX
     logger.info("Executando standalone (sem agent_pre)")
+
+# COMMAND ----------
 
 # ============================================================
 # 2. LER PARQUET DO S3 (via boto3 download → local → spark.read)
@@ -72,6 +82,8 @@ columns = set(df.columns)
 logger.info(f"Linhas lidas: {row_count}")
 logger.info(f"Colunas encontradas: {sorted(columns)}")
 
+# COMMAND ----------
+
 # ============================================================
 # 3. VALIDAR SCHEMA COM EVOLUTION
 # ============================================================
@@ -94,6 +106,8 @@ if not validation.is_valid:
 if validation.warnings:
     for warning in validation.warnings:
         logger.warning(warning)
+
+# COMMAND ----------
 
 # ============================================================
 # 4. SALVAR COMO DELTA TABLE (com schema evolution) + S3
@@ -120,6 +134,8 @@ df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(lo
 n_files = lake.upload_dir(local_delta_path, "bronze/conversations/")
 logger.info(f"Delta uploaded para S3 bronze/conversations/: {n_files} arquivos")
 
+# COMMAND ----------
+
 # ============================================================
 # 5. FINGERPRINT VIA S3 METADATA
 # ============================================================
@@ -138,6 +154,8 @@ try:
 except Exception as e:
     fingerprint = f"unknown_{row_count}"
     logger.warning(f"Nao foi possivel calcular fingerprint: {e}")
+
+# COMMAND ----------
 
 # ============================================================
 # 6. METRICAS E TASK VALUES

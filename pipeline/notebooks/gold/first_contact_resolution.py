@@ -3,6 +3,8 @@
 # MAGIC # Gold: First Contact Resolution
 # MAGIC % vendas fechadas na primeira conversa vs multiplos contatos.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -21,6 +23,8 @@ start_time = time.time()
 
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
+
+# COMMAND ----------
 
 # ============================================================
 # 1. IDENTIFICAR MESMO LEAD EM CONVERSAS DIFERENTES (via phone_masked hash)
@@ -42,6 +46,8 @@ lead_contacts = lead_contacts.withColumn(
 ).withColumn(
     "total_contacts", F.count("*").over(Window.partitionBy("lead_phone"))
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 2. FIRST CONTACT RESOLUTION
@@ -71,6 +77,8 @@ fcr_stats = fcr_summary.withColumn(
     .otherwise("unknown"),
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 3. METRICAS AGREGADAS
 # ============================================================
@@ -83,6 +91,8 @@ total_leads = fcr_stats.count()
 overall = overall.withColumn(
     "pct_of_total", F.round(F.col("leads") / F.lit(total_leads) * 100, 2)
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. SALVAR

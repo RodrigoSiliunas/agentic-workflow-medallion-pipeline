@@ -4,7 +4,11 @@
 # MAGIC Modelo simples (Logistic Regression) que preve conversation_outcome
 # MAGIC usando apenas features das primeiras 3 mensagens.
 
+# COMMAND ----------
+
 # MAGIC %pip install scikit-learn
+
+# COMMAND ----------
 
 import logging
 import sys
@@ -28,6 +32,8 @@ start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
+
+# COMMAND ----------
 
 # ============================================================
 # 1. EXTRAIR FEATURES DAS PRIMEIRAS 3 MENSAGENS
@@ -56,6 +62,8 @@ features = early_features.join(
     on="conversation_id",
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 2. PREPARAR DADOS PARA SKLEARN
 # ============================================================
@@ -79,6 +87,8 @@ feature_cols = [
 X = pdf[feature_cols].fillna(0).values
 y = pdf["outcome_enc"].values
 
+# COMMAND ----------
+
 # ============================================================
 # 3. TREINAR MODELO
 # ============================================================
@@ -92,6 +102,8 @@ accuracy = accuracy_score(y_test, y_pred)
 report = classification_report(y_test, y_pred, target_names=le_outcome.classes_, output_dict=True)
 
 logger.info(f"Accuracy: {accuracy:.3f}")
+
+# COMMAND ----------
 
 # ============================================================
 # 4. SALVAR PREDICOES + METRICAS

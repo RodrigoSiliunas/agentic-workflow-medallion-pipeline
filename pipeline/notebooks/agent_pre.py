@@ -3,6 +3,8 @@
 # MAGIC # Agent Pre-Check (Task 0)
 # MAGIC Verifica dados novos, captura versoes Delta para rollback, seta task values.
 
+# COMMAND ----------
+
 import hashlib
 import json
 import logging
@@ -12,6 +14,8 @@ from datetime import datetime
 
 logger = logging.getLogger("agent_pre")
 
+# COMMAND ----------
+
 # ============================================================
 # IMPORTAR S3Lake (boto3 + Databricks Secrets)
 # ============================================================
@@ -20,12 +24,16 @@ from pipeline_lib.storage import S3Lake
 
 lake = S3Lake(dbutils)
 
+# COMMAND ----------
+
 # ============================================================
 # CONFIGURACAO
 # ============================================================
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 BRONZE_PREFIX = "bronze/"
 STATE_TABLE = f"{CATALOG}.pipeline.state"
+
+# COMMAND ----------
 
 # ============================================================
 # 1. CRIAR TABELA DE ESTADO (se nao existir)
@@ -40,6 +48,8 @@ spark.sql(f"""
     )
     USING DELTA
 """)
+
+# COMMAND ----------
 
 # ============================================================
 # 2. CARREGAR ESTADO ANTERIOR
@@ -61,6 +71,8 @@ def load_state() -> dict:
 state = load_state()
 logger.info(f"Estado anterior: status={state.get('status')}, "
             f"failures={state.get('consecutive_failures')}")
+
+# COMMAND ----------
 
 # ============================================================
 # 3. VERIFICAR DADOS NOVOS (fingerprint via metadata)
@@ -87,6 +99,8 @@ if not has_new_data:
     dbutils.notebook.exit("SKIP: no new data")
 
 logger.info(f"Dados novos detectados! Hash: {current_hash[:16]}...")
+
+# COMMAND ----------
 
 # ============================================================
 # 4. CAPTURAR VERSOES DELTA (para rollback no agent_post)
@@ -124,6 +138,8 @@ def capture_delta_versions(tables: list) -> dict:
 
 delta_versions = capture_delta_versions(TRACKED_TABLES)
 logger.info(f"Versoes Delta capturadas: {len(delta_versions)} tabelas")
+
+# COMMAND ----------
 
 # ============================================================
 # 5. SETAR TASK VALUES

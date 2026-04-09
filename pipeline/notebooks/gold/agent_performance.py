@@ -3,6 +3,8 @@
 # MAGIC # Gold: Agent Performance
 # MAGIC Scoring com percentis entre os 20 agentes, recomendacoes automatizadas.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -20,6 +22,8 @@ start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. METRICAS POR AGENTE
 # ============================================================
@@ -36,6 +40,8 @@ agents = conversations.groupBy("agent_id").agg(
     F.avg("inbound_count").alias("avg_lead_engagement"),
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 2. TAXAS E SCORES
 # ============================================================
@@ -48,6 +54,8 @@ agents = agents.withColumns(
         "loss_rate": F.round(F.col("lost_count") / F.col("total_conversations") * 100, 2),
     }
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. PERCENTIS (ranking relativo)
@@ -65,6 +73,8 @@ agents = agents.withColumns(
         ),
     }
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. SALVAR

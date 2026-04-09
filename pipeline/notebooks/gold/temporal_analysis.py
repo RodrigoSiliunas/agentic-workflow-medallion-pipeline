@@ -3,6 +3,8 @@
 # MAGIC # Gold: Temporal Analysis
 # MAGIC Heatmap de conversao por hora x dia da semana. Horarios otimos de contato.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -19,6 +21,8 @@ CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
+
+# COMMAND ----------
 
 # ============================================================
 # 1. HEATMAP: HORA x DIA DA SEMANA x CONVERSAO
@@ -38,6 +42,8 @@ temporal = (
     .orderBy("contact_dow", "contact_hour")
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 2. MELHOR HORARIO POR DIA
 # ============================================================
@@ -47,6 +53,8 @@ w = Window.partitionBy("contact_dow").orderBy(F.col("conversion_rate").desc())
 best_hours = temporal.withColumn("rank", F.row_number().over(w)).filter(F.col("rank") == 1).drop(
     "rank"
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

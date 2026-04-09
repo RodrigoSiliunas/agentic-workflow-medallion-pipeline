@@ -3,6 +3,8 @@
 # MAGIC # Silver Task 2c: Conversation Enrichment
 # MAGIC Metricas agregadas por conversa: total mensagens, duracao, response_time medio, etc.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -11,6 +13,8 @@ from pyspark.sql import functions as F
 
 logger = logging.getLogger("silver.enrichment")
 
+# COMMAND ----------
+
 # ============================================================
 # IMPORTAR S3Lake (boto3 + Databricks Secrets)
 # ============================================================
@@ -18,6 +22,8 @@ sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow
 from pipeline_lib.storage import S3Lake
 
 lake = S3Lake(dbutils)
+
+# COMMAND ----------
 
 # ============================================================
 # TASK VALUES
@@ -31,6 +37,8 @@ try:
 except Exception:
     pass
 
+# COMMAND ----------
+
 # ============================================================
 # CONFIGURACAO
 # ============================================================
@@ -40,10 +48,14 @@ SILVER_CONVERSATIONS = f"{CATALOG}.silver.conversations_enriched"
 
 start_time = time.time()
 
+# COMMAND ----------
+
 # ============================================================
 # 1. LER MESSAGES_CLEAN
 # ============================================================
 df = spark.table(SILVER_MESSAGES)
+
+# COMMAND ----------
 
 # ============================================================
 # 2. AGREGAR METRICAS POR CONVERSA
@@ -73,6 +85,8 @@ conversations = conversations.withColumn(
     "duration_minutes",
     (F.unix_timestamp("last_message_at") - F.unix_timestamp("first_message_at")) / 60,
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR (UC + S3)

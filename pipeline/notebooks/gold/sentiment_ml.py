@@ -8,7 +8,11 @@
 # MAGIC %pip install pysentimiento
 # MAGIC ```
 
+# COMMAND ----------
+
 # MAGIC %pip install pysentimiento
+
+# COMMAND ----------
 
 import logging
 import sys
@@ -28,6 +32,8 @@ start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. CRIAR MODELO DE SENTIMENTO (broadcast para workers)
 # ============================================================
@@ -38,6 +44,7 @@ analyzer = create_analyzer(task="sentiment", lang="pt")
 # Broadcast do analyzer para os workers
 analyzer_bc = spark.sparkContext.broadcast(analyzer)
 
+# COMMAND ----------
 
 # ============================================================
 # 2. PANDAS UDF PARA SENTIMENTO
@@ -82,6 +89,7 @@ def sentiment_label_udf(texts: pd.Series) -> pd.Series:
             labels.append("neutro")
     return pd.Series(labels)
 
+# COMMAND ----------
 
 # ============================================================
 # 3. APLICAR SENTIMENTO NAS MENSAGENS INBOUND
@@ -98,6 +106,8 @@ msg_sentiment = inbound.withColumns(
         "ml_sentiment_label": sentiment_label_udf("message_body"),
     }
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. AGREGAR POR CONVERSA
@@ -120,6 +130,8 @@ conv_sentiment = conv_sentiment.withColumn(
     .when(F.col("sentiment_score") < -0.2, "negativo")
     .otherwise("neutro"),
 ).withColumn("model_version", F.lit("pysentimiento_bert_pt"))
+
+# COMMAND ----------
 
 # ============================================================
 # 5. SALVAR (sobrescreve a tabela de sentimento heuristico)

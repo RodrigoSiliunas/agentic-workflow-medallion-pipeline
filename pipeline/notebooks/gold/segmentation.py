@@ -3,6 +3,8 @@
 # MAGIC # Gold: Persona Segmentation
 # MAGIC Classificacao em 6 personas baseadas em comportamento.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -23,6 +25,8 @@ sentiment = spark.table(f"{CATALOG}.gold.sentiment")
 lead_scores = spark.table(f"{CATALOG}.gold.lead_scoring")
 leads = spark.table(f"{CATALOG}.silver.leads_profile")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. COMBINAR FEATURES
 # ============================================================
@@ -41,6 +45,8 @@ combined = (
         how="left",
     )
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 2. CLASSIFICACAO EM PERSONAS
@@ -76,6 +82,8 @@ personas = combined.withColumn(
     .otherwise("indefinido"),
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 3. RESUMO POR PERSONA
 # ============================================================
@@ -86,6 +94,8 @@ persona_summary = personas.groupBy("persona").agg(
     F.avg("total_messages").alias("avg_messages"),
     F.avg("avg_response_time_sec").alias("avg_response_time"),
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. SALVAR

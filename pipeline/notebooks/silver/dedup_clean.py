@@ -3,6 +3,8 @@
 # MAGIC # Silver Task 2a: Dedup + Clean + Metadata Parse
 # MAGIC Deduplicacao sent+delivered, normalizacao de nomes, parse de metadata JSON.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -12,6 +14,8 @@ from pyspark.sql import functions as F
 
 logger = logging.getLogger("silver.dedup_clean")
 
+# COMMAND ----------
+
 # ============================================================
 # IMPORTAR S3Lake (boto3 + Databricks Secrets)
 # ============================================================
@@ -19,6 +23,8 @@ sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow
 from pipeline_lib.storage import S3Lake
 
 lake = S3Lake(dbutils)
+
+# COMMAND ----------
 
 # ============================================================
 # TASK VALUES DO AGENTE
@@ -33,6 +39,8 @@ try:
 except Exception:
     run_id = "standalone"
 
+# COMMAND ----------
+
 # ============================================================
 # CONFIGURACAO
 # ============================================================
@@ -42,12 +50,16 @@ SILVER_TABLE = f"{CATALOG}.silver.messages_clean"
 
 start_time = time.time()
 
+# COMMAND ----------
+
 # ============================================================
 # 1. LER BRONZE
 # ============================================================
 df = spark.table(BRONZE_TABLE)
 bronze_count = df.count()
 logger.info(f"Bronze: {bronze_count} linhas")
+
+# COMMAND ----------
 
 # ============================================================
 # 2. DEDUPLICACAO (sent + delivered -> manter status mais avancado)
@@ -68,6 +80,8 @@ dedup_count = df_dedup.count()
 removed = bronze_count - dedup_count
 logger.info(f"Dedup: {removed} duplicatas removidas. {dedup_count} linhas restantes.")
 
+# COMMAND ----------
+
 # ============================================================
 # 3. NORMALIZACAO DE sender_name
 # ============================================================
@@ -81,6 +95,8 @@ df_clean = df_dedup.withColumn(
         ).otherwise(F.concat(F.lit("Lead_"), F.substring(F.col("conversation_id"), -8, 8))),
     ).otherwise(F.initcap(F.trim(F.regexp_replace(F.col("sender_name"), r"\s+", " ")))),
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. PARSE METADATA JSON
@@ -99,6 +115,8 @@ df_parsed = df_clean.withColumns(
         "meta_lead_source": F.get_json_object("metadata", "$.lead_source"),
     }
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 5. SALVAR COMO DELTA TABLE (UC + S3)
@@ -122,6 +140,8 @@ logger.info(f"Delta uploaded para S3 silver/messages_clean/: {n_files} arquivos"
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s")
+
+# COMMAND ----------
 
 # ============================================================
 # 6. METRICAS

@@ -3,6 +3,8 @@
 # MAGIC # Gold: Sentiment Analysis (Heuristica pt-BR)
 # MAGIC Sentimento por conversa baseado em keywords positivas/negativas.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -19,6 +21,8 @@ CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
+
+# COMMAND ----------
 
 # ============================================================
 # KEYWORDS DE SENTIMENTO (pt-BR informal, WhatsApp)
@@ -39,6 +43,8 @@ NEGATIVE = [
     "concorrente", "mais barato", "preco alto", "nao compensa",
 ]
 
+# COMMAND ----------
+
 # ============================================================
 # 1. CALCULAR SENTIMENTO POR MENSAGEM INBOUND
 # ============================================================
@@ -57,6 +63,8 @@ msg_sentiment = messages.filter(
         ),
     }
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 2. AGREGAR POR CONVERSA
@@ -87,6 +95,8 @@ conv_sentiment = conv_sentiment.withColumn(
     .when(F.col("sentiment_score") < -0.2, "negativo")
     .otherwise("neutro"),
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 3. SALVAR

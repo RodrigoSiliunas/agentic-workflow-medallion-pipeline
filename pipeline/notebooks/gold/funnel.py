@@ -3,6 +3,8 @@
 # MAGIC # Gold: Funil de Conversao
 # MAGIC Outcomes por etapa, taxa de conversao, e "mensagem fatal" antes de ghosting.
 
+# COMMAND ----------
+
 import logging
 import sys
 import time
@@ -22,6 +24,8 @@ start_time = time.time()
 messages = spark.table(f"{CATALOG}.silver.messages_clean")
 conversations = spark.table(f"{CATALOG}.silver.conversations_enriched")
 
+# COMMAND ----------
+
 # ============================================================
 # 1. DISTRIBUICAO DE OUTCOMES
 # ============================================================
@@ -36,6 +40,8 @@ total = conversations.count()
 outcome_dist = outcome_dist.withColumn(
     "pct_of_total", F.round(F.col("total_conversations") / F.lit(total) * 100, 2)
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 2. MENSAGEM FATAL — ultima mensagem outbound antes de ghosting
@@ -62,6 +68,8 @@ fatal_patterns = (
     .limit(50)
 )
 
+# COMMAND ----------
+
 # ============================================================
 # 3. PONTO DE ABANDONO — em qual mensagem sequencial o lead para
 # ============================================================
@@ -86,6 +94,8 @@ abandonment_point = (
         F.percentile_approx("last_inbound_msg_number", 0.5).alias("median_last_inbound_msg"),
     )
 )
+
+# COMMAND ----------
 
 # ============================================================
 # 4. COMBINAR E SALVAR
