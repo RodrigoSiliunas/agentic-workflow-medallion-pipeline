@@ -18,7 +18,7 @@ sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow
 from pipeline_lib.storage import S3Lake
 
 lake = S3Lake(dbutils)
-CATALOG = spark.conf.get("pipeline.catalog", "medallion")
+CATALOG = "medallion"
 start_time = time.time()
 
 leads = spark.table(f"{CATALOG}.silver.leads_profile")

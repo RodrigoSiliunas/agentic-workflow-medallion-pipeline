@@ -26,7 +26,7 @@ try:
 except Exception:
     pass
 
-CATALOG = spark.conf.get("pipeline.catalog", "medallion")
+CATALOG = "medallion"
 start_time = time.time()
 errors = []
 warnings = []

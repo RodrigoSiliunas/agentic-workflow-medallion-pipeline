@@ -158,7 +158,7 @@ def setup():
     for s in SCHEMAS:
         print(f"  Schema:   {CATALOG_NAME}.{s}")
     print(f"  S3:       {s3_url}")
-    print(f"\nProximo: python deploy/upload_data.py <parquet_path>")
+    print("\nProximo: python deploy/upload_data.py <parquet_path>")
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-from pipeline_lib.storage.s3_client import S3Lake
+from pipeline_lib.storage.s3_client import S3Lake as S3Lake

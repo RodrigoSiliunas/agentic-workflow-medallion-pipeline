@@ -31,7 +31,7 @@ lake = S3Lake(dbutils)
 # ============================================================
 # CONFIGURACAO
 # ============================================================
-CATALOG = spark.conf.get("pipeline.catalog", "medallion")
+CATALOG = "medallion"
 STATE_TABLE = f"{CATALOG}.pipeline.state"
 NOTIFICATIONS_TABLE = f"{CATALOG}.pipeline.notifications"
 METRICS_TABLE = f"{CATALOG}.pipeline.metrics"

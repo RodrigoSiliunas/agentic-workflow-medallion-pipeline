@@ -49,7 +49,7 @@ from pipeline_lib.masking.redaction import redact_message_body
 # ============================================================
 # CONFIGURACAO
 # ============================================================
-CATALOG = spark.conf.get("pipeline.catalog", "medallion")
+CATALOG = "medallion"
 SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"
 SILVER_LEADS = f"{CATALOG}.silver.leads_profile"
 

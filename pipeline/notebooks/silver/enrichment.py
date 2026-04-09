@@ -42,7 +42,7 @@ except Exception:
 # ============================================================
 # CONFIGURACAO
 # ============================================================
-CATALOG = spark.conf.get("pipeline.catalog", "medallion")
+CATALOG = "medallion"
 SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"
 SILVER_CONVERSATIONS = f"{CATALOG}.silver.conversations_enriched"
 

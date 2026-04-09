@@ -28,7 +28,7 @@ lake = S3Lake(dbutils)
 # CONFIGURACAO
 # ============================================================
 BRONZE_S3_PREFIX = "bronze/"
-CATALOG = spark.conf.get("pipeline.catalog", "medallion")
+CATALOG = "medallion"
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 
 # COMMAND ----------
