@@ -3,12 +3,16 @@
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes import auth, chat, pipelines, settings, users, webhooks
 from app.core.config import settings as app_settings
+from app.core.exceptions import AppError
+from app.middleware.request_id import RequestIDMiddleware
+from app.services.omni_service import OmniService
 
 logger = structlog.get_logger()
 
@@ -16,13 +20,22 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown hooks."""
-    # Startup
     logger.info("Starting Namastex Platform Backend", version="0.1.0")
-    # TODO: Initialize Redis, check Omni health, start background tasks
+
+    # TODO: Initialize Redis connection pool
+    # TODO: Start background tasks (subscription scheduler, etc.)
+
+    # Check Omni health
+    omni = OmniService()
+    if await omni.health_check():
+        logger.info("Omni gateway: healthy")
+    else:
+        logger.warning("Omni gateway: unreachable (canais externos indisponiveis)")
+
     yield
-    # Shutdown
+
     logger.info("Shutting down")
-    # TODO: Close Redis, dispose DB engines, cancel tasks
+    # TODO: Close Redis, dispose DB engines, cancel background tasks
 
 
 app = FastAPI(
@@ -30,9 +43,20 @@ app = FastAPI(
     version="0.1.0",
     description="Plataforma conversacional para pipelines Medallion",
     lifespan=lifespan,
+    docs_url="/api/v1/docs",
+    openapi_url="/api/v1/openapi.json",
 )
 
-# Middleware
+# Exception handler for domain exceptions
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+# Middleware stack (ordem importa — primeiro adicionado = mais externo)
+app.add_middleware(RequestIDMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -54,3 +78,24 @@ app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"]
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/health/channels")
+async def health_channels():
+    """Status de todas as instancias Omni."""
+    omni = OmniService()
+    try:
+        instances = await omni.list_instances()
+        return {
+            "omni_healthy": True,
+            "instances": [
+                {
+                    "name": i.get("name"),
+                    "channel": i.get("channel"),
+                    "state": i.get("state"),
+                }
+                for i in instances
+            ],
+        }
+    except Exception as e:
+        return {"omni_healthy": False, "error": str(e), "instances": []}

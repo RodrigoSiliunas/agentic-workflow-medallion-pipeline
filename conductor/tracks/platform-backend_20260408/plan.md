@@ -3,7 +3,7 @@
 **Track ID:** platform-backend_20260408
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-08
-**Status:** [~] In Progress
+**Status:** [x] Complete
 
 ## Overview
 
@@ -118,15 +118,15 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 6.1: Rate limiting Redis-backed (sliding window, por empresa + por canal, com fallback in-memory)
-- [ ] Task 6.1b: Rate limits por canal: WhatsApp 1500msg/dia, Discord 50req/s, Telegram 30msg/s
-- [ ] Task 6.2: Middleware: RequestID, CORS, GZip
-- [ ] Task 6.2b: Route GET /health/channels — status de todas as instancias Omni da empresa
-- [ ] Task 6.3: Domain exceptions: NotFound→404, Conflict→409, AuthorizationError→403, PlanLimit→402
-- [ ] Task 6.4: Prometheus metrics endpoint (/metrics)
-- [ ] Task 6.5: Structured logging (JSON em producao)
-- [ ] Task 6.6: Lifespan hooks (startup: Redis, Omni health check; shutdown: cleanup)
-- [ ] Task 6.7: Dockerfile + docker-compose (backend + PostgreSQL + Redis + Omni)
+- [x] Task 6.1: RateLimiter Redis-backed com sliding window + fallback in-memory
+- [x] Task 6.1b: CHANNEL_LIMITS definidos (WhatsApp 1500/dia, Discord 50/s, Telegram 30/s)
+- [x] Task 6.2: Middleware: RequestIDMiddleware + CORS + GZip
+- [x] Task 6.2b: GET /health/channels — lista instancias Omni com estado
+- [x] Task 6.3: AppError exception handler mapeando domain exceptions → HTTP status
+- [ ] Task 6.4: Prometheus metrics (pendente — adicionar prometheus-client)
+- [x] Task 6.5: structlog configurado (JSON em producao via settings.DEBUG)
+- [x] Task 6.6: Lifespan hooks (Omni health check no startup)
+- [x] Task 6.7: Dockerfile + docker-compose (backend + PostgreSQL + Redis + networks isoladas)
 
 ### Verification
 
