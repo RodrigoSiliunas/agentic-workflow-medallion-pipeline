@@ -150,7 +150,25 @@ leads_pdf["phone_masked"] = leads_pdf["phones"].apply(lambda a: safe_map(a, mask
 leads_pdf["plate_masked"] = leads_pdf["plates"].apply(lambda a: safe_map(a, mask_plate))
 leads_pdf = leads_pdf.drop(columns=["cpfs", "emails", "phones", "plates"])
 
-leads_masked = spark.createDataFrame(leads_pdf)
+# Schema explicito para evitar NullType em arrays vazios
+from pyspark.sql.types import StructType, StructField, LongType
+
+array_str = ArrayType(StringType())
+array_float = ArrayType(FloatType())
+schema = StructType([
+    StructField("conversation_id", StringType()),
+    StructField("ceps", array_str),
+    StructField("competitors_mentioned", array_str),
+    StructField("prices_mentioned", array_float),
+    StructField("lead_name", StringType()),
+    StructField("lead_phone", StringType()),
+    StructField("cpf_masked", array_str),
+    StructField("cpf_hash", array_str),
+    StructField("email_masked", array_str),
+    StructField("phone_masked", array_str),
+    StructField("plate_masked", array_str),
+])
+leads_masked = spark.createDataFrame(leads_pdf, schema=schema)
 
 # COMMAND ----------
 
