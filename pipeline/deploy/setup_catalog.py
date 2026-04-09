@@ -23,7 +23,6 @@ import sys
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import AwsIamRoleRequest
 
-
 # ============================================================
 # CONFIG
 # ============================================================
