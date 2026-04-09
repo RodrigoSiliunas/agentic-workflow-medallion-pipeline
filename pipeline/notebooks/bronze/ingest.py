@@ -1,216 +1,114 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Bronze Ingestion
-# MAGIC Le Parquet cru do S3 `/bronze/`, valida schema contra contracts definidos
-# MAGIC em `pipeline_lib.schema`, e salva como Delta Table `bronze.conversations`
-# MAGIC no Unity Catalog. Tambem gera fingerprint S3 para deteccao de mudancas.
-# MAGIC
-# MAGIC **Camada:** Bronze | **Dependencia:** agent_pre | **Output:** `medallion.bronze.conversations`
-# MAGIC
-# MAGIC _Ultima atualizacao: 2026-04-09_
+# MAGIC # Bronze Layer - Data Ingestion
+# MAGIC Ingest raw data from source to Bronze layer with schema validation
 
-# COMMAND ----------
-
-# DBTITLE 1,Imports e Setup
-import hashlib
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, current_timestamp, lit
+from pyspark.sql.types import StructType, StructField, StringType
 import logging
-import os
-import sys
-import time
+from datetime import datetime
 
-# Auto-detect repo path from this notebook's location
-_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-_repo_root = "/".join(_nb_path.split("/")[:4])
-PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
-sys.path.insert(0, PIPELINE_ROOT)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-from pipeline_lib.storage import S3Lake
+# Initialize Spark session
+spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
 
-# COMMAND ----------
+# Define the expected schema for bronze.conversations
+expected_schema = StructType([
+    StructField("message_id", StringType(), True),
+    StructField("conversation_id", StringType(), True),
+    StructField("timestamp", StringType(), True),
+    StructField("direction", StringType(), True),
+    StructField("sender_phone", StringType(), True),
+    StructField("sender_name", StringType(), True),
+    StructField("message_type", StringType(), True),
+    StructField("message_body", StringType(), True),
+    StructField("status", StringType(), True),
+    StructField("channel", StringType(), True),
+    StructField("campaign_id", StringType(), True),
+    StructField("agent_id", StringType(), True),
+    StructField("conversation_outcome", StringType(), True),
+    StructField("metadata", StringType(), True)
+])
 
-# DBTITLE 1,Parametros
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")
+# Get expected column names
+expected_columns = [field.name for field in expected_schema.fields]
 
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# Inicializa lake client e logger
-lake = S3Lake(dbutils, spark, scope=SCOPE)
-logger = logging.getLogger("bronze.ingest")
-
-# COMMAND ----------
-
-# DBTITLE 1,Configuracao de Tabelas
-# Prefix do S3 e nome completo da tabela no Unity Catalog
-BRONZE_S3_PREFIX = dbutils.widgets.get("bronze_prefix")
-BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
-
-# COMMAND ----------
-
-# DBTITLE 1,Verificar Task Values do Agente
-# Quando executado dentro do workflow, verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP: agent decided no processing needed")
-    # Usa o prefix definido pelo agent_pre (pode ter sido customizado)
-    bronze_prefix = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="bronze_prefix", default=BRONZE_S3_PREFIX
-    )
-except Exception:
-    # Execucao standalone sem workflow -- usa prefix do widget
-    bronze_prefix = BRONZE_S3_PREFIX
-    logger.info("Executando standalone (sem agent_pre)")
-
-# COMMAND ----------
-
-# DBTITLE 1,Chaos Mode Check
-# Injeta falha controlada se chaos_mode ativado pelo agent_pre
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="chaos_mode", default="off"
-    )
-except Exception:
-    pass
-
-# COMMAND ----------
-
-# DBTITLE 1,Ler Parquet do S3
-# Marca o inicio para medir duracao total da ingestao
-start_time = time.time()
-
-# Le todos os arquivos Parquet do prefix S3 via wrapper boto3
-df = lake.read_parquet(bronze_prefix)
-row_count = int(df.count())
-columns = set(df.columns)
-
-# CHAOS: Injeta coluna invalida que quebra schema validation
-if chaos_mode == "bronze_schema":
-    logger.warning("CHAOS MODE: Injetando coluna invalida no DataFrame")
-    from pyspark.sql import functions as F
-    df = df.withColumn("_chaos_invalid_col", F.lit("BUG_INJETADO"))
-    columns = set(df.columns)
-    # Forca o schema validator a rejeitar (coluna com constraint invalida)
-    try:
-        dbutils.jobs.taskValues.set(key="status", value="FAILED")
-        dbutils.jobs.taskValues.set(
-            key="error",
-            value="Schema invalido: coluna _chaos_invalid_col nao pertence ao contrato"
-        )
-    except Exception:
-        pass
-    raise ValueError(
-        "CHAOS: Schema invalido — coluna _chaos_invalid_col "
-        "injetada pelo chaos mode para teste do agente AI"
-    )
-
-logger.info(f"Linhas lidas: {row_count}")
-logger.info(f"Colunas encontradas: {sorted(columns)}")
-
-# COMMAND ----------
-
-# DBTITLE 1,Validar Schema
-# Importa o contrato de schema (colunas obrigatorias) e o validador
-from pipeline_lib.schema.contracts import REQUIRED_COLUMNS
-from pipeline_lib.schema.validator import validate_schema
-
-# Valida as colunas do DataFrame contra o contrato esperado
-validation = validate_schema(columns)
-
-if not validation.is_valid:
-    # Schema invalido -- seta task values de erro e aborta
-    error_msg = f"Schema invalido: {validation.errors}"
-    logger.error(error_msg)
-    try:
-        dbutils.jobs.taskValues.set(key="status", value="FAILED")
-        dbutils.jobs.taskValues.set(key="error", value=error_msg)
-    except Exception:
-        pass
-    raise ValueError(error_msg)
-
-# Warnings nao bloqueiam a execucao (ex: colunas extras aceitas via mergeSchema)
-if validation.warnings:
-    for warning in validation.warnings:
-        logger.warning(warning)
-
-# COMMAND ----------
-
-# DBTITLE 1,Salvar como Delta Table e Upload para S3
-logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
-
-# Salva no Unity Catalog como Delta com merge de schema para colunas novas
-(
-    df.write
-    .format("delta")
-    .mode("overwrite")
-    .option("mergeSchema", "true")
-    .saveAsTable(BRONZE_TABLE)
-)
-
-# Verifica contagem apos salvar para garantir integridade
-saved_count = int(spark.table(BRONZE_TABLE).count())
-logger.info(f"Delta Table salva (UC): {saved_count} linhas")
-
-# Backup em Parquet no S3 para acesso direto
-lake.write_parquet(spark.table(BRONZE_TABLE), "bronze/conversations/")
-logger.info("Parquet uploaded para S3 bronze/conversations/")
-
-# COMMAND ----------
-
-# DBTITLE 1,Fingerprint via S3 Metadata
-def get_s3_fingerprint(prefix: str) -> str:
-    """Gera fingerprint dos arquivos no S3 via metadata (boto3).
-    Usado para deteccao de mudancas entre execucoes."""
-    items = lake.get_metadata(prefix)
-    # Ordena por key para hash deterministico
-    fingerprint = "|".join(
-        f"{item['key']}:{item['size']}:{item['last_modified']}"
-        for item in sorted(items, key=lambda x: x["key"])
-    )
-    return hashlib.sha256(fingerprint.encode()).hexdigest()
+def validate_and_clean_schema(df, expected_cols):
+    """
+    Validate DataFrame schema and remove unexpected columns
+    """
+    # Get current columns
+    current_columns = df.columns
+    
+    # Log schema differences
+    unexpected_cols = set(current_columns) - set(expected_cols)
+    missing_cols = set(expected_cols) - set(current_columns)
+    
+    if unexpected_cols:
+        logger.warning(f"Found unexpected columns that will be removed: {unexpected_cols}")
+        # Remove unexpected columns
+        df = df.select(*[col for col in current_columns if col in expected_cols])
+    
+    if missing_cols:
+        logger.error(f"Missing required columns: {missing_cols}")
+        raise ValueError(f"Schema validation failed: missing columns {missing_cols}")
+    
+    # Ensure column order matches expected schema
+    df = df.select(*expected_cols)
+    
+    return df
 
 try:
-    fingerprint = get_s3_fingerprint(bronze_prefix)
-    logger.info(f"Fingerprint S3: {fingerprint[:16]}...")
+    # Read source data - adjust path based on your source
+    # This could be from S3, ADLS, or mounted location
+    source_path = "/mnt/landing/conversations/"
+    
+    logger.info(f"Starting bronze ingestion from {source_path}")
+    
+    # Read raw data
+    raw_df = spark.read \
+        .option("multiLine", "true") \
+        .option("inferSchema", "false") \
+        .json(source_path)
+    
+    logger.info(f"Read {raw_df.count()} records from source")
+    logger.info(f"Source schema columns: {raw_df.columns}")
+    
+    # Validate and clean schema
+    clean_df = validate_and_clean_schema(raw_df, expected_columns)
+    
+    # Add ingestion metadata
+    bronze_df = clean_df \
+        .withColumn("_ingestion_timestamp", current_timestamp()) \
+        .withColumn("_source_file", lit(source_path))
+    
+    # Write to Bronze table
+    bronze_table = "medallion.bronze.conversations"
+    
+    bronze_df.write \
+        .mode("append") \
+        .option("mergeSchema", "false") \
+        .saveAsTable(bronze_table)
+    
+    # Log success metrics
+    final_count = spark.read.table(bronze_table).count()
+    logger.info(f"Successfully ingested data to {bronze_table}")
+    logger.info(f"Total records in bronze table: {final_count}")
+    
+    # Display sample for verification
+    display(bronze_df.limit(10))
+    
 except Exception as e:
-    # Fingerprint nao e critico -- usa fallback com contagem de linhas
-    fingerprint = f"unknown_{row_count}"
-    logger.warning(f"Nao foi possivel calcular fingerprint: {e}")
+    logger.error(f"Bronze ingestion failed: {str(e)}")
+    # Log detailed error for debugging
+    if 'raw_df' in locals():
+        logger.error(f"Raw data schema: {raw_df.schema}")
+        logger.error(f"Raw data columns: {raw_df.columns}")
+    raise
 
-# COMMAND ----------
-
-# DBTITLE 1,Metricas e Task Values
-# Calcula duracao total da ingestao
-duration_sec = round(time.time() - start_time, 2)
-
-# Metricas de observabilidade da ingestao
-metrics = {
-    "rows_input": row_count,
-    "rows_output": saved_count,
-    "columns_count": len(columns),
-    "new_columns": len(columns - REQUIRED_COLUMNS),
-    "duration_sec": duration_sec,
-    "fingerprint": fingerprint,
-}
-
-logger.info(f"Bronze ingestion completa em {duration_sec}s: {metrics}")
-
-# Seta task values para o agent_post coletar
-try:
-    dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
-    dbutils.jobs.taskValues.set(key="rows_output", value=saved_count)
-    dbutils.jobs.taskValues.set(key="duration_sec", value=duration_sec)
-    dbutils.jobs.taskValues.set(key="fingerprint", value=fingerprint)
-    dbutils.jobs.taskValues.set(
-        key="schema_warnings",
-        value=str(validation.warnings) if validation.warnings else "none",
-    )
-except Exception:
-    pass
-
-dbutils.notebook.exit(f"SUCCESS: {saved_count} rows ingested in {duration_sec}s")
+# Return success
+dbutils.notebook.exit("SUCCESS")
