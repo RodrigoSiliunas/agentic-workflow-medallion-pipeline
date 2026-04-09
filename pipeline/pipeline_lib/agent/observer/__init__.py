@@ -1,0 +1,1 @@
+from pipeline_lib.agent.observer.workflow_observer import WorkflowObserver as WorkflowObserver

@@ -296,180 +296,9 @@ def attempt_recovery(failed: list) -> list:
 
 # COMMAND ----------
 
-# DBTITLE 1,Instalar Dependencias do Agente AI
-# anthropic: Claude API para diagnostico inteligente de erros
-# PyGithub: criacao automatica de PRs com correcoes
-
-# COMMAND ----------
-
-# MAGIC %pip install anthropic PyGithub --quiet
-
-# COMMAND ----------
-
-# DBTITLE 1,Agente de IA (LLM + GitHub PR)
-def ai_diagnose_and_fix(failed: list, log: list) -> dict:
-    """Usa Claude Opus para diagnosticar o erro e criar PR."""
-    from pipeline_lib.agent.llm_diagnostics import diagnose_error
-    from pipeline_lib.agent.github_pr import create_fix_pr
-
-    results = {"diagnosis": None, "pr": None, "actions": []}
-
-    for task in failed:
-        log.append(f"[AI] Diagnosticando: {task}")
-
-        # 1. Recuperar erro
-        try:
-            error_msg = dbutils.jobs.taskValues.get(
-                taskKey=task, key="error", default="Unknown error"
-            )
-        except Exception:
-            error_msg = f"Task {task} falhou (sem detalhes)"
-        log.append(f"[AI] Erro: {error_msg[:200]}")
-
-        # 2. Ler codigo fonte
-        task_to_notebook = {
-            "bronze_ingestion": "notebooks/bronze/ingest.py",
-            "silver_dedup": "notebooks/silver/dedup_clean.py",
-            "silver_entities": "notebooks/silver/entities_mask.py",
-            "silver_enrichment": "notebooks/silver/enrichment.py",
-            "gold_analytics": "notebooks/gold/analytics.py",
-            "quality_validation": "notebooks/validation/checks.py",
-        }
-        nb_path = task_to_notebook.get(task, "unknown")
-        full_path = f"{PIPELINE_ROOT}/{nb_path}"
-        try:
-            notebook_code = open(full_path).read()
-            log.append(f"[AI] Codigo: {nb_path} ({notebook_code.count(chr(10))} linhas)")
-        except Exception:
-            # Fallback: tentar sem /Workspace prefix
-            alt_path = full_path.replace("/Workspace", "")
-            try:
-                notebook_code = open(alt_path).read()
-                log.append(f"[AI] Codigo (alt): {nb_path} ({notebook_code.count(chr(10))} linhas)")
-            except Exception as e:
-                notebook_code = f"[Nao foi possivel ler {nb_path}] paths tentados: {full_path}, {alt_path}. Erro: {e}"
-                log.append(f"[AI] WARN: nao leu {nb_path}")
-
-        # 3. Schema detalhado (DESCRIBE com colunas)
-        schema_parts = []
-        for schema in ["bronze", "silver", "gold"]:
-            try:
-                tables = spark.sql(f"SHOW TABLES IN {CATALOG}.{schema}").collect()
-                for t in tables:
-                    tname = f"{CATALOG}.{schema}.{t.tableName}"
-                    cols = spark.sql(f"DESCRIBE TABLE {tname}").collect()
-                    col_str = ", ".join(f"{c.col_name}:{c.data_type}" for c in cols[:20])
-                    schema_parts.append(f"{tname}: [{col_str}]")
-            except Exception:
-                schema_parts.append(f"{CATALOG}.{schema}: [indisponivel]")
-        schema_info = "\n".join(schema_parts)
-        log.append(f"[AI] Schema: {len(schema_parts)} tabelas coletadas")
-
-        # 4. Chamar Claude Opus
-        log.append("[AI] Chamando Claude Opus 4.6...")
-        diagnosis = diagnose_error(
-            error_message=error_msg,
-            stack_trace=error_msg,
-            failed_task=task,
-            notebook_code=notebook_code,
-            schema_info=schema_info,
-            pipeline_state={
-                "run_id": run_id,
-                "task_results": task_results,
-                "delta_versions": delta_versions,
-                "failures": state.get("consecutive_failures", 0),
-            },
-        )
-        results["diagnosis"] = diagnosis
-
-        conf = diagnosis.get("confidence", 0)
-        model = diagnosis.get("_model", "unknown")
-        in_tok = diagnosis.get("_input_tokens", 0)
-        out_tok = diagnosis.get("_output_tokens", 0)
-        log.append(f"[AI] Modelo: {model} (in={in_tok}, out={out_tok})")
-        log.append(f"[AI] Diagnostico: {diagnosis.get('diagnosis', 'N/A')[:200]}")
-        log.append(f"[AI] Causa raiz: {diagnosis.get('root_cause', 'N/A')[:200]}")
-        log.append(f"[AI] Confianca: {conf:.0%}")
-        log.append(f"[AI] Fix: {diagnosis.get('fix_description', 'N/A')[:200]}")
-
-        # 5. Criar PR
-        if diagnosis.get("fixed_code") and diagnosis.get("file_to_fix"):
-            log.append(f"[AI] Criando PR para {diagnosis['file_to_fix']}...")
-            try:
-                pr_result = create_fix_pr(
-                    fix_description=diagnosis.get("fix_description", ""),
-                    diagnosis=diagnosis.get("diagnosis", ""),
-                    file_path=diagnosis["file_to_fix"],
-                    fixed_code=diagnosis["fixed_code"],
-                    failed_task=task,
-                    confidence=conf,
-                )
-                results["pr"] = pr_result
-                log.append(f"[AI] PR #{pr_result['pr_number']}: {pr_result['pr_url']}")
-            except Exception as e:
-                log.append(f"[AI] ERRO PR: {e}")
-        else:
-            log.append("[AI] LLM nao gerou codigo — intervencao manual")
-
-        break  # Diagnostica apenas a primeira task falhada
-
-    return results
-
-def build_ai_notification_body(diagnosis: dict, pr: dict | None) -> str:
-    """Constroi corpo do email com diagnostico do LLM + link do PR."""
-    lines = [
-        f"Run ID: {run_id}",
-        f"Timestamp: {datetime.now().isoformat()}",
-        "",
-        "=" * 50,
-        "DIAGNOSTICO DO AGENTE DE IA",
-        "=" * 50,
-        "",
-        f"Problema: {diagnosis.get('diagnosis', 'N/A')}",
-        f"Causa raiz: {diagnosis.get('root_cause', 'N/A')}",
-        f"Confianca: {diagnosis.get('confidence', 0):.0%}",
-        "",
-        f"Correcao proposta: {diagnosis.get('fix_description', 'N/A')}",
-        "",
-    ]
-
-    if pr:
-        lines.extend([
-            "=" * 50,
-            "PULL REQUEST CRIADO",
-            "=" * 50,
-            "",
-            f"URL: {pr['pr_url']}",
-            f"Branch: {pr['branch_name']}",
-            "",
-            "Por favor, revise e aprove o PR para aplicar a correcao.",
-        ])
-    else:
-        lines.extend([
-            "Nao foi possivel criar PR automaticamente.",
-            "Intervencao manual necessaria.",
-        ])
-
-    # Notas adicionais do LLM (se houver)
-    if diagnosis.get("additional_notes"):
-        lines.extend(["", f"Notas adicionais: {diagnosis['additional_notes']}"])
-
-    lines.extend([
-        "",
-        "---",
-        "Task results:",
-    ])
-    for task, status in task_results.items():
-        lines.append(f"  - {task}: {status}")
-
-    return "\n".join(lines)
-
-# COMMAND ----------
-
 # DBTITLE 1,Logica de Decisao Principal
 # Log buffer — acumula todos os passos e aparece no notebook.exit()
 # IMPORTANTE: dbutils.notebook.exit() NUNCA dentro de try/except
-# porque ele lanca excecao especial que seria capturada pelo except
 log = []
 exit_status = "UNKNOWN"
 exit_details = ""
@@ -480,7 +309,6 @@ log.append(f"All OK: {all_ok}")
 log.append(f"Falhas anteriores: {state.get('consecutive_failures', 0)}")
 
 if all_ok:
-    # Tudo OK — salva SUCCESS
     log.append("DECISAO: Tudo OK")
     save_state(bronze_hash, "SUCCESS", 0)
     send_notification(
@@ -492,16 +320,15 @@ if all_ok:
     exit_details = f"run_id={run_id}"
 else:
     # =============================================================
-    # FALHA DETECTADA — Fluxo agentico:
-    #   1. Rollback Delta (protege os dados imediatamente)
-    #   2. AI SEMPRE (diagnostica o erro + cria PR com fix)
-    # Rollback e AI sao complementares, nao alternativos.
+    # FALHA DETECTADA
+    # agent_post: rollback Delta (protecao imediata de dados)
+    # observer:   diagnostico AI + PR (roda separado, a cada 30min)
     # =============================================================
     failures = state.get("consecutive_failures", 0) + 1
     log.append(f"FALHA: {len(failed_tasks)} tasks, consecutivas={failures}")
 
-    # Passo 1: Rollback Delta — protege os dados
-    log.append("[1/2] ROLLBACK DELTA (protecao de dados)")
+    # Rollback Delta — protege os dados imediatamente
+    log.append("ROLLBACK DELTA (protecao de dados)")
     recovery_actions = []
     try:
         recovery_actions = attempt_recovery(failed_tasks)
@@ -509,45 +336,20 @@ else:
     except Exception as e:
         log.append(f"ROLLBACK FALHOU: {e}")
 
-    # Passo 2: Agente AI — SEMPRE chamado quando ha erro
-    # O rollback protegeu os dados, agora o AI corrige o codigo
-    log.append("[2/2] AGENTE AI (diagnostico + PR)")
-    ai_result = None
-    try:
-        ai_result = ai_diagnose_and_fix(failed_tasks, log)
-    except Exception as e:
-        log.append(f"AGENTE AI FALHOU: {e}")
-
-    # Persistir resultado
-    if ai_result and ai_result.get("diagnosis"):
-        diagnosis = ai_result.get("diagnosis", {})
-        pr = ai_result.get("pr")
-        pr_url = pr["pr_url"] if pr else "none"
-        conf = diagnosis.get("confidence", 0)
-
-        save_state(bronze_hash, "AI_DIAGNOSED", failures)
-        send_notification(
-            level="WARNING",
-            subject="[Pipeline] Agente AI diagnosticou e criou PR",
-            body=build_ai_notification_body(diagnosis, pr),
-        )
-        exit_status = "AI_DIAGNOSED"
-        exit_details = (
-            f"rollback={len(recovery_actions)} tabelas, "
-            f"pr={pr_url}, confidence={conf:.0%}"
-        )
-    else:
-        save_state(bronze_hash, "FAILED", failures)
-        send_notification(
-            level="CRITICAL",
-            subject="[Pipeline] Agente AI falhou",
-            body=build_failure_body(
-                "Rollback executado mas AI nao conseguiu diagnosticar",
-                failures,
-            ),
-        )
-        exit_status = "FAILED"
-        exit_details = f"rollback={len(recovery_actions)}, ai=falhou"
+    # Salvar estado — o Observer Agent roda separado e detecta
+    # esse estado FAILED para acionar Claude Opus + GitHub PR
+    save_state(bronze_hash, "FAILED", failures)
+    send_notification(
+        level="WARNING",
+        subject=f"[Pipeline] Falha detectada — rollback executado, aguardando Observer Agent",
+        body=build_failure_body(
+            f"Rollback: {recovery_actions}. "
+            "O Observer Agent ira diagnosticar e criar PR automaticamente.",
+            failures,
+        ),
+    )
+    exit_status = "FAILED_WITH_ROLLBACK"
+    exit_details = f"rollback={len(recovery_actions)} tabelas, observer=pendente"
 
 # Unico ponto de saida — FORA de qualquer try/except
 log_str = " | ".join(log)
