@@ -31,23 +31,24 @@ except Exception:
 # EXECUTAR NOTEBOOKS NA ORDEM DE DEPENDENCIAS
 # ============================================================
 TIMEOUT = 600  # 10 min por notebook
+REPO_BASE = "/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline/notebooks"
 
 notebooks = [
     # Phase 1: Core (sentimento primeiro, lead_scoring depende dele)
-    ("funnel", "/notebooks/gold/funnel"),
-    ("agent_performance", "/notebooks/gold/agent_performance"),
-    ("sentiment", "/notebooks/gold/sentiment"),
-    ("email_providers", "/notebooks/gold/email_providers"),
-    ("lead_scoring", "/notebooks/gold/lead_scoring"),  # depende de sentiment
+    ("funnel", f"{REPO_BASE}/gold/funnel"),
+    ("agent_performance", f"{REPO_BASE}/gold/agent_performance"),
+    ("sentiment", f"{REPO_BASE}/gold/sentiment"),
+    ("email_providers", f"{REPO_BASE}/gold/email_providers"),
+    ("lead_scoring", f"{REPO_BASE}/gold/lead_scoring"),  # depende de sentiment
     # Phase 2: Analytics (campaign_roi depende de lead_scoring)
-    ("temporal_analysis", "/notebooks/gold/temporal_analysis"),
-    ("competitor_intel", "/notebooks/gold/competitor_intel"),
-    ("campaign_roi", "/notebooks/gold/campaign_roi"),  # depende de lead_scoring
+    ("temporal_analysis", f"{REPO_BASE}/gold/temporal_analysis"),
+    ("competitor_intel", f"{REPO_BASE}/gold/competitor_intel"),
+    ("campaign_roi", f"{REPO_BASE}/gold/campaign_roi"),  # depende de lead_scoring
     # Phase 3: Diferenciais (segmentation depende de sentiment + lead_scoring)
-    ("segmentation", "/notebooks/gold/segmentation"),  # depende de sentiment + lead_scoring
-    ("churn_reengagement", "/notebooks/gold/churn_reengagement"),
-    ("negotiation_complexity", "/notebooks/gold/negotiation_complexity"),
-    ("first_contact_resolution", "/notebooks/gold/first_contact_resolution"),
+    ("segmentation", f"{REPO_BASE}/gold/segmentation"),  # depende de sentiment + lead_scoring
+    ("churn_reengagement", f"{REPO_BASE}/gold/churn_reengagement"),
+    ("negotiation_complexity", f"{REPO_BASE}/gold/negotiation_complexity"),
+    ("first_contact_resolution", f"{REPO_BASE}/gold/first_contact_resolution"),
 ]
 
 results = {}
