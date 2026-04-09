@@ -99,15 +99,22 @@ def diagnose_error(
     "additional_notes": "Notas extras ou investigacoes sugeridas"
 }}"""
 
-    response = client.messages.create(
+    # Streaming obrigatorio para Opus com max_tokens alto
+    text = ""
+    input_tokens = 0
+    output_tokens = 0
+    with client.messages.stream(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
-    )
-
-    # Extrair JSON da resposta
-    text = response.content[0].text
+    ) as stream:
+        for event_text in stream.text_stream:
+            text += event_text
+        # Coletar usage apos stream finalizar
+        response = stream.get_final_message()
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
     try:
         result = json.loads(text)
     except json.JSONDecodeError:
@@ -136,7 +143,7 @@ def diagnose_error(
 
     # Metadata da chamada para auditoria
     result["_model"] = MODEL
-    result["_input_tokens"] = response.usage.input_tokens
-    result["_output_tokens"] = response.usage.output_tokens
+    result["_input_tokens"] = input_tokens
+    result["_output_tokens"] = output_tokens
 
     return result

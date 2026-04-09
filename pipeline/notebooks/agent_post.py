@@ -336,12 +336,19 @@ def ai_diagnose_and_fix(failed: list, log: list) -> dict:
             "quality_validation": "notebooks/validation/checks.py",
         }
         nb_path = task_to_notebook.get(task, "unknown")
+        full_path = f"{PIPELINE_ROOT}/{nb_path}"
         try:
-            notebook_code = open(f"{PIPELINE_ROOT}/{nb_path}").read()
+            notebook_code = open(full_path).read()
             log.append(f"[AI] Codigo: {nb_path} ({notebook_code.count(chr(10))} linhas)")
         except Exception:
-            notebook_code = f"[Nao foi possivel ler {nb_path}]"
-            log.append(f"[AI] WARN: {notebook_code}")
+            # Fallback: tentar sem /Workspace prefix
+            alt_path = full_path.replace("/Workspace", "")
+            try:
+                notebook_code = open(alt_path).read()
+                log.append(f"[AI] Codigo (alt): {nb_path} ({notebook_code.count(chr(10))} linhas)")
+            except Exception as e:
+                notebook_code = f"[Nao foi possivel ler {nb_path}] paths tentados: {full_path}, {alt_path}. Erro: {e}"
+                log.append(f"[AI] WARN: nao leu {nb_path}")
 
         # 3. Schema detalhado (DESCRIBE com colunas)
         schema_parts = []
