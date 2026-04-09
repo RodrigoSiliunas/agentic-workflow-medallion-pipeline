@@ -166,8 +166,10 @@ def collect_task_results() -> dict:
     return results
 
 task_results = collect_task_results()
-# Identifica quais tasks falharam (qualquer status diferente de SUCCESS/SKIP)
-failed_tasks = [t for t, s in task_results.items() if s not in ("SUCCESS", "SKIP")]
+# Identifica quais tasks falharam
+# Status aceitos: SUCCESS, SKIP, PASS (quality_validation), PARTIAL (gold com falhas parciais)
+ACCEPTED_STATUS = ("SUCCESS", "SKIP", "PASS")
+failed_tasks = [t for t, s in task_results.items() if s not in ACCEPTED_STATUS]
 all_ok = len(failed_tasks) == 0
 
 logger.info(f"Task results: {task_results}")
