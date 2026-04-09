@@ -179,15 +179,7 @@ def create_workflow():
             on_start=[ADMIN_EMAIL],
             on_duration_warning_threshold_exceeded=[ADMIN_EMAIL],
         ),
-        health={
-            "rules": [
-                {
-                    "metric": "RUN_DURATION_SECONDS",
-                    "op": "GREATER_THAN",
-                    "value": 2400,  # Warning se > 40 min
-                },
-            ],
-        },
+        # health rules removed — SDK requires typed objects, configure via UI
     )
 
     print("Workflow criado com sucesso!")
