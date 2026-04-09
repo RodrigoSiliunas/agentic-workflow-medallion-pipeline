@@ -4,12 +4,18 @@
 # MAGIC Leads que pararam de responder e depois voltaram. Mensagens de reativacao.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("gold.churn_reengagement")
+
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
@@ -82,6 +88,12 @@ GOLD_TABLE = f"{CATALOG}.gold.churn_reengagement"
 churn_summary.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
+
+# Upload para S3
+tmp = lake.make_temp_dir("gold_churn_")
+local_path = f"{tmp}/churn_reengagement"
+churn_summary.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
+lake.upload_dir(local_path, "gold/churn_reengagement/")
 
 duration = round(time.time() - start_time, 2)
 count = churn_summary.count()

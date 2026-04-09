@@ -4,12 +4,21 @@
 # MAGIC Deduplicacao sent+delivered, normalizacao de nomes, parse de metadata JSON.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("silver.dedup_clean")
+
+# ============================================================
+# IMPORTAR S3Lake (boto3 + Databricks Secrets)
+# ============================================================
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 
 # ============================================================
 # TASK VALUES DO AGENTE
@@ -92,8 +101,9 @@ df_parsed = df_clean.withColumns(
 )
 
 # ============================================================
-# 5. SALVAR COMO DELTA TABLE
+# 5. SALVAR COMO DELTA TABLE (UC + S3)
 # ============================================================
+# 5a. Unity Catalog
 (
     df_parsed.write.format("delta")
     .mode("overwrite")
@@ -102,8 +112,15 @@ df_parsed = df_clean.withColumns(
 )
 
 silver_count = spark.table(SILVER_TABLE).count()
-duration = round(time.time() - start_time, 2)
 
+# 5b. Upload Delta para S3
+delta_tmp = lake.make_temp_dir("silver_messages_")
+local_delta = f"{delta_tmp}/messages_clean"
+df_parsed.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_delta)
+n_files = lake.upload_dir(local_delta, "silver/messages_clean/")
+logger.info(f"Delta uploaded para S3 silver/messages_clean/: {n_files} arquivos")
+
+duration = round(time.time() - start_time, 2)
 logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s")
 
 # ============================================================

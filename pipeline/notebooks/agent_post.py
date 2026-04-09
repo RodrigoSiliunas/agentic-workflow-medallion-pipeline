@@ -6,12 +6,21 @@
 
 import json
 import logging
+import sys
 import time
 from datetime import datetime
 
 from pyspark.sql import Row
 
 logger = logging.getLogger("agent_post")
+
+# ============================================================
+# IMPORTAR S3Lake (boto3 + Databricks Secrets)
+# ============================================================
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 
 # ============================================================
 # CONFIGURACAO
@@ -92,6 +101,11 @@ if not should_process:
         delta_versions="{}",
     )
     spark.createDataFrame([save_row]).write.format("delta").mode("append").saveAsTable(STATE_TABLE)
+    # Upload state para S3
+    _tmp = lake.make_temp_dir("pipeline_state_skip_")
+    _local = f"{_tmp}/state"
+    spark.table(STATE_TABLE).write.format("delta").mode("overwrite").save(_local)
+    lake.upload_dir(_local, "pipeline/state/")
     dbutils.notebook.exit("SKIP: no new data to process")
 
 # ============================================================
@@ -135,7 +149,14 @@ def save_state(bronze_hash: str, status: str, failures: int):
         consecutive_failures=failures,
         delta_versions=json.dumps(delta_versions),
     )
-    spark.createDataFrame([row]).write.format("delta").mode("append").saveAsTable(STATE_TABLE)
+    state_df = spark.createDataFrame([row])
+    state_df.write.format("delta").mode("append").saveAsTable(STATE_TABLE)
+
+    # Upload state para S3
+    tmp = lake.make_temp_dir("pipeline_state_")
+    local_path = f"{tmp}/state"
+    spark.table(STATE_TABLE).write.format("delta").mode("overwrite").save(local_path)
+    lake.upload_dir(local_path, "pipeline/state/")
 
 def send_notification(level: str, subject: str, body: str):
     """Persiste notificacao em Delta Table e loga."""
@@ -146,11 +167,17 @@ def send_notification(level: str, subject: str, body: str):
         body=body,
         run_id=run_id,
     )
-    spark.createDataFrame([row]).write.format("delta").mode("append").saveAsTable(
+    notif_df = spark.createDataFrame([row])
+    notif_df.write.format("delta").mode("append").saveAsTable(
         NOTIFICATIONS_TABLE
     )
     logger.info(f"[{level}] {subject}")
-    # TODO: integrar webhook (SendGrid/SES) quando AWS estiver configurada
+
+    # Upload notifications para S3
+    tmp = lake.make_temp_dir("pipeline_notif_")
+    local_path = f"{tmp}/notifications"
+    spark.table(NOTIFICATIONS_TABLE).write.format("delta").mode("overwrite").save(local_path)
+    lake.upload_dir(local_path, "pipeline/notifications/")
 
 def build_success_body() -> str:
     lines = [f"Run ID: {run_id}", f"Timestamp: {datetime.now().isoformat()}", ""]
@@ -228,8 +255,7 @@ def attempt_recovery(failed: list) -> list:
 # ============================================================
 # 6. FUNCOES DO AGENTE DE IA (LLM + GitHub PR)
 # ============================================================
-import sys
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+# (sys.path ja configurado no topo do notebook para S3Lake)
 
 def ai_diagnose_and_fix(failed: list) -> dict:
     """Usa Claude API para diagnosticar o erro e criar PR com correcao."""

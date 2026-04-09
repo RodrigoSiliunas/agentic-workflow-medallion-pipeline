@@ -4,12 +4,18 @@
 # MAGIC % vendas fechadas na primeira conversa vs multiplos contatos.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("gold.first_contact_resolution")
+
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
@@ -88,6 +94,17 @@ fcr_stats.write.format("delta").mode("overwrite").option("mergeSchema", "true").
 overall.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.fcr_summary"
 )
+
+# Upload para S3
+tmp1 = lake.make_temp_dir("gold_fcr_")
+local1 = f"{tmp1}/first_contact_resolution"
+fcr_stats.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local1)
+lake.upload_dir(local1, "gold/first_contact_resolution/")
+
+tmp2 = lake.make_temp_dir("gold_fcr_summary_")
+local2 = f"{tmp2}/fcr_summary"
+overall.write.format("delta").mode("overwrite").save(local2)
+lake.upload_dir(local2, "gold/fcr_summary/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold first_contact_resolution em {duration}s")

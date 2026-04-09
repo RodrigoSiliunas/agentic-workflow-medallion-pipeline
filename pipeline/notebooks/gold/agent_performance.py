@@ -4,11 +4,17 @@
 # MAGIC Scoring com percentis entre os 20 agentes, recomendacoes automatizadas.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("gold.agent_performance")
+
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
@@ -65,6 +71,12 @@ agents = agents.withColumns(
 # ============================================================
 GOLD_TABLE = f"{CATALOG}.gold.agent_performance"
 agents.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(GOLD_TABLE)
+
+# Upload para S3
+tmp = lake.make_temp_dir("gold_agent_perf_")
+local_path = f"{tmp}/agent_performance"
+agents.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
+lake.upload_dir(local_path, "gold/agent_performance/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold agent_performance: {agents.count()} agents em {duration}s")

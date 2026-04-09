@@ -4,11 +4,20 @@
 # MAGIC Metricas agregadas por conversa: total mensagens, duracao, response_time medio, etc.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("silver.enrichment")
+
+# ============================================================
+# IMPORTAR S3Lake (boto3 + Databricks Secrets)
+# ============================================================
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 
 # ============================================================
 # TASK VALUES
@@ -66,8 +75,9 @@ conversations = conversations.withColumn(
 )
 
 # ============================================================
-# 3. SALVAR
+# 3. SALVAR (UC + S3)
 # ============================================================
+# 3a. Unity Catalog
 (
     conversations.write.format("delta")
     .mode("overwrite")
@@ -76,8 +86,15 @@ conversations = conversations.withColumn(
 )
 
 conv_count = spark.table(SILVER_CONVERSATIONS).count()
-duration = round(time.time() - start_time, 2)
 
+# 3b. Upload Delta para S3
+delta_tmp = lake.make_temp_dir("silver_enriched_")
+local_delta = f"{delta_tmp}/conversations_enriched"
+conversations.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_delta)
+n_files = lake.upload_dir(local_delta, "silver/conversations_enriched/")
+logger.info(f"Delta uploaded para S3 silver/conversations_enriched/: {n_files} arquivos")
+
+duration = round(time.time() - start_time, 2)
 logger.info(f"Silver conversations_enriched: {conv_count} conversas em {duration}s")
 
 try:

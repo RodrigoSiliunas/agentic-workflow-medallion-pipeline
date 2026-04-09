@@ -4,11 +4,17 @@
 # MAGIC Heatmap de conversao por hora x dia da semana. Horarios otimos de contato.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("gold.temporal_analysis")
+
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
@@ -49,6 +55,12 @@ GOLD_TABLE = f"{CATALOG}.gold.temporal_analysis"
 temporal.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     GOLD_TABLE
 )
+
+# Upload para S3
+tmp = lake.make_temp_dir("gold_temporal_")
+local_path = f"{tmp}/temporal_analysis"
+temporal.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_path)
+lake.upload_dir(local_path, "gold/temporal_analysis/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold temporal_analysis em {duration}s")

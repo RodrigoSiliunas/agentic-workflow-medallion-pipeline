@@ -4,11 +4,17 @@
 # MAGIC Classificacao em 6 personas baseadas em comportamento.
 
 import logging
+import sys
 import time
 
 from pyspark.sql import functions as F
 
 logger = logging.getLogger("gold.segmentation")
+
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 start_time = time.time()
 
@@ -85,10 +91,11 @@ persona_summary = personas.groupBy("persona").agg(
 # 4. SALVAR
 # ============================================================
 # Tabela detalhada (por conversa)
-personas.select(
+personas_result = personas.select(
     "conversation_id", "persona", "outcome", "lead_score", "sentiment_score",
     "total_messages", "campaign_id", "agent_id",
-).write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
+)
+personas_result.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(
     f"{CATALOG}.gold.personas"
 )
 
@@ -96,6 +103,17 @@ personas.select(
 persona_summary.write.format("delta").mode("overwrite").saveAsTable(
     f"{CATALOG}.gold.persona_summary"
 )
+
+# Upload para S3
+tmp1 = lake.make_temp_dir("gold_personas_")
+local1 = f"{tmp1}/personas"
+personas_result.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local1)
+lake.upload_dir(local1, "gold/personas/")
+
+tmp2 = lake.make_temp_dir("gold_persona_summary_")
+local2 = f"{tmp2}/persona_summary"
+persona_summary.write.format("delta").mode("overwrite").save(local2)
+lake.upload_dir(local2, "gold/persona_summary/")
 
 duration = round(time.time() - start_time, 2)
 logger.info(f"Gold personas em {duration}s")

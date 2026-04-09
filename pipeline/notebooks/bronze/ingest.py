@@ -5,14 +5,23 @@
 
 import hashlib
 import logging
+import sys
 import time
 
 logger = logging.getLogger("bronze.ingest")
 
 # ============================================================
+# IMPORTAR S3Lake (boto3 + Databricks Secrets)
+# ============================================================
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
+
+# ============================================================
 # CONFIGURACAO
 # ============================================================
-BRONZE_S3_PATH = spark.conf.get("pipeline.bronze_s3_path", "s3://namastex-medallion-datalake/bronze/")
+BRONZE_S3_PREFIX = "bronze/"
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 
@@ -25,21 +34,38 @@ try:
     )
     if not should_process:
         dbutils.notebook.exit("SKIP: agent decided no processing needed")
-    bronze_path = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="bronze_path", default=BRONZE_S3_PATH
+    bronze_prefix = dbutils.jobs.taskValues.get(
+        taskKey="agent_pre", key="bronze_prefix", default=BRONZE_S3_PREFIX
     )
 except Exception:
     # Execucao standalone (sem Workflow) — usar config default
-    bronze_path = BRONZE_S3_PATH
+    bronze_prefix = BRONZE_S3_PREFIX
     logger.info("Executando standalone (sem agent_pre)")
 
 # ============================================================
-# 2. LER PARQUET DO S3
+# 2. LER PARQUET DO S3 (via boto3 download → local → spark.read)
 # ============================================================
 start_time = time.time()
-logger.info(f"Lendo Parquet de: {bronze_path}")
 
-df = spark.read.parquet(bronze_path)
+# Descobrir arquivo parquet no prefix
+s3_keys = lake.list_keys(bronze_prefix)
+parquet_keys = [k for k in s3_keys if k.endswith(".parquet")]
+
+if not parquet_keys:
+    raise FileNotFoundError(f"Nenhum arquivo .parquet encontrado em s3://{lake.bucket}/{bronze_prefix}")
+
+# Download parquet para temp local
+tmp_dir = lake.make_temp_dir("bronze_input_")
+local_paths = []
+for key in parquet_keys:
+    filename = key.split("/")[-1]
+    local_path = f"{tmp_dir}/{filename}"
+    lake.download(key, local_path)
+    local_paths.append(local_path)
+    logger.info(f"Download S3: {key} → {local_path}")
+
+logger.info(f"Lendo {len(local_paths)} Parquet(s) do temp local")
+df = spark.read.parquet(*local_paths)
 row_count = df.count()
 columns = set(df.columns)
 
@@ -49,10 +75,7 @@ logger.info(f"Colunas encontradas: {sorted(columns)}")
 # ============================================================
 # 3. VALIDAR SCHEMA COM EVOLUTION
 # ============================================================
-# Importar lib de validacao (deployada via Databricks Repos ou wheel)
-import sys
-sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
-
+# Importar lib de validacao (ja no sys.path via S3Lake import acima)
 from pipeline_lib.schema.contracts import REQUIRED_COLUMNS
 from pipeline_lib.schema.validator import validate_schema
 
@@ -73,10 +96,11 @@ if validation.warnings:
         logger.warning(warning)
 
 # ============================================================
-# 4. SALVAR COMO DELTA TABLE (com schema evolution)
+# 4. SALVAR COMO DELTA TABLE (com schema evolution) + S3
 # ============================================================
 logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
 
+# 4a. Salvar no Unity Catalog (para queries SQL no Databricks)
 (
     df.write
     .format("delta")
@@ -87,22 +111,29 @@ logger.info(f"Salvando como Delta Table: {BRONZE_TABLE}")
 
 # Verificar resultado
 saved_count = spark.table(BRONZE_TABLE).count()
-logger.info(f"Delta Table salva: {saved_count} linhas")
+logger.info(f"Delta Table salva (UC): {saved_count} linhas")
+
+# 4b. Salvar Delta local e upload para S3 (data lake persistente)
+delta_tmp = lake.make_temp_dir("bronze_delta_")
+local_delta_path = f"{delta_tmp}/conversations"
+df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(local_delta_path)
+n_files = lake.upload_dir(local_delta_path, "bronze/conversations/")
+logger.info(f"Delta uploaded para S3 bronze/conversations/: {n_files} arquivos")
 
 # ============================================================
 # 5. FINGERPRINT VIA S3 METADATA
 # ============================================================
-def get_s3_fingerprint(path: str) -> str:
-    """Gera fingerprint dos arquivos no S3 via metadata."""
-    files = dbutils.fs.ls(path)
+def get_s3_fingerprint(prefix: str) -> str:
+    """Gera fingerprint dos arquivos no S3 via metadata (boto3)."""
+    items = lake.get_metadata(prefix)
     fingerprint = "|".join(
-        f"{f.name}:{f.size}:{f.modificationTime}"
-        for f in sorted(files, key=lambda x: x.name)
+        f"{item['key']}:{item['size']}:{item['last_modified']}"
+        for item in sorted(items, key=lambda x: x["key"])
     )
     return hashlib.sha256(fingerprint.encode()).hexdigest()
 
 try:
-    fingerprint = get_s3_fingerprint(bronze_path)
+    fingerprint = get_s3_fingerprint(bronze_prefix)
     logger.info(f"Fingerprint S3: {fingerprint[:16]}...")
 except Exception as e:
     fingerprint = f"unknown_{row_count}"

@@ -6,16 +6,25 @@
 import hashlib
 import json
 import logging
+import sys
 import time
 from datetime import datetime
 
 logger = logging.getLogger("agent_pre")
 
 # ============================================================
+# IMPORTAR S3Lake (boto3 + Databricks Secrets)
+# ============================================================
+sys.path.insert(0, "/Workspace/Repos/rodrigosiliunas1@gmail.com/agentic-workflow-medallion-pipeline/pipeline")
+from pipeline_lib.storage import S3Lake
+
+lake = S3Lake(dbutils)
+
+# ============================================================
 # CONFIGURACAO
 # ============================================================
 CATALOG = spark.conf.get("pipeline.catalog", "medallion")
-BRONZE_PATH = spark.conf.get("pipeline.bronze_path", "s3://namastex-medallion-datalake/bronze/")
+BRONZE_PREFIX = "bronze/"
 STATE_TABLE = f"{CATALOG}.pipeline.state"
 
 # ============================================================
@@ -56,20 +65,20 @@ logger.info(f"Estado anterior: status={state.get('status')}, "
 # ============================================================
 # 3. VERIFICAR DADOS NOVOS (fingerprint via metadata)
 # ============================================================
-def get_bronze_fingerprint(path: str) -> str:
-    """Gera fingerprint dos dados Bronze via metadata do filesystem."""
+def get_bronze_fingerprint(prefix: str) -> str:
+    """Gera fingerprint dos dados Bronze via metadata do S3 (boto3)."""
     try:
-        files = dbutils.fs.ls(path)
+        items = lake.get_metadata(prefix)
         fingerprint = "|".join(
-            f"{f.name}:{f.size}:{f.modificationTime}"
-            for f in sorted(files, key=lambda x: x.name)
+            f"{item['key']}:{item['size']}:{item['last_modified']}"
+            for item in sorted(items, key=lambda x: x["key"])
         )
         return hashlib.sha256(fingerprint.encode()).hexdigest()
     except Exception as e:
-        logger.warning(f"Nao conseguiu ler {path}: {e}")
+        logger.warning(f"Nao conseguiu ler S3 prefix {prefix}: {e}")
         return f"error_{int(time.time())}"
 
-current_hash = get_bronze_fingerprint(BRONZE_PATH)
+current_hash = get_bronze_fingerprint(BRONZE_PREFIX)
 has_new_data = current_hash != state.get("last_bronze_hash")
 
 if not has_new_data:
@@ -122,7 +131,7 @@ logger.info(f"Versoes Delta capturadas: {len(delta_versions)} tabelas")
 run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 dbutils.jobs.taskValues.set(key="should_process", value=True)
-dbutils.jobs.taskValues.set(key="bronze_path", value=BRONZE_PATH)
+dbutils.jobs.taskValues.set(key="bronze_prefix", value=BRONZE_PREFIX)
 dbutils.jobs.taskValues.set(key="bronze_hash", value=current_hash)
 dbutils.jobs.taskValues.set(key="run_id", value=run_id)
 dbutils.jobs.taskValues.set(key="delta_versions", value=json.dumps(delta_versions))
