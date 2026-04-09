@@ -495,18 +495,30 @@ else:
     failures = state.get("consecutive_failures", 0) + 1
     log.append(f"FALHA: {len(failed_tasks)} tasks, consecutivas={failures}/{MAX_CONSECUTIVE_FAILURES}")
 
-    # Passo 1: Rollback Delta
-    log.append("TENTATIVA 1: Rollback Delta")
+    # Detectar chaos mode para decidir estrategia
+    chaos_active = False
+    try:
+        chaos_active = dbutils.jobs.taskValues.get(
+            taskKey="agent_pre", key="chaos_mode", default="off"
+        ) != "off"
+    except Exception:
+        pass
+
+    # Passo 1: Rollback Delta (pula se chaos — bug de codigo nao se resolve com rollback)
     recovery_ok = False
     recovery_actions = []
-    try:
-        recovery_actions = attempt_recovery(failed_tasks)
-        recovery_ok = True
-        log.append(f"ROLLBACK OK: {recovery_actions}")
-    except Exception as e:
-        log.append(f"ROLLBACK FALHOU: {e}")
+    if chaos_active:
+        log.append("ROLLBACK PULADO: chaos mode ativo (bug de codigo precisa de AI)")
+    else:
+        log.append("TENTATIVA 1: Rollback Delta")
+        try:
+            recovery_actions = attempt_recovery(failed_tasks)
+            recovery_ok = True
+            log.append(f"ROLLBACK OK: {recovery_actions}")
+        except Exception as e:
+            log.append(f"ROLLBACK FALHOU: {e}")
 
-    # Passo 2: Se rollback falhou OU muitas falhas, aciona AI
+    # Passo 2: Se rollback falhou/pulado OU muitas falhas, aciona AI
     ai_needed = not recovery_ok or failures >= MAX_CONSECUTIVE_FAILURES
     ai_result = None
     if ai_needed:
