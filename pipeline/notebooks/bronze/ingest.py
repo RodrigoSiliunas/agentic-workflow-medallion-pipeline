@@ -110,7 +110,8 @@ saved_count = spark.table(BRONZE_TABLE).count()
 logger.info(f"Delta Table salva (UC): {saved_count} linhas")
 
 # 4b. Upload para S3 (data lake persistente, in-memory)
-lake.write_parquet(df, "bronze/conversations/")
+# Lemos da tabela UC (DF limpo, sem plan metrics do Spark)
+lake.write_parquet(spark.table(BRONZE_TABLE), "bronze/conversations/")
 logger.info("Parquet uploaded para S3 bronze/conversations/")
 
 # COMMAND ----------

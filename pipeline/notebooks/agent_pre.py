@@ -43,7 +43,7 @@ spark.sql(f"""
         run_at                STRING,
         last_bronze_hash      STRING,
         status                STRING,
-        consecutive_failures  INT,
+        consecutive_failures  LONG,
         delta_versions        STRING
     )
     USING DELTA
