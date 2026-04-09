@@ -45,7 +45,7 @@ except Exception:
 # DBTITLE 1,Executar Notebooks na Ordem de Dependencias
 # Auto-detect repo path for sub-notebook calls
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-_repo_root = "/".join(_nb_path.split("/")[:5])
+_repo_root = "/".join(_nb_path.split("/")[:4])
 NOTEBOOK_BASE = f"{_repo_root}/pipeline/notebooks"
 
 TIMEOUT = 600  # 10 min por notebook

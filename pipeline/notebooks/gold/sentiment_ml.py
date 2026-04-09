@@ -31,7 +31,7 @@ from pyspark.sql.types import FloatType, StringType
 
 # Auto-detect repo path from this notebook's location
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-_repo_root = "/".join(_nb_path.split("/")[:5])
+_repo_root = "/".join(_nb_path.split("/")[:4])
 PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
 sys.path.insert(0, PIPELINE_ROOT)
 
