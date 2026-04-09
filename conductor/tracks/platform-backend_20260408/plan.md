@@ -95,17 +95,17 @@ Implementar backend FastAPI com auth multi-tenant (IAM), settings de empresa com
 
 ### Tasks
 
-- [ ] Task 5.1: Omni Service: create_instance, connect, configure_webhook, send_message (usa Omni API)
-- [ ] Task 5.2: Route: POST /webhooks/omni (recebe mensagens normalizadas) com HMAC signature validation
-- [ ] Task 5.2b: Route: POST /webhooks/pipeline (recebe eventos do agent_pre/agent_post para notificacoes proativas)
-- [ ] Task 5.2c: Multi-tenant instance naming: company_{slug}_{channel} (ex: acme_whatsapp, acme_discord)
-- [ ] Task 5.3: Channel identity resolver: identifica usuario por phone/discord_id/telegram_id
-- [ ] Task 5.4: Slash command parser: /resume, /pipelines, /status, /threads, /new, /whoami, /help
-- [ ] Task 5.5: Models: active_sessions, channel_identities
-- [ ] Task 5.6: Cross-channel: /resume [pipeline] [uuid] retoma thread de outro canal
-- [ ] Task 5.7: Auto-setup canais: quando admin salva Discord token em settings, backend chama Omni API para criar instancia
-- [ ] Task 5.8: WhatsApp QR: POST /settings/whatsapp/pair → inicia pairing via Omni → retorna QR stream
-- [ ] Task 5.9: Testes: webhook handler, slash commands, channel identity, cross-channel resume
+- [x] Task 5.1: OmniService: create_instance, connect, disconnect, qr, webhook_provider, send_message, list_instances
+- [x] Task 5.2: POST /webhooks/omni com HMAC SHA-256 validation
+- [x] Task 5.2b: POST /webhooks/pipeline (stub para notificacoes proativas)
+- [x] Task 5.2c: Multi-tenant naming: company_{slug}_{channel}
+- [x] Task 5.3: Channel identity resolver (ChannelIdentity → User lookup)
+- [x] Task 5.4: Slash commands: /resume, /pipelines, /status, /threads, /new, /whoami, /help (7 comandos)
+- [x] Task 5.5: Models: ActiveSession + ChannelIdentity + migration (10 tabelas total)
+- [x] Task 5.6: Cross-channel: /resume [pipeline] [uuid] retoma de qualquer canal
+- [ ] Task 5.7: Auto-setup canais (integrar com settings save — pendente Omni rodando)
+- [ ] Task 5.8: WhatsApp QR SSE (pendente Omni rodando)
+- [ ] Task 5.9: Testes (pendente)
 
 ### Verification
 
