@@ -45,19 +45,6 @@ logger = logging.getLogger("silver.entities_mask")
 
 # COMMAND ----------
 
-# DBTITLE 1,Verificar Task Values do Agente
-# Verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP")
-except Exception:
-    pass
-
-# COMMAND ----------
-
 # DBTITLE 1,Carregar MASKING_SECRET e Funcoes de Masking
 # MASKING_SECRET e a chave usada para format-preserving encryption dos dados sensiveis
 # Armazenada no Databricks Secrets para nao ficar em texto claro no codigo

@@ -29,19 +29,6 @@ SCOPE = dbutils.widgets.get("scope")
 
 # COMMAND ----------
 
-# DBTITLE 1,Verificar Task Values do Agente
-# Verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP")
-except Exception:
-    pass
-
-# COMMAND ----------
-
 # DBTITLE 1,Executar Notebooks na Ordem de Dependencias
 # Auto-detect repo path for sub-notebook calls
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()

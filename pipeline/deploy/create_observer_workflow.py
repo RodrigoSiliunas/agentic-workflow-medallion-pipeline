@@ -1,19 +1,16 @@
-"""Cria o Workflow Observer — agente AI autonomo que monitora falhas.
+"""Cria o Observer Agent — agente AI independente.
+
+Triggered sob demanda quando um pipeline falha.
+Nao tem schedule — eh acionado via SDK pelo pipeline ETL
+ou manualmente pelo trigger_run.py.
 
 Uso: python deploy/create_observer_workflow.py
-
-Requer env vars: DATABRICKS_HOST, DATABRICKS_TOKEN
-
-O observer roda a cada 30 minutos, verifica se algum workflow
-falhou na ultima hora, e aciona Claude Opus para diagnostico + PR.
-Funciona com QUALQUER workflow do workspace.
 """
 
 import os
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.jobs import (
-    CronSchedule,
     JobEmailNotifications,
     NotebookTask,
     Task,
@@ -50,16 +47,18 @@ def create_observer():
         Task(
             task_key="observe_and_fix",
             description=(
-                "Monitora workflows, detecta falhas, "
-                "Claude Opus diagnostica e cria PR"
+                "Coleta erro + codigo via API, "
+                "Claude Opus diagnostica, cria PR"
             ),
             **cluster_kwargs,
             notebook_task=NotebookTask(
-                notebook_path=f"{repo_base}/notebooks/observer/collect_and_fix",
+                notebook_path=(
+                    f"{repo_base}/notebooks/observer/collect_and_fix"
+                ),
                 base_parameters={
                     "scope": SECRET_SCOPE,
-                    "workflow_name": "",  # vazio = todos
-                    "hours": "1",
+                    "source_run_id": "",
+                    "source_job_id": "",
                 },
             ),
             timeout_seconds=900,
@@ -69,34 +68,30 @@ def create_observer():
     job = w.jobs.create(
         name="workflow_observer_agent",
         description=(
-            "Agente AI autonomo que monitora todos os workflows "
-            "do workspace. Detecta falhas, coleta contexto "
-            "(codigo + logs + schema), chama Claude Opus para "
-            "diagnostico e cria PR no GitHub com fix proposto."
+            "Agente AI autonomo. Triggered por pipelines que "
+            "falharam. Coleta codigo via Workspace API, chama "
+            "Claude Opus para diagnostico e cria PR no GitHub.\n"
+            "Generico — funciona com qualquer workflow."
         ),
         tasks=tasks,
         tags={
             "Project": "medallion-pipeline",
             "Team": "data-engineering",
             "Type": "observer-agent",
-            "ManagedBy": "sdk",
         },
-        schedule=CronSchedule(
-            quartz_cron_expression="0 */30 * * * ?",  # a cada 30 min
-            timezone_id="America/Sao_Paulo",
-        ),
-        max_concurrent_runs=1,
+        # Sem schedule — triggered sob demanda
+        max_concurrent_runs=3,
         timeout_seconds=900,
         email_notifications=JobEmailNotifications(
             on_failure=[ADMIN_EMAIL],
         ),
     )
 
-    print(f"Observer criado!")
+    print("Observer criado!")
     print(f"  Job ID: {job.job_id}")
     print("  Nome: workflow_observer_agent")
-    print("  Schedule: a cada 30 min")
-    print("  Monitora: todos os workflows")
+    print("  Schedule: nenhum (triggered sob demanda)")
+    print("  Max concurrent: 3")
 
     return job.job_id
 

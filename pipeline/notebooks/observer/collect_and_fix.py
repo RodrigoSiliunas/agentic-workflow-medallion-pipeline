@@ -1,12 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Workflow Observer — Agente AI Autonomo
-# MAGIC Monitora workflows do workspace, detecta falhas, coleta contexto completo
-# MAGIC (codigo fonte + logs + schema), chama Claude Opus para diagnostico e cria
-# MAGIC PR no GitHub com a correcao proposta.
+# MAGIC Recebe o run_id de um workflow que falhou, coleta contexto completo
+# MAGIC (codigo fonte via Workspace API + logs + schema), chama Claude Opus
+# MAGIC para diagnostico e cria PR no GitHub.
 # MAGIC
-# MAGIC **Tipo:** Observer (independente) | **Trigger:** Schedule ou manual
-# MAGIC **Funciona com qualquer workflow** — nao eh especifico do pipeline Medallion.
+# MAGIC **Tipo:** Observer (independente) | **Trigger:** Sob demanda (via SDK)
+# MAGIC **Generico** — funciona com qualquer workflow do workspace.
 # MAGIC
 # MAGIC _Ultima atualizacao: 2026-04-09_
 
@@ -30,23 +30,25 @@ sys.path.insert(0, PIPELINE_ROOT)
 from databricks.sdk import WorkspaceClient
 from pipeline_lib.agent.observer import WorkflowObserver
 
+logger = logging.getLogger("observer")
+
 # COMMAND ----------
 
 # DBTITLE 1,Parametros
+# source_run_id: run que falhou (passado pelo pipeline via SDK)
+# Se vazio, busca falhas recentes (fallback para execucao manual)
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-dbutils.widgets.text("workflow_name", "", "Workflow Name (vazio = todos)")
-dbutils.widgets.text("hours", "1", "Janela de busca (horas)")
+dbutils.widgets.text("source_run_id", "", "Run ID que falhou")
+dbutils.widgets.text("source_job_id", "", "Job ID que falhou")
 
 SCOPE = dbutils.widgets.get("scope")
-WORKFLOW_NAME = dbutils.widgets.get("workflow_name") or None
-HOURS = int(dbutils.widgets.get("hours"))
+SOURCE_RUN_ID = dbutils.widgets.get("source_run_id")
+SOURCE_JOB_ID = dbutils.widgets.get("source_job_id")
 
 # Credenciais do agente AI
 os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
 os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
 os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
-
-logger = logging.getLogger("observer")
 
 # COMMAND ----------
 
@@ -60,48 +62,68 @@ observer = WorkflowObserver(w)
 log = []
 
 log.append(f"Observer iniciado: {datetime.now().isoformat()}")
-log.append(f"Workflow filter: {WORKFLOW_NAME or 'todos'}")
-log.append(f"Janela: ultimas {HOURS}h")
 
 # COMMAND ----------
 
-# DBTITLE 1,Detectar Falhas Recentes
-failures = observer.find_recent_failures(
-    hours=HOURS, workflow_name=WORKFLOW_NAME
-)
+# DBTITLE 1,Identificar Falhas
+# Modo 1: run_id especifico (triggered pelo pipeline)
+# Modo 2: busca falhas recentes (execucao manual/debug)
+if SOURCE_RUN_ID:
+    log.append(f"Modo: triggered (run_id={SOURCE_RUN_ID})")
+    run = w.jobs.get_run(run_id=int(SOURCE_RUN_ID))
+    job_name = run.run_name or "unknown"
 
-log.append(f"Falhas encontradas: {len(failures)}")
+    # Coletar tasks que falharam
+    failed_tasks = []
+    errors = {}
+    for task in run.tasks:
+        result = str(task.state.result_state) if task.state else ""
+        if "FAILED" in result:
+            try:
+                out = w.jobs.get_run_output(run_id=task.run_id)
+                error = out.error or "Unknown"
+            except Exception:
+                error = "Could not retrieve"
+            failed_tasks.append(task.task_key)
+            errors[task.task_key] = error[:500]
 
-if not failures:
+    failures = [{
+        "job_id": int(SOURCE_JOB_ID) if SOURCE_JOB_ID else 0,
+        "job_name": job_name,
+        "run_id": int(SOURCE_RUN_ID),
+        "failed_tasks": failed_tasks,
+        "errors": errors,
+        "timestamp": str(run.start_time),
+    }]
+    log.append(f"Tasks com falha: {failed_tasks}")
+else:
+    log.append("Modo: busca automatica (ultimas 2h)")
+    failures = observer.find_recent_failures(hours=2)
+    log.append(f"Falhas encontradas: {len(failures)}")
+
+if not failures or not failures[0].get("failed_tasks"):
     log_str = " | ".join(log)
-    dbutils.notebook.exit(f"OK: nenhuma falha nas ultimas {HOURS}h || LOG: {log_str}")
-
-# Listar falhas encontradas
-for f in failures:
-    log.append(
-        f"  [{f['job_name']}] run={f['run_id']} "
-        f"tasks={f['failed_tasks']}"
-    )
+    dbutils.notebook.exit(f"OK: nenhuma falha para diagnosticar || LOG: {log_str}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Diagnosticar e Criar PRs
+# DBTITLE 1,Coletar Contexto e Diagnosticar
 from pipeline_lib.agent.llm_diagnostics import diagnose_error
 from pipeline_lib.agent.github_pr import create_fix_pr
 
 results = []
 
 for failure in failures:
-    log.append(f"[AI] Processando: {failure['job_name']} run={failure['run_id']}")
+    log.append(f"--- Processando: {failure['job_name']} ---")
 
-    # Coletar contexto completo
+    # Coletar contexto completo via Workspace API
     ctx = observer.build_context(failure)
-    log.append(f"[AI] Codigo: {len(ctx['notebook_code'])} chars")
-    log.append(f"[AI] Schema: coletado")
-    log.append(f"[AI] Erro: {ctx['error_message'][:150]}")
+    code_len = len(ctx["notebook_code"])
+    log.append(f"Codigo: {code_len} chars")
+    log.append(f"Erro: {ctx['error_message'][:150]}")
 
-    # Chamar Claude Opus
-    log.append("[AI] Chamando Claude Opus 4.6...")
+    # Claude Opus
+    log.append("Chamando Claude Opus 4.6...")
     try:
         diagnosis = diagnose_error(
             error_message=ctx["error_message"],
@@ -117,13 +139,13 @@ for failure in failures:
         out_tok = diagnosis.get("_output_tokens", 0)
         conf = diagnosis.get("confidence", 0)
 
-        log.append(f"[AI] Modelo: {model} (in={in_tok}, out={out_tok})")
-        log.append(f"[AI] Diagnostico: {diagnosis.get('diagnosis', 'N/A')[:200]}")
-        log.append(f"[AI] Confianca: {conf:.0%}")
+        log.append(f"Modelo: {model} (in={in_tok}, out={out_tok})")
+        log.append(f"Diagnostico: {diagnosis.get('diagnosis', 'N/A')[:200]}")
+        log.append(f"Confianca: {conf:.0%}")
 
         # Criar PR se tem fix
         if diagnosis.get("fixed_code") and diagnosis.get("file_to_fix"):
-            log.append(f"[AI] Criando PR para {diagnosis['file_to_fix']}...")
+            log.append(f"Criando PR para {diagnosis['file_to_fix']}...")
             try:
                 pr = create_fix_pr(
                     fix_description=diagnosis.get("fix_description", ""),
@@ -133,7 +155,7 @@ for failure in failures:
                     failed_task=ctx["failed_task"],
                     confidence=conf,
                 )
-                log.append(f"[AI] PR #{pr['pr_number']}: {pr['pr_url']}")
+                log.append(f"PR #{pr['pr_number']}: {pr['pr_url']}")
                 results.append({
                     "job": failure["job_name"],
                     "task": ctx["failed_task"],
@@ -141,17 +163,20 @@ for failure in failures:
                     "confidence": conf,
                 })
             except Exception as e:
-                log.append(f"[AI] ERRO PR: {e}")
+                log.append(f"ERRO PR: {e}")
         else:
-            log.append("[AI] LLM nao gerou fix — intervencao manual")
+            log.append("LLM nao gerou fix — intervencao manual")
 
     except Exception as e:
-        log.append(f"[AI] ERRO: {e}")
+        log.append(f"ERRO AI: {e}")
 
 # COMMAND ----------
 
 # DBTITLE 1,Resultado
-summary = f"Processado: {len(failures)} falhas, {len(results)} PRs criados"
+summary = (
+    f"Processado: {len(failures)} falhas, "
+    f"{len(results)} PRs criados"
+)
 log.append(summary)
 
 log_str = " | ".join(log)

@@ -46,13 +46,7 @@ start_time = time.time()
 # COMMAND ----------
 
 # DBTITLE 1,Chaos Mode Check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="chaos_mode", default="off"
-    )
-except Exception:
-    pass
+chaos_mode = dbutils.widgets.get("chaos_mode")
 
 # CHAOS: Injeta divisao por zero que causa ArithmeticException
 if chaos_mode == "gold_divide_zero":

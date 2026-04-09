@@ -6,9 +6,7 @@ completo (logs, codigo, schema) e aciona o LLM para diagnostico + PR.
 Desacoplado do pipeline — funciona como workflow independente.
 """
 
-import json
 import logging
-import os
 from datetime import datetime, timedelta
 
 from databricks.sdk import WorkspaceClient

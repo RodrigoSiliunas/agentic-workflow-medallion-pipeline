@@ -30,25 +30,8 @@ CATALOG = dbutils.widgets.get("catalog")
 
 # COMMAND ----------
 
-# DBTITLE 1,Verificar Task Values do Agente
-# Verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP")
-except Exception:
-    pass
-
-# Chaos mode check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="chaos_mode", default="off"
-    )
-except Exception:
-    pass
+# DBTITLE 1,Chaos Mode Check
+chaos_mode = dbutils.widgets.get("chaos_mode")
 
 # Inicializa contadores de tempo, erros e warnings
 start_time = time.time()

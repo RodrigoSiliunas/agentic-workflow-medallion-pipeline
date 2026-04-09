@@ -42,19 +42,6 @@ logger = logging.getLogger("silver.enrichment")
 
 # COMMAND ----------
 
-# DBTITLE 1,Verificar Task Values do Agente
-# Verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP")
-except Exception:
-    pass
-
-# COMMAND ----------
-
 # DBTITLE 1,Configuracao de Tabelas
 # Tabela de entrada (messages_clean) e saida (conversations_enriched)
 SILVER_MESSAGES = f"{CATALOG}.silver.messages_clean"

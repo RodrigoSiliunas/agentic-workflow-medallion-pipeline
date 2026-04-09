@@ -42,32 +42,8 @@ logger = logging.getLogger("silver.dedup_clean")
 
 # COMMAND ----------
 
-# DBTITLE 1,Verificar Task Values do Agente
-# Verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP")
-    run_id = dbutils.jobs.taskValues.get(taskKey="agent_pre", key="run_id", default="standalone")
-except Exception:
-    run_id = "standalone"
-
-# COMMAND ----------
-
-# DBTITLE 1,Chaos Mode Check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="chaos_mode", default="off"
-    )
-except Exception:
-    pass
-
-# COMMAND ----------
-
 # DBTITLE 1,Configuracao de Tabelas
+chaos_mode = dbutils.widgets.get("chaos_mode")
 # Tabela de entrada (Bronze) e saida (Silver)
 BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 SILVER_TABLE = f"{CATALOG}.silver.messages_clean"

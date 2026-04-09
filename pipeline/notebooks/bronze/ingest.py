@@ -49,34 +49,12 @@ BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
 
 # COMMAND ----------
 
-# DBTITLE 1,Verificar Task Values do Agente
-# Quando executado dentro do workflow, verifica se o agent_pre autorizou o processamento
-try:
-    should_process = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="should_process", default=True
-    )
-    if not should_process:
-        dbutils.notebook.exit("SKIP: agent decided no processing needed")
-    # Usa o prefix definido pelo agent_pre (pode ter sido customizado)
-    bronze_prefix = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="bronze_prefix", default=BRONZE_S3_PREFIX
-    )
-except Exception:
-    # Execucao standalone sem workflow -- usa prefix do widget
-    bronze_prefix = BRONZE_S3_PREFIX
-    logger.info("Executando standalone (sem agent_pre)")
+# DBTITLE 1,Configuracao
+# Prefix do S3 para leitura dos parquets
+bronze_prefix = BRONZE_S3_PREFIX
 
-# COMMAND ----------
-
-# DBTITLE 1,Chaos Mode Check
-# Injeta falha controlada se chaos_mode ativado pelo agent_pre
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="chaos_mode", default="off"
-    )
-except Exception:
-    pass
+# Chaos mode — injecao controlada de falha para teste do observer
+chaos_mode = dbutils.widgets.get("chaos_mode")
 
 # COMMAND ----------
 
