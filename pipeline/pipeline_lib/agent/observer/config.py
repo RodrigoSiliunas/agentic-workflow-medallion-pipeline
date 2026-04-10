@@ -28,9 +28,25 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_bool(value: Any) -> bool:
+    """Converte valores comuns de strings para bool.
+
+    Aceita 'true'/'false'/'yes'/'no'/'1'/'0'/'on'/'off' (case-insensitive),
+    alem de bool nativo e int. Usado para normalizar dry_run vindo de YAML
+    com string explicita ou de widgets Databricks.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "1", "on")
+    return bool(value)
 
 
 class ObserverConfig(BaseModel):
@@ -39,9 +55,13 @@ class ObserverConfig(BaseModel):
     Todos os campos tem defaults sensatos — uma instalacao fresca pode rodar
     sem YAML de config. Widgets Databricks podem sobrescrever qualquer campo
     via `load_observer_config(overrides=...)`.
+
+    Compativel com Pydantic V1 (Databricks Runtime) e V2 (dev local).
     """
 
-    model_config = ConfigDict(extra="forbid")
+    # Usa class Config V1-style que eh aceita por ambas as versoes do Pydantic
+    class Config:
+        extra = "forbid"
 
     # LLM
     llm_provider: str = Field(
@@ -99,14 +119,6 @@ class ObserverConfig(BaseModel):
         description="Limite diario de tokens (0 = sem limite). Nao usado hoje, reservado.",
     )
 
-    @field_validator("dry_run", mode="before")
-    @classmethod
-    def _coerce_dry_run(cls, v: Any) -> Any:
-        """Aceita 'true'/'false'/'yes'/'no'/'1'/'0' vindos de widgets."""
-        if isinstance(v, str):
-            return v.strip().lower() in ("true", "yes", "1", "on")
-        return v
-
 
 def _coerce_override_value(field_name: str, value: Any) -> Any:
     """Converte strings de widgets para o tipo esperado pelo campo Pydantic.
@@ -139,7 +151,7 @@ def _coerce_override_value(field_name: str, value: Any) -> Any:
             return None
 
     if field_name == "dry_run":
-        return stripped.lower() in ("true", "yes", "1", "on")
+        return _coerce_bool(stripped)
 
     return stripped
 
@@ -174,8 +186,16 @@ def _read_config_file(path: Path) -> dict[str, Any]:
 
     # Suporta arquivo com secao 'observer:' encapsulando a config
     if "observer" in data and isinstance(data["observer"], dict):
-        return data["observer"]
-    return data
+        result = data["observer"]
+    else:
+        result = data
+
+    # Coerce dry_run para bool caso venha como string no YAML (defensivo —
+    # pyyaml ja retorna bool para `dry_run: true`, mas aceitamos `dry_run: "true"`)
+    if "dry_run" in result:
+        result["dry_run"] = _coerce_bool(result["dry_run"])
+
+    return result
 
 
 def load_observer_config(
