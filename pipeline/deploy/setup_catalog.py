@@ -27,7 +27,7 @@ from databricks.sdk.service.catalog import AwsIamRoleRequest
 CATALOG_NAME = "medallion"
 CREDENTIAL_NAME = "medallion-s3-credential"
 LOCATION_NAME = "medallion-datalake"
-SCHEMAS = ["bronze", "silver", "gold", "pipeline"]
+SCHEMAS = ["bronze", "silver", "gold", "pipeline", "observer"]
 
 
 def get_env(key: str, required: bool = True) -> str:

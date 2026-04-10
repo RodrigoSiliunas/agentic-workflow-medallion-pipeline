@@ -3,7 +3,7 @@
 **Track ID:** observer-observability_20260409
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-09
-**Status:** Pending
+**Status:** In Progress
 
 ## Overview
 
@@ -13,42 +13,45 @@ Persistir diagnosticos do Observer em tabela Delta e criar dashboard SQL para ac
 
 ### Tasks
 
-- [ ] Task 1.1: Criar schema `observer` no Unity Catalog via `setup_catalog.py`
-- [ ] Task 1.2: Definir schema da tabela `observer.diagnostics` com DDL
-- [ ] Task 1.3: Criar helper `save_diagnostic()` em `pipeline_lib/agent/observer/persistence.py` que recebe DiagnosisResult + metadata e salva na tabela
-- [ ] Task 1.4: Calcular `estimated_cost_usd` baseado em provider + token counts
+- [x] Task 1.1: Adicionar schema `observer` ao `setup_catalog.py` (SCHEMAS list)
+- [x] Task 1.2: Definir schema da tabela `observer.diagnostics` (DDL encapsulado em `ObserverDiagnosticsStore.SCHEMA_DDL`)
+- [x] Task 1.3: Criar helper `ObserverDiagnosticsStore` em `pipeline_lib/agent/observer/persistence.py` com `ensure_schema()`, `build_record()` e `save()`
+- [x] Task 1.4: Implementar `calculate_cost_usd()` com tabela PRICING (Anthropic Opus/Sonnet/Haiku, OpenAI GPT-4o/Turbo/4/3.5)
 
 ### Verification
 
-- [ ] Tabela existe no Unity Catalog
-- [ ] Helper salva registro corretamente
-- [ ] Custo estimado calculado corretamente para cada provider
+- [x] Store cria schema + tabela via `ensure_schema()` (idempotente)
+- [x] 19 testes unitarios em `test_persistence.py` cobrem cost calc, error_hash, build_record e DDL
+- [x] Custos batem com precos publicos (opus 4: $15/M in, $75/M out)
 
 ## Phase 2: Integracao com Observer
 
 ### Tasks
 
-- [ ] Task 2.1: Integrar `save_diagnostic()` no notebook `observer/collect_and_fix.py` — salvar apos cada diagnostico
-- [ ] Task 2.2: Salvar diagnosticos com falha tambem (status="failed", sem PR)
-- [ ] Task 2.3: Adicionar `duration_seconds` (tempo total do diagnostico)
-- [ ] Task 2.4: Gerar `error_hash` (SHA-256 do error_message) para dedup futura
+- [x] Task 2.1: Integrar `store.save()` no notebook `observer/collect_and_fix.py` via helper local `persist_diagnostic()`
+- [x] Task 2.2: Salvar diagnosticos de falha (status=`llm_failed`, `no_fix_proposed`, `pr_failed`) alem de sucesso
+- [x] Task 2.3: Medir `duration_seconds` usando `time.time()` entre inicio do diagnostico e persistencia
+- [x] Task 2.4: Gerar `error_hash` (SHA-256) automaticamente em `build_record()`
 
 ### Verification
 
-- [ ] Diagnostico de sucesso salvo com PR URL
-- [ ] Diagnostico de falha salvo com status="failed"
-- [ ] Todos os campos preenchidos corretamente
+- [x] Observer chama `store.ensure_schema()` no inicio (idempotente)
+- [x] Diagnostico de sucesso salvo com PR URL
+- [x] Diagnostico de falha salvo com status apropriado
+- [ ] Validacao real no Databricks (aguardando chaos test)
 
 ## Phase 3: Dashboard SQL
 
 ### Tasks
 
-- [ ] Task 3.1: Criar queries SQL para 4 paineis (diagnosticos/dia, custo, confianca, top erros)
-- [ ] Task 3.2: Adicionar queries ao `deploy/dashboard_queries.sql`
+- [x] Task 3.1: Substituir `dashboard_queries.sql` por 8 paineis novos focados em observer.diagnostics (diagnosticos/dia, custo, confianca, top erros, taxa de sucesso, latencia, PRs recentes) + 3 alerts
+- [ ] Task 3.2: Executar chaos test e validar que o painel 5 (top erros) e o painel 8 (PRs) mostram dados reais
 
 ### Verification
 
-- [ ] Queries retornam dados corretos
+- [x] 8 paineis SQL criados em `deploy/dashboard_queries.sql`
+- [x] 3 alerts SQL criados (custo 24h, taxa de falha LLM, repeticao de erro)
+- [ ] Queries retornam dados apos chaos test
 - [ ] Dashboard criavel manualmente no Databricks SQL
 
 ## Final Verification

@@ -3,12 +3,13 @@
 # MAGIC # Workflow Observer - Agente AI Autonomo
 # MAGIC Recebe o run_id de um workflow que falhou, coleta contexto completo
 # MAGIC (codigo fonte via Workspace API + logs + schema), chama o provider LLM
-# MAGIC configurado e cria PR no GitHub.
+# MAGIC configurado, cria PR no GitHub e persiste o diagnostico na tabela
+# MAGIC `{catalog}.observer.diagnostics` para observabilidade.
 # MAGIC
 # MAGIC **Tipo:** Observer (independente) | **Trigger:** Sob demanda (via SDK)
 # MAGIC **Generico** - funciona com qualquer workflow do workspace.
 # MAGIC
-# MAGIC _Ultima atualizacao: 2026-04-09_
+# MAGIC _Ultima atualizacao: 2026-04-10_
 
 # COMMAND ----------
 
@@ -18,6 +19,7 @@ from datetime import datetime
 import logging
 import os
 import sys
+import time
 
 from databricks.sdk import WorkspaceClient
 
@@ -27,6 +29,7 @@ PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
 sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.agent.observer import (
+    ObserverDiagnosticsStore,
     WorkflowObserver,
     parse_failed_tasks_param,
 )
@@ -62,12 +65,20 @@ os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
 
 # COMMAND ----------
 
-# DBTITLE 1,Inicializar Observer
+# DBTITLE 1,Inicializar Observer e Store de Diagnosticos
 w = WorkspaceClient()
 observer = WorkflowObserver(w)
 log = []
 
 log.append(f"Observer iniciado: {datetime.now().isoformat()}")
+
+# Garante que o schema + tabela de diagnosticos existem (idempotente)
+store = ObserverDiagnosticsStore(spark, catalog=CATALOG)
+try:
+    store.ensure_schema()
+    log.append(f"Store pronto: {store.full_table_name}")
+except Exception as e:
+    log.append(f"WARN: nao foi possivel preparar store de diagnosticos: {e}")
 
 # COMMAND ----------
 
@@ -124,6 +135,42 @@ log.append(f"Git provider: {git.name}")
 
 # COMMAND ----------
 
+# DBTITLE 1,Persistir Diagnostico na Tabela Delta
+def persist_diagnostic(
+    failure: dict,
+    ctx: dict,
+    status: str,
+    duration_seconds: float,
+    diagnosis=None,
+    pr_result=None,
+) -> None:
+    """Monta DiagnosticRecord e grava na tabela observer.diagnostics.
+
+    Falhas do store sao logadas mas nao interrompem o fluxo principal do
+    Observer — persistencia e um diferencial, nao um bloqueio.
+    """
+    try:
+        record = store.build_record(
+            job_id=failure.get("job_id", 0),
+            job_name=failure.get("job_name", "unknown"),
+            run_id=failure.get("run_id", 0),
+            failed_task=ctx.get("failed_task", ""),
+            error_message=ctx.get("error_message", ""),
+            status=status,
+            duration_seconds=duration_seconds,
+            diagnosis=diagnosis,
+            pr_result=pr_result,
+        )
+        store.save(record)
+        log.append(
+            f"Diagnostico persistido: status={status}, "
+            f"cost=${record.estimated_cost_usd:.4f}"
+        )
+    except Exception as exc:
+        log.append(f"WARN: persistencia falhou: {exc}")
+
+# COMMAND ----------
+
 # DBTITLE 1,Coletar Contexto e Diagnosticar
 results = []
 
@@ -133,6 +180,9 @@ for failure in failures:
     ctx = observer.build_context(failure, catalog=CATALOG)
     log.append(f"Codigo: {len(ctx['notebook_code'])} chars")
     log.append(f"Erro: {ctx['error_message'][:150]}")
+
+    # Marca o inicio do diagnostico para medir duration_seconds
+    diag_start = time.time()
 
     log.append(f"Chamando {llm.name}...")
     try:
@@ -151,26 +201,47 @@ for failure in failures:
         log.append(f"Diagnostico: {diagnosis.diagnosis[:200]}")
         log.append(f"Confianca: {diagnosis.confidence:.0%}")
 
+        pr_result = None
         if diagnosis.fixed_code and diagnosis.file_to_fix:
             log.append(f"Criando PR para {diagnosis.file_to_fix}...")
             try:
-                pr = git.create_fix_pr(diagnosis, ctx["failed_task"])
-                log.append(f"PR #{pr.pr_number}: {pr.pr_url}")
+                pr_result = git.create_fix_pr(diagnosis, ctx["failed_task"])
+                log.append(f"PR #{pr_result.pr_number}: {pr_result.pr_url}")
                 results.append(
                     {
                         "job": failure["job_name"],
                         "task": ctx["failed_task"],
-                        "pr": pr.pr_url,
+                        "pr": pr_result.pr_url,
                         "confidence": diagnosis.confidence,
                     }
                 )
+                final_status = "success"
             except Exception as e:
                 log.append(f"ERRO PR: {e}")
+                final_status = "pr_failed"
         else:
             log.append("LLM nao gerou fix")
+            final_status = "no_fix_proposed"
+
+        persist_diagnostic(
+            failure,
+            ctx,
+            status=final_status,
+            duration_seconds=time.time() - diag_start,
+            diagnosis=diagnosis,
+            pr_result=pr_result,
+        )
 
     except Exception as e:
         log.append(f"ERRO AI: {e}")
+        persist_diagnostic(
+            failure,
+            ctx,
+            status="llm_failed",
+            duration_seconds=time.time() - diag_start,
+            diagnosis=None,
+            pr_result=None,
+        )
 
 # COMMAND ----------
 

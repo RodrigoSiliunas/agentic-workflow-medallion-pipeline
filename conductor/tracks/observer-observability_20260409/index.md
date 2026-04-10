@@ -1,7 +1,7 @@
-# Track: Observer — Observabilidade
+# Track: Observer - Observabilidade
 
 **ID:** observer-observability_20260409
-**Status:** Pending
+**Status:** In Progress
 
 ## Documents
 
@@ -10,8 +10,8 @@
 
 ## Progress
 
-- Phases: 0/3 complete
-- Tasks: 0/10 complete
+- Phases: 2/3 complete
+- Tasks: 8/10 complete
 
 ## Quick Links
 
