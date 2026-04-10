@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 
 from databricks.sdk import WorkspaceClient
 
+from pipeline_lib.agent.observer.triggering import extract_failed_task_keys
+
 logger = logging.getLogger("workflow_observer")
 
 
@@ -64,6 +66,7 @@ class WorkflowObserver:
         run_id: int,
         job_id: int = 0,
         job_name: str = "unknown",
+        failed_tasks_hint: list[str] | None = None,
     ) -> dict:
         """Constrói dict de falha a partir de um run_id.
 
@@ -71,23 +74,21 @@ class WorkflowObserver:
         find_recent_failures (modo busca).
         """
         run = self.w.jobs.get_run(run_id=run_id)
-        failed_tasks = []
+        failed_tasks = list(failed_tasks_hint or extract_failed_task_keys(run.tasks or []))
         errors = {}
 
         for task in run.tasks or []:
-            task_result = str(task.state.result_state) if task.state else ""
-            if "FAILED" not in task_result:
+            if task.task_key not in failed_tasks:
                 continue
             try:
                 out = self.w.jobs.get_run_output(run_id=task.run_id)
                 error = out.error or "Unknown error"
             except Exception:
                 error = "Could not retrieve error"
-            failed_tasks.append(task.task_key)
             errors[task.task_key] = error[:500]
 
         return {
-            "job_id": job_id,
+            "job_id": job_id or getattr(run, "job_id", 0),
             "job_name": job_name or run.run_name or "unknown",
             "run_id": run_id,
             "failed_tasks": failed_tasks,
@@ -154,11 +155,11 @@ class WorkflowObserver:
 
         return "\n".join(parts)
 
-    def build_context(self, failure: dict) -> dict:
+    def build_context(self, failure: dict, catalog: str = "medallion") -> dict:
         """Constrói contexto completo para o LLM provider."""
         run_id = failure["run_id"]
         codes = self.collect_notebook_code(run_id)
-        schema = self.collect_schema_info()
+        schema = self.collect_schema_info(catalog=catalog)
 
         first_failed = failure["failed_tasks"][0]
 

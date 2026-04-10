@@ -205,6 +205,6 @@ except Exception:
     pass
 
 if errors:
-    dbutils.notebook.exit(f"FAIL: {len(errors)} errors: {errors}")
+    raise ValueError(f"FAIL: {len(errors)} errors: {errors}")
 else:
     dbutils.notebook.exit(f"PASS: {len(warnings)} warnings in {duration}s")

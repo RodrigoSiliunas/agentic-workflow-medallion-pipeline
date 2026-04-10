@@ -1,8 +1,8 @@
-"""Cria o Observer Agent — agente AI independente.
+"""Cria o workflow do Observer Agent.
 
 Triggered sob demanda quando um pipeline falha.
-Nao tem schedule — eh acionado via SDK pelo pipeline ETL
-ou manualmente pelo trigger_run.py.
+Nao tem schedule - e acionado via SDK pelo task sentinel do ETL
+ou manualmente para debug.
 
 Uso: python deploy/create_observer_workflow.py
 """
@@ -12,6 +12,7 @@ import os
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.jobs import (
     JobEmailNotifications,
+    JobSettings,
     NotebookTask,
     Task,
 )
@@ -19,10 +20,20 @@ from databricks.sdk.service.jobs import (
 ADMIN_EMAIL = os.environ.get(
     "PIPELINE_ADMIN_EMAIL", "administrator@idlehub.com.br"
 )
+CATALOG = os.environ.get("PIPELINE_CATALOG", "medallion")
 SECRET_SCOPE = os.environ.get(
     "PIPELINE_SECRET_SCOPE", "medallion-pipeline"
 )
 CLUSTER_ID = os.environ.get("PIPELINE_CLUSTER_ID", "")
+WORKFLOW_NAME = "workflow_observer_agent"
+
+
+def find_latest_job_id(workspace: WorkspaceClient, name: str) -> int | None:
+    """Retorna o job_id mais alto para um dado nome."""
+    jobs = list(workspace.jobs.list(name=name))
+    if not jobs:
+        return None
+    return max(int(job.job_id) for job in jobs if getattr(job, "job_id", None) is not None)
 
 
 def create_observer():
@@ -56,22 +67,27 @@ def create_observer():
                     f"{repo_base}/notebooks/observer/collect_and_fix"
                 ),
                 base_parameters={
+                    "catalog": CATALOG,
                     "scope": SECRET_SCOPE,
                     "source_run_id": "",
                     "source_job_id": "",
+                    "source_job_name": "",
+                    "failed_tasks": "[]",
+                    "llm_provider": "anthropic",
+                    "git_provider": "github",
                 },
             ),
             timeout_seconds=900,
         ),
     ]
 
-    job = w.jobs.create(
-        name="workflow_observer_agent",
+    job_settings = JobSettings(
+        name=WORKFLOW_NAME,
         description=(
             "Agente AI autonomo. Triggered por pipelines que "
             "falharam. Coleta codigo via Workspace API, chama "
             "Claude Opus para diagnostico e cria PR no GitHub.\n"
-            "Generico — funciona com qualquer workflow."
+            "Generico - funciona com qualquer workflow."
         ),
         tasks=tasks,
         tags={
@@ -79,7 +95,6 @@ def create_observer():
             "Team": "data-engineering",
             "Type": "observer-agent",
         },
-        # Sem schedule — triggered sob demanda
         max_concurrent_runs=3,
         timeout_seconds=900,
         email_notifications=JobEmailNotifications(
@@ -87,13 +102,23 @@ def create_observer():
         ),
     )
 
-    print("Observer criado!")
-    print(f"  Job ID: {job.job_id}")
-    print("  Nome: workflow_observer_agent")
+    existing_job_id = find_latest_job_id(w, WORKFLOW_NAME)
+    if existing_job_id is not None:
+        w.jobs.reset(job_id=existing_job_id, new_settings=job_settings)
+        job_id = existing_job_id
+        action = "Observer atualizado"
+    else:
+        job = w.jobs.create(**job_settings.as_dict())
+        job_id = job.job_id
+        action = "Observer criado"
+
+    print(f"{action}!")
+    print(f"  Job ID: {job_id}")
+    print(f"  Nome: {WORKFLOW_NAME}")
     print("  Schedule: nenhum (triggered sob demanda)")
     print("  Max concurrent: 3")
 
-    return job.job_id
+    return job_id
 
 
 if __name__ == "__main__":

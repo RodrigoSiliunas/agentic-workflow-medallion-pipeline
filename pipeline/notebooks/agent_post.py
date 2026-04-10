@@ -2,8 +2,8 @@
 # MAGIC %md
 # MAGIC # Agent Post-Check (Task 5)
 # MAGIC Verifica resultados de todas as tasks, executa recovery com rollback Delta
-# MAGIC quando necessario, aciona agente de IA (Claude API + GitHub PR) em caso de
-# MAGIC falhas persistentes, e persiste notificacoes por email.
+# MAGIC quando necessario, persiste notificacoes por email e deixa o disparo do
+# MAGIC Observer Agent para a task sentinel final do workflow.
 # MAGIC
 # MAGIC **run_if: ALL_DONE** -- roda SEMPRE, mesmo se tasks anteriores falharam.
 # MAGIC
@@ -16,9 +16,7 @@
 # DBTITLE 1,Imports e Setup
 import json
 import logging
-import os
 import sys
-import time
 from datetime import datetime
 
 from pyspark.sql import Row
@@ -44,12 +42,6 @@ SCOPE = dbutils.widgets.get("scope")
 lake = S3Lake(dbutils, spark, scope=SCOPE)
 logger = logging.getLogger("agent_post")
 
-# Carregar credenciais do agente AI a partir dos Databricks Secrets
-# Necessario para o LLM diagnostics (Claude API) e GitHub PR
-os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
-os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
-os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
-
 # COMMAND ----------
 
 # DBTITLE 1,Constantes e Tabelas de Apoio
@@ -58,7 +50,7 @@ STATE_TABLE = f"{CATALOG}.pipeline.state"
 NOTIFICATIONS_TABLE = f"{CATALOG}.pipeline.notifications"
 METRICS_TABLE = f"{CATALOG}.pipeline.metrics"
 
-# Limite de falhas consecutivas antes de acionar o agente de IA
+# Limite de falhas consecutivas antes de exigir intervencao manual
 MAX_CONSECUTIVE_FAILURES = 3
 
 # COMMAND ----------
@@ -322,7 +314,7 @@ else:
     # =============================================================
     # FALHA DETECTADA
     # agent_post: rollback Delta (protecao imediata de dados)
-    # observer:   diagnostico AI + PR (roda separado, a cada 30min)
+    # sentinel:   dispara o workflow_observer_agent apos o rollback
     # =============================================================
     failures = state.get("consecutive_failures", 0) + 1
     log.append(f"FALHA: {len(failed_tasks)} tasks, consecutivas={failures}")
@@ -336,15 +328,15 @@ else:
     except Exception as e:
         log.append(f"ROLLBACK FALHOU: {e}")
 
-    # Salvar estado — o Observer Agent roda separado e detecta
-    # esse estado FAILED para acionar Claude Opus + GitHub PR
+    # Salvar estado - o Observer sera disparado pela task sentinel
+    # depois que o rollback terminar.
     save_state(bronze_hash, "FAILED", failures)
     send_notification(
         level="WARNING",
         subject=f"[Pipeline] Falha detectada — rollback executado, aguardando Observer Agent",
         body=build_failure_body(
             f"Rollback: {recovery_actions}. "
-            "O Observer Agent ira diagnosticar e criar PR automaticamente.",
+            "A task sentinel do workflow ira disparar o Observer Agent automaticamente.",
             failures,
         ),
     )

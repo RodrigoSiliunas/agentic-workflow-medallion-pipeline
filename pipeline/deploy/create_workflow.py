@@ -1,13 +1,14 @@
-"""Cria o Databricks Workflow ETL Medallion.
+"""Cria o Databricks Workflow ETL Medallion com trigger automatico do Observer.
 
-Pipeline puro de dados: Bronze > Silver > Gold > Validation.
-Sem logica de agente — o Observer Agent roda separado.
+Pipeline puro de dados: Agent Pre > Bronze > Silver > Gold > Validation > Agent Post.
+O Observer Agent continua separado, mas passa a ser disparado automaticamente por uma
+task sentinel quando houver falha real no workflow.
 
 Uso: python deploy/create_workflow.py
 
 Requer env vars: DATABRICKS_HOST, DATABRICKS_TOKEN
-Opcionais: PIPELINE_CLUSTER_ID, PIPELINE_ADMIN_EMAIL,
-           PIPELINE_CATALOG, PIPELINE_SECRET_SCOPE
+Opcionais: PIPELINE_CLUSTER_ID, PIPELINE_ADMIN_EMAIL, PIPELINE_CATALOG,
+           PIPELINE_SECRET_SCOPE, OBSERVER_JOB_ID, OBSERVER_JOB_NAME
 """
 
 import os
@@ -16,7 +17,9 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.jobs import (
     CronSchedule,
     JobEmailNotifications,
+    JobSettings,
     NotebookTask,
+    RunIf,
     Task,
     TaskDependency,
 )
@@ -27,6 +30,32 @@ ADMIN_EMAIL = os.environ.get(
 CATALOG = os.environ.get("PIPELINE_CATALOG", "medallion")
 SECRET_SCOPE = os.environ.get("PIPELINE_SECRET_SCOPE", "medallion-pipeline")
 CLUSTER_ID = os.environ.get("PIPELINE_CLUSTER_ID", "")
+OBSERVER_JOB_ID = os.environ.get("OBSERVER_JOB_ID", "").strip()
+OBSERVER_JOB_NAME = os.environ.get("OBSERVER_JOB_NAME", "workflow_observer_agent").strip()
+WORKFLOW_NAME = "medallion_pipeline_whatsapp"
+
+
+def find_latest_job_id(workspace: WorkspaceClient, name: str) -> int | None:
+    """Retorna o job_id mais alto para um dado nome."""
+    jobs = list(workspace.jobs.list(name=name))
+    if not jobs:
+        return None
+    return max(int(job.job_id) for job in jobs if getattr(job, "job_id", None) is not None)
+
+
+def resolve_observer_job_id(workspace: WorkspaceClient) -> str:
+    """Resolve o job do Observer via env var ou lookup pelo nome padrao."""
+    if OBSERVER_JOB_ID:
+        return OBSERVER_JOB_ID
+
+    existing_job_id = find_latest_job_id(workspace, OBSERVER_JOB_NAME)
+    if existing_job_id is not None:
+        return str(existing_job_id)
+
+    raise RuntimeError(
+        "Observer job nao encontrado. Defina OBSERVER_JOB_ID ou crie o "
+        f"workflow '{OBSERVER_JOB_NAME}' antes de criar o ETL."
+    )
 
 
 def create_workflow():
@@ -51,6 +80,7 @@ def create_workflow():
         "scope": SECRET_SCOPE,
         "chaos_mode": "off",
     }
+    observer_job_id = resolve_observer_job_id(w)
 
     cluster_kwargs = {}
     if CLUSTER_ID:
@@ -59,14 +89,37 @@ def create_workflow():
     else:
         print("  Compute: serverless")
 
-    # =========================================================
-    # TASKS — ETL puro (Bronze > Silver > Gold > Validation)
-    # Sem agente — Observer cuida de falhas separadamente
-    # =========================================================
+    core_dependencies = [
+        "agent_pre",
+        "bronze_ingestion",
+        "silver_dedup",
+        "silver_entities",
+        "silver_enrichment",
+        "gold_analytics",
+        "quality_validation",
+    ]
+
     tasks = [
+        Task(
+            task_key="agent_pre",
+            description="Fingerprint do S3 e captura de versoes Delta",
+            **cluster_kwargs,
+            notebook_task=NotebookTask(
+                notebook_path=nb("agent_pre"),
+                base_parameters={
+                    **shared_params,
+                    "bronze_prefix": "bronze/",
+                },
+            ),
+            max_retries=1,
+            timeout_seconds=300,
+        ),
         Task(
             task_key="bronze_ingestion",
             description="S3 parquet -> Delta bronze.conversations",
+            depends_on=[
+                TaskDependency(task_key="agent_pre"),
+            ],
             **cluster_kwargs,
             notebook_task=NotebookTask(
                 notebook_path=nb("bronze/ingest"),
@@ -149,14 +202,52 @@ def create_workflow():
             max_retries=1,
             timeout_seconds=300,
         ),
+        Task(
+            task_key="agent_post",
+            description="Rollback Delta e notificacoes de recovery",
+            depends_on=[
+                TaskDependency(task_key="quality_validation"),
+            ],
+            run_if=RunIf.ALL_DONE,
+            **cluster_kwargs,
+            notebook_task=NotebookTask(
+                notebook_path=nb("agent_post"),
+                base_parameters=shared_params,
+            ),
+            max_retries=0,
+            timeout_seconds=600,
+        ),
+        Task(
+            task_key="observer_trigger",
+            description="Dispara o workflow_observer_agent apos falha real no ETL",
+            depends_on=[
+                *[TaskDependency(task_key=task_key) for task_key in core_dependencies],
+                TaskDependency(task_key="agent_post"),
+            ],
+            run_if=RunIf.AT_LEAST_ONE_FAILED,
+            **cluster_kwargs,
+            notebook_task=NotebookTask(
+                notebook_path=nb("observer/trigger_sentinel"),
+                base_parameters={
+                    "catalog": CATALOG,
+                    "scope": SECRET_SCOPE,
+                    "observer_job_id": observer_job_id,
+                    "llm_provider": "anthropic",
+                    "git_provider": "github",
+                },
+            ),
+            max_retries=0,
+            timeout_seconds=300,
+        ),
     ]
 
-    job = w.jobs.create(
-        name="medallion_pipeline_whatsapp",
+    job_settings = JobSettings(
+        name=WORKFLOW_NAME,
         description=(
-            "Pipeline ETL Medallion: Bronze > Silver > Gold.\n"
+            "Pipeline ETL Medallion: Agent Pre > Bronze > Silver > Gold > "
+            "Validation > Agent Post.\n"
             "Overwrite idempotente. Delta atomicity por task.\n"
-            "Observer Agent monitora falhas separadamente."
+            "Observer Agent disparado automaticamente por task sentinel."
         ),
         tasks=tasks,
         tags={
@@ -178,13 +269,24 @@ def create_workflow():
         ),
     )
 
-    print("Workflow criado!")
-    print(f"  Job ID:   {job.job_id}")
-    print("  Nome:     medallion_pipeline_whatsapp")
+    existing_job_id = find_latest_job_id(w, WORKFLOW_NAME)
+    if existing_job_id is not None:
+        w.jobs.reset(job_id=existing_job_id, new_settings=job_settings)
+        job_id = existing_job_id
+        action = "Workflow atualizado"
+    else:
+        job = w.jobs.create(**job_settings.as_dict())
+        job_id = job.job_id
+        action = "Workflow criado"
+
+    print(f"{action}!")
+    print(f"  Job ID:   {job_id}")
+    print(f"  Nome:     {WORKFLOW_NAME}")
     print(f"  Tasks:    {len(tasks)}")
+    print(f"  Observer: {observer_job_id}")
     print(f"  Admin:    {ADMIN_EMAIL}")
 
-    return job.job_id
+    return job_id
 
 
 if __name__ == "__main__":
