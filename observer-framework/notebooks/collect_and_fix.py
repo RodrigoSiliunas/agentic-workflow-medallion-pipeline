@@ -58,6 +58,7 @@ dbutils.widgets.text("llm_provider", "", "LLM Provider (override)")
 dbutils.widgets.text("git_provider", "", "Git Provider (override)")
 dbutils.widgets.text("dedup_window_hours", "", "Dedup Window hours (override)")
 dbutils.widgets.dropdown("dry_run", "false", ["false", "true"], "Dry Run Mode (override)")
+dbutils.widgets.text("config_path", "", "Observer config YAML absolute path (override)")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")
@@ -66,8 +67,10 @@ SOURCE_JOB_ID = dbutils.widgets.get("source_job_id")
 SOURCE_JOB_NAME = dbutils.widgets.get("source_job_name")
 FAILED_TASKS = parse_failed_tasks_param(dbutils.widgets.get("failed_tasks"))
 
-# Carrega observer_config.yaml do Repo + aplica overrides dos widgets
-CONFIG_PATH = f"{PIPELINE_ROOT}/observer_config.yaml"
+# Hierarquia do config: widget `config_path` (do pipeline chamador)
+# > template default do framework.
+_custom_config_path = dbutils.widgets.get("config_path").strip()
+CONFIG_PATH = _custom_config_path or f"{FRAMEWORK_ROOT}/templates/observer_config.yaml"
 config = load_observer_config(
     config_path=CONFIG_PATH,
     overrides={
