@@ -255,11 +255,14 @@ for failure in failures:
 
         # Fluxo de decisao do fix: no_fix -> low_confidence -> validation
         # -> dry_run -> criacao de PR. final_status eh setado num unico
-        # ponto e persistido no final do bloco.
+        # ponto e persistido no final do bloco. Suporta fixes singular
+        # (fixed_code/file_to_fix) ou multi-file (lista fixes).
         pr_result = None
         final_status = "unknown"
+        proposed_files = diagnosis.normalized_fixes()
+        files_summary = ", ".join(f["file_path"] for f in proposed_files) or "(nenhum)"
 
-        if not (diagnosis.fixed_code and diagnosis.file_to_fix):
+        if not proposed_files:
             log.append("LLM nao gerou fix")
             final_status = "no_fix_proposed"
         elif diagnosis.confidence < config.confidence_threshold:
@@ -269,28 +272,39 @@ for failure in failures:
             )
             final_status = "low_confidence"
         else:
-            # Validacao pre-PR: sintaxe sempre, ruff para pipeline_lib/
-            validation = validate_fix(
-                diagnosis.fixed_code, diagnosis.file_to_fix
-            )
+            # Validacao pre-PR para cada arquivo proposto
+            log.append(f"Validando {len(proposed_files)} arquivo(s): {files_summary}")
+            all_valid = True
+            validation_errors: list[str] = []
+            checks_union: set[str] = set()
+            for fix_entry in proposed_files:
+                v = validate_fix(fix_entry["code"], fix_entry["file_path"])
+                checks_union.update(v.checks_run)
+                if not v.valid:
+                    all_valid = False
+                    for err in v.errors[:3]:
+                        validation_errors.append(f"{fix_entry['file_path']}: {err}")
             log.append(
-                f"Validacao: checks={validation.checks_run}, "
-                f"valid={validation.valid}"
+                f"Validacao: checks={sorted(checks_union)}, valid={all_valid}"
             )
-            if not validation.valid:
-                log.append(f"VALIDATION FAILED: {len(validation.errors)} erros")
-                for err in validation.errors[:5]:
+
+            if not all_valid:
+                log.append(f"VALIDATION FAILED: {len(validation_errors)} erros")
+                for err in validation_errors[:5]:
                     log.append(f"  - {err}")
                 final_status = "validation_failed"
             elif config.dry_run:
-                log.append(f"DRY-RUN: nao cria PR para {diagnosis.file_to_fix}")
-                preview = (diagnosis.fixed_code or "")[:300]
-                log.append(f"  Fix preview: {preview}...")
+                log.append(f"DRY-RUN: nao cria PR para {files_summary}")
+                for fix_entry in proposed_files:
+                    preview = (fix_entry["code"] or "")[:200]
+                    log.append(f"  {fix_entry['file_path']}: {preview}...")
                 if diagnosis.root_cause:
                     log.append(f"  Root cause: {diagnosis.root_cause[:200]}")
                 final_status = "dry_run"
             else:
-                log.append(f"Criando PR para {diagnosis.file_to_fix}...")
+                log.append(
+                    f"Criando PR com {len(proposed_files)} arquivo(s): {files_summary}"
+                )
                 try:
                     pr_result = git.create_fix_pr(diagnosis, ctx["failed_task"])
                     log.append(f"PR #{pr_result.pr_number}: {pr_result.pr_url}")
@@ -299,6 +313,7 @@ for failure in failures:
                             "job": failure["job_name"],
                             "task": ctx["failed_task"],
                             "pr": pr_result.pr_url,
+                            "files": len(proposed_files),
                             "confidence": diagnosis.confidence,
                         }
                     )

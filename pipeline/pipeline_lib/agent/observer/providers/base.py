@@ -47,9 +47,16 @@ def with_retry(max_retries: int = 3, base_delay: float = 2.0):
 
 @dataclass
 class DiagnosisResult:
-    """Resultado padronizado de um diagnóstico LLM.
+    """Resultado padronizado de um diagnostico LLM.
 
     Todos os providers retornam este objeto independente do modelo usado.
+
+    Suporta fixes em um ou multiplos arquivos:
+    - Singular (retrocompat): `fixed_code` + `file_to_fix`
+    - Multi-file: `fixes` = lista de dicts `{"file_path": ..., "code": ...}`
+
+    Use `normalized_fixes()` para obter a lista unificada independente do
+    formato em que o LLM respondeu.
     """
 
     diagnosis: str = ""
@@ -57,6 +64,8 @@ class DiagnosisResult:
     fix_description: str = ""
     fixed_code: str | None = None
     file_to_fix: str | None = None
+    # Multi-file support — LLM pode retornar lista de fixes cruzando modulos
+    fixes: list[dict] | None = None
     confidence: float = 0.0
     requires_human_review: bool = True
     additional_notes: str = ""
@@ -67,6 +76,39 @@ class DiagnosisResult:
     input_tokens: int = 0
     output_tokens: int = 0
 
+    def normalized_fixes(self) -> list[dict]:
+        """Retorna lista unificada de fixes no formato [{file_path, code}].
+
+        Se `fixes` estiver preenchido com entradas validas, usa essa lista.
+        Caso contrario, faz fallback para (fixed_code, file_to_fix) singular.
+        Entradas com file_path ou code vazio sao filtradas.
+
+        Retorna lista vazia se nao ha fixes aplicaveis.
+        """
+        if self.fixes:
+            valid = [
+                {
+                    "file_path": str(f.get("file_path", "")).strip(),
+                    "code": f.get("code") or "",
+                }
+                for f in self.fixes
+                if isinstance(f, dict)
+                and str(f.get("file_path", "")).strip()
+                and f.get("code")
+            ]
+            if valid:
+                return valid
+
+        if self.fixed_code and self.file_to_fix:
+            return [
+                {
+                    "file_path": self.file_to_fix.strip(),
+                    "code": self.fixed_code,
+                }
+            ]
+
+        return []
+
     def to_dict(self) -> dict:
         return {
             "diagnosis": self.diagnosis,
@@ -74,6 +116,7 @@ class DiagnosisResult:
             "fix_description": self.fix_description,
             "fixed_code": self.fixed_code,
             "file_to_fix": self.file_to_fix,
+            "fixes": self.fixes,
             "confidence": self.confidence,
             "requires_human_review": self.requires_human_review,
             "additional_notes": self.additional_notes,

@@ -78,6 +78,7 @@ class OpenAIProvider(LLMProvider):
             fix_description=data.get("fix_description", ""),
             fixed_code=data.get("fixed_code"),
             file_to_fix=data.get("file_to_fix"),
+            fixes=data.get("fixes"),
             confidence=float(data.get("confidence", 0.0)),
             requires_human_review=data.get("requires_human_review", True),
             additional_notes=data.get("additional_notes", ""),
@@ -102,9 +103,14 @@ Código:
 Schema: {req.schema_info}
 Estado: {json.dumps(req.pipeline_state, indent=2, default=str)}
 
-Responda em JSON com: diagnosis, root_cause, fix_description,
-fixed_code, file_to_fix, confidence, requires_human_review,
-additional_notes."""
+Responda em JSON.
+
+Para fix em UM arquivo: diagnosis, root_cause, fix_description,
+fixed_code, file_to_fix, confidence, requires_human_review, additional_notes.
+
+Para fix em MÚLTIPLOS arquivos (bug cruzando módulos): use o campo `fixes`
+como uma lista de {{"file_path": "...", "code": "..."}} no lugar de
+fixed_code/file_to_fix."""
 
     def _parse_json(self, text: str) -> dict:
         try:

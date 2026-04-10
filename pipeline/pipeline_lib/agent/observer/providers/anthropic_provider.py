@@ -23,13 +23,19 @@ SYSTEM_PROMPT = (
     "Regras:\n"
     "- Responda SEMPRE em JSON válido\n"
     "- Seja específico e técnico sobre a causa raiz\n"
-    "- O campo fixed_code deve conter o notebook COMPLETO "
+    "- Cada arquivo retornado deve conter o CONTEÚDO COMPLETO "
     "corrigido (não apenas o trecho alterado)\n"
-    "- O campo file_to_fix deve ser o path relativo ao repo "
-    "(ex: pipeline/notebooks/bronze/ingest.py)\n"
+    "- Paths são sempre relativos ao repo (ex: pipeline/notebooks/bronze/ingest.py)\n"
     "- Indique confiança realista (0.0 a 1.0)\n"
     "- Se não tiver certeza, diga e sugira investigação\n"
-    "- NUNCA invente informações sobre schema ou dados"
+    "- NUNCA invente informações sobre schema ou dados\n\n"
+    "Formato da resposta:\n"
+    "- Para fix em UM arquivo: use os campos `fixed_code` + `file_to_fix`\n"
+    "- Para fix em MÚLTIPLOS arquivos (bugs cruzando módulos): use o campo "
+    "`fixes` com uma lista de `{\"file_path\": \"...\", \"code\": \"...\"}`. "
+    "Quando usar `fixes`, NÃO preencha `fixed_code`/`file_to_fix`.\n"
+    "- Prefira multi-file apenas quando o bug REALMENTE exige mudanças em "
+    "arquivos diferentes (ex: schema contract + notebook que usa o schema)"
 )
 
 
@@ -83,6 +89,7 @@ class AnthropicProvider(LLMProvider):
             fix_description=data.get("fix_description", ""),
             fixed_code=data.get("fixed_code"),
             file_to_fix=data.get("file_to_fix"),
+            fixes=data.get("fixes"),
             confidence=float(data.get("confidence", 0.0)),
             requires_human_review=data.get("requires_human_review", True),
             additional_notes=data.get("additional_notes", ""),
@@ -117,13 +124,29 @@ class AnthropicProvider(LLMProvider):
 {json.dumps(req.pipeline_state, indent=2, default=str)}
 ```
 
-## Responda em JSON:
+## Responda em JSON.
+
+Para fix em UM arquivo (caso comum):
 {{
     "diagnosis": "...",
     "root_cause": "...",
     "fix_description": "...",
-    "fixed_code": "código completo corrigido",
+    "fixed_code": "código completo corrigido do arquivo",
     "file_to_fix": "pipeline/notebooks/...",
+    "confidence": 0.0,
+    "requires_human_review": true,
+    "additional_notes": "..."
+}}
+
+Para fix em MÚLTIPLOS arquivos (quando o bug cruza módulos):
+{{
+    "diagnosis": "...",
+    "root_cause": "...",
+    "fix_description": "...",
+    "fixes": [
+        {{"file_path": "pipeline/.../a.py", "code": "arquivo A completo"}},
+        {{"file_path": "pipeline/.../b.py", "code": "arquivo B completo"}}
+    ],
     "confidence": 0.0,
     "requires_human_review": true,
     "additional_notes": "..."

@@ -45,47 +45,58 @@ class GitHubProvider(GitProvider):
             from github import Auth, Github
         except ImportError as e:
             raise ImportError(
-                "PyGithub não instalado. "
-                "Instale com: pip install PyGithub"
+                "PyGithub nao instalado. Instale com: pip install PyGithub"
             ) from e
+
+        # Suporta fix em N arquivos via DiagnosisResult.normalized_fixes().
+        # Retrocompativel com o formato singular (fixed_code + file_to_fix).
+        fixes = diagnosis.normalized_fixes()
+        if not fixes:
+            raise ValueError(
+                "DiagnosisResult nao contem fixes aplicaveis "
+                "(fixes vazio e fixed_code/file_to_fix ausentes)"
+            )
 
         gh = Github(auth=Auth.Token(self._token))
         repo = gh.get_repo(self._repo_name)
 
-        # Branch única baseada em timestamp
+        # Branch unica baseada em timestamp
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         task_slug = failed_task.replace("_", "-")
         branch_name = f"fix/agent-auto-{task_slug}-{ts}"
 
         # Criar branch a partir de main
         main_ref = repo.get_git_ref("heads/main")
-        repo.create_git_ref(
-            f"refs/heads/{branch_name}", main_ref.object.sha
-        )
+        repo.create_git_ref(f"refs/heads/{branch_name}", main_ref.object.sha)
 
-        # Commit o fix
-        file_path = diagnosis.file_to_fix or "unknown"
-        commit_msg = (
-            f"fix: correção automática em {failed_task}\n\n"
-            f"{diagnosis.fix_description}"
-        )
-
-        try:
-            content = repo.get_contents(file_path, ref=branch_name)
-            repo.update_file(
-                path=file_path,
-                message=commit_msg,
-                content=diagnosis.fixed_code or "",
-                sha=content.sha,
-                branch=branch_name,
+        # Um commit por arquivo (todos na mesma branch). O PR final
+        # agrega todas as mudancas.
+        applied_files: list[str] = []
+        for fix in fixes:
+            file_path = fix["file_path"]
+            code = fix["code"]
+            commit_msg = (
+                f"fix: correcao automatica em {failed_task} ({file_path})\n\n"
+                f"{diagnosis.fix_description}"
             )
-        except Exception:
-            repo.create_file(
-                path=file_path,
-                message=commit_msg,
-                content=diagnosis.fixed_code or "",
-                branch=branch_name,
-            )
+            try:
+                content = repo.get_contents(file_path, ref=branch_name)
+                repo.update_file(
+                    path=file_path,
+                    message=commit_msg,
+                    content=code,
+                    sha=content.sha,
+                    branch=branch_name,
+                )
+            except Exception:
+                # Arquivo nao existe no branch — cria
+                repo.create_file(
+                    path=file_path,
+                    message=commit_msg,
+                    content=code,
+                    branch=branch_name,
+                )
+            applied_files.append(file_path)
 
         # Garantir que base branch existe
         try:
@@ -96,23 +107,26 @@ class GitHubProvider(GitProvider):
                 main_ref.object.sha,
             )
 
-        # PR com diagnóstico
+        # PR com diagnostico
         conf = diagnosis.confidence
-        emoji = (
-            "🟢" if conf >= 0.8 else "🟡" if conf >= 0.5 else "🔴"
+        emoji = "🟢" if conf >= 0.8 else "🟡" if conf >= 0.5 else "🔴"
+
+        files_section = "\n".join(f"- `{p}`" for p in applied_files)
+        title_suffix = (
+            f" ({len(applied_files)} arquivos)" if len(applied_files) > 1 else ""
         )
 
         pr = repo.create_pull(
-            title=f"fix: [{failed_task}] correção automática",
+            title=f"fix: [{failed_task}] correcao automatica{title_suffix}",
             body=(
-                f"## Correção Automática — Observer Agent\n\n"
-                f"{emoji} **Confiança: {conf:.0%}** "
+                f"## Correcao Automatica — Observer Agent\n\n"
+                f"{emoji} **Confianca: {conf:.0%}** "
                 f"(provider: {diagnosis.provider}, "
                 f"model: {diagnosis.model})\n\n"
                 f"### Problema\n{diagnosis.diagnosis}\n\n"
                 f"### Causa Raiz\n{diagnosis.root_cause}\n\n"
                 f"### Fix\n{diagnosis.fix_description}\n\n"
-                f"### Arquivo\n`{file_path}`\n\n"
+                f"### Arquivos modificados ({len(applied_files)})\n{files_section}\n\n"
                 f"---\n"
                 f"🤖 PR criado pelo Observer Agent "
                 f"({diagnosis.provider}/{diagnosis.model})"
