@@ -26,10 +26,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
+
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 logger = logging.getLogger(__name__)
 
@@ -238,3 +241,39 @@ class ObserverDiagnosticsStore:
             f"Diagnostico {record.id[:8]} salvo em {self.full_table_name} "
             f"(status={record.status}, cost=${record.estimated_cost_usd:.4f})"
         )
+
+    def find_recent_successful(
+        self,
+        error_hash_value: str,
+        window_hours: int = 24,
+    ) -> list[dict]:
+        """Busca diagnosticos recentes com status='success' e mesmo error_hash.
+
+        Retorna lista ordenada por timestamp desc (mais recente primeiro).
+        Usado pela logica de deduplicacao do Observer antes de chamar o LLM.
+
+        error_hash_value deve ser um hash SHA-256 em hex (64 chars 0-9a-f) —
+        validamos o formato para evitar injecao SQL mesmo que o valor venha
+        sempre controlado por error_hash().
+        """
+        if not _HEX_SHA256.match(error_hash_value or ""):
+            raise ValueError(
+                f"error_hash invalido (esperado 64 chars hex): {error_hash_value!r}"
+            )
+
+        query = (
+            f"SELECT id, timestamp, job_id, job_name, run_id, failed_task, "
+            f"error_hash, pr_url, pr_number, branch_name, confidence, status "
+            f"FROM {self.full_table_name} "
+            f"WHERE error_hash = '{error_hash_value}' "
+            f"AND status = 'success' "
+            f"AND timestamp > current_timestamp() - INTERVAL {int(window_hours)} HOURS "
+            f"ORDER BY timestamp DESC "
+            f"LIMIT 10"
+        )
+        try:
+            rows = self.spark.sql(query).collect()
+        except Exception as exc:
+            logger.warning(f"find_recent_successful query falhou: {exc}")
+            return []
+        return [row.asDict() for row in rows]

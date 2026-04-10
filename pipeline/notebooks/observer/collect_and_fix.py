@@ -31,6 +31,7 @@ sys.path.insert(0, PIPELINE_ROOT)
 from pipeline_lib.agent.observer import (
     ObserverDiagnosticsStore,
     WorkflowObserver,
+    check_duplicate,
     parse_failed_tasks_param,
 )
 
@@ -47,6 +48,7 @@ dbutils.widgets.text("source_job_name", "", "Job Name que falhou")
 dbutils.widgets.text("failed_tasks", "[]", "Tasks com falha em JSON")
 dbutils.widgets.text("llm_provider", "anthropic", "LLM Provider")
 dbutils.widgets.text("git_provider", "github", "Git Provider")
+dbutils.widgets.text("dedup_window_hours", "24", "Dedup Window (hours)")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")
@@ -54,6 +56,11 @@ SOURCE_RUN_ID = dbutils.widgets.get("source_run_id")
 SOURCE_JOB_ID = dbutils.widgets.get("source_job_id")
 SOURCE_JOB_NAME = dbutils.widgets.get("source_job_name")
 FAILED_TASKS = parse_failed_tasks_param(dbutils.widgets.get("failed_tasks"))
+
+try:
+    DEDUP_WINDOW_HOURS = int(dbutils.widgets.get("dedup_window_hours") or "24")
+except ValueError:
+    DEDUP_WINDOW_HOURS = 24
 
 os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
 os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
@@ -183,6 +190,30 @@ for failure in failures:
 
     # Marca o inicio do diagnostico para medir duration_seconds
     diag_start = time.time()
+
+    # Dedup: pula diagnostico se o mesmo erro ja foi resolvido recentemente
+    dedup_result = check_duplicate(
+        store,
+        ctx["error_message"],
+        window_hours=DEDUP_WINDOW_HOURS,
+        git_provider=git,
+    )
+    if dedup_result.is_duplicate:
+        log.append(f"Cache HIT ({dedup_result.reason})")
+        if dedup_result.existing_record:
+            prev_pr = dedup_result.existing_record.get("pr_url") or "(sem url)"
+            log.append(f"  Diagnostico anterior: {prev_pr}")
+        # Registra o skip na tabela para observabilidade
+        persist_diagnostic(
+            failure,
+            ctx,
+            status="duplicate_skip",
+            duration_seconds=time.time() - diag_start,
+            diagnosis=None,
+            pr_result=None,
+        )
+        continue
+    log.append(f"Cache MISS ({dedup_result.reason})")
 
     log.append(f"Chamando {llm.name}...")
     try:

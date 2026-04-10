@@ -135,6 +135,8 @@ class GitProvider(ABC):
     """Interface para providers de Git (GitHub, GitLab, Bitbucket, etc).
 
     Cada provider implementa create_fix_pr() que cria branch + PR.
+    get_pr_status() eh opcional — subclasses podem sobrescrever para
+    suportar a logica de deduplicacao baseada em status de PRs existentes.
     """
 
     @abstractmethod
@@ -151,3 +153,14 @@ class GitProvider(ABC):
     def name(self) -> str:
         """Nome do provider (ex: 'github', 'gitlab')."""
         ...
+
+    def get_pr_status(self, pr_number: int) -> str:
+        """Retorna o status de um PR: 'open', 'merged', 'closed' ou 'unknown'.
+
+        Implementacao default retorna 'unknown'. Providers que suportam
+        consulta de status (como GitHub) devem sobrescrever este metodo.
+        Eh usado pela logica de deduplicacao para decidir se deve pular
+        diagnosticos duplicados (PR open/merged) ou permitir re-diagnostico
+        (PR closed sem merge).
+        """
+        return "unknown"

@@ -75,6 +75,7 @@ def create_observer():
                     "failed_tasks": "[]",
                     "llm_provider": "anthropic",
                     "git_provider": "github",
+                    "dedup_window_hours": "24",
                 },
             ),
             timeout_seconds=900,

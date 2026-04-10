@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from pipeline_lib.agent.observer.providers import register_git_provider
@@ -11,6 +12,8 @@ from pipeline_lib.agent.observer.providers.base import (
     PRResult,
     with_retry,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @register_git_provider("github")
@@ -123,3 +126,29 @@ class GitHubProvider(GitProvider):
             pr_number=pr.number,
             branch_name=branch_name,
         )
+
+    def get_pr_status(self, pr_number: int) -> str:
+        """Consulta o GitHub para saber se um PR esta open, merged ou closed.
+
+        Usado pela logica de deduplicacao do Observer. Retorna 'unknown' em
+        caso de erro para que o dedup adote o comportamento safe (skip).
+        """
+        if not pr_number:
+            return "unknown"
+        try:
+            # Lazy import: optional dependency
+            from github import Auth, Github
+        except ImportError:
+            return "unknown"
+
+        try:
+            gh = Github(auth=Auth.Token(self._token))
+            repo = gh.get_repo(self._repo_name)
+            pr = repo.get_pull(int(pr_number))
+            if pr.merged:
+                return "merged"
+            # pr.state eh 'open' ou 'closed' no GitHub
+            return pr.state or "unknown"
+        except Exception as exc:
+            logger.warning(f"Falha ao consultar PR #{pr_number}: {exc}")
+            return "unknown"

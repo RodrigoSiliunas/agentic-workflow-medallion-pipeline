@@ -1,3 +1,9 @@
+from pipeline_lib.agent.observer.dedup import (
+    DuplicateCheckResult as DuplicateCheckResult,
+)
+from pipeline_lib.agent.observer.dedup import (
+    check_duplicate as check_duplicate,
+)
 from pipeline_lib.agent.observer.persistence import (
     DiagnosticRecord as DiagnosticRecord,
 )
