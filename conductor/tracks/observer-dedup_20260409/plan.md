@@ -3,7 +3,7 @@
 **Track ID:** observer-dedup_20260409
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-09
-**Status:** Pending
+**Status:** Complete
 
 ## Overview
 
@@ -13,36 +13,36 @@ Implementar cache de diagnosticos via tabela Delta para evitar PRs duplicados.
 
 ### Tasks
 
-- [ ] Task 1.1: Criar helper `check_duplicate()` em `pipeline_lib/agent/observer/dedup.py` — consulta `observer.diagnostics` por `error_hash` dentro da janela
-- [ ] Task 1.2: Implementar logica de decisao: skip se PR aberto/mergeado, re-diagnosticar se PR fechado sem merge
-- [ ] Task 1.3: Adicionar widget `dedup_window_hours` ao notebook Observer (default: 24)
-- [ ] Task 1.4: Testes unitarios para logica de dedup (mock da tabela)
+- [x] Task 1.1: Criar helper `check_duplicate()` em `pipeline_lib/agent/observer/dedup.py` com `DuplicateCheckResult`; adiciona tambem `ObserverDiagnosticsStore.find_recent_successful()` (query parametrizada com validacao de formato SHA-256)
+- [x] Task 1.2: Logica de decisao: skip se PR `open`/`merged`; re-diagnostica se `closed` sem merge; safe default (skip) se status `unknown` ou excecao na API. Implementado via `GitProvider.get_pr_status()` opcional + override no `GitHubProvider`
+- [x] Task 1.3: Widget `dedup_window_hours` no notebook (default: 24), propagado tambem via `create_observer_workflow.py`
+- [x] Task 1.4: 14 testes unitarios em `test_dedup.py` cobrindo cache miss, cache hit (sem git, PR open/merged/closed/unknown), excecoes e janela customizada
 
 ### Verification
 
-- [ ] Cache hit retorna diagnostico anterior
-- [ ] Cache miss permite novo diagnostico
-- [ ] PR fechado sem merge permite re-diagnostico
+- [x] Cache hit retorna diagnostico anterior (`previous_pr_open` / `previous_pr_merged`)
+- [x] Cache miss permite novo diagnostico (`no_previous_success`)
+- [x] PR fechado sem merge permite re-diagnostico (`previous_pr_closed_without_merge`)
 
 ## Phase 2: Integracao
 
 ### Tasks
 
-- [ ] Task 2.1: Integrar `check_duplicate()` no notebook `observer/collect_and_fix.py` — antes de chamar LLM
-- [ ] Task 2.2: Logar cache hit/miss com metricas
-- [ ] Task 2.3: Testar com chaos mode — executar 2x o mesmo erro, validar que segundo nao gera PR
+- [x] Task 2.1: Integrar `check_duplicate()` no notebook `observer/collect_and_fix.py` antes de chamar o LLM
+- [x] Task 2.2: Logar cache hit/miss no output; registrar skips na tabela com `status='duplicate_skip'` para metricas
+- [x] Task 2.3: Validar via chaos mode — dois chaos runs com mesmo erro validam dedup; chaos run com erro diferente valida cache miss
 
 ### Verification
 
-- [ ] Segundo chaos test com mesmo erro NAO gera PR duplicado
-- [ ] Log mostra "Diagnostico duplicado — skip"
-- [ ] Metricas de hit/miss registradas na tabela
+- [x] Segundo chaos test com mesmo erro NAO gera PR duplicado (run 398124681222072 -> observer 230868986718635 -> cache HIT previous_pr_open, cost=$0.00)
+- [x] Log mostra "Cache HIT (previous_pr_open)" / "Cache MISS (no_previous_success)"
+- [x] Metricas de hit/miss registradas na tabela (`status='duplicate_skip'` e `status='success'`)
 
 ## Final Verification
 
-- [ ] Acceptance criteria atendidos
-- [ ] Testes passando
-- [ ] Commit com conventional commits
+- [x] Acceptance criteria atendidos
+- [x] 133 testes passando, ruff limpo
+- [x] Commit com conventional commits (b7ded33)
 
 ---
 
