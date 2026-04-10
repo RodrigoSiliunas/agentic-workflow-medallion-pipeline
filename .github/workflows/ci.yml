@@ -27,6 +27,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install ruff pytest pydantic pyyaml databricks-sdk
+          # Providers opcionais — o CI roda testes que importam desses modulos
+          pip install anthropic PyGithub openai
 
       - name: Lint
         run: ruff check observer scripts tests
@@ -77,7 +79,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install ruff pytest pydantic pyyaml databricks-sdk
+        run: |
+          pip install ruff pytest pydantic pyyaml databricks-sdk
+          pip install anthropic PyGithub openai
 
       - name: Observer lint + test
         working-directory: observer-framework
