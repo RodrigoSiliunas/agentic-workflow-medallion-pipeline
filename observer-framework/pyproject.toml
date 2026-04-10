@@ -1,0 +1,92 @@
+[project]
+name = "observer"
+version = "0.8.0"
+description = "Framework autonomo de auto-diagnostico e correcao para workflows Databricks via LLM + PR no GitHub"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Rodrigo Siliunas" },
+]
+keywords = [
+    "databricks",
+    "observability",
+    "llm",
+    "agent",
+    "workflow",
+    "autonomous",
+    "diagnostics",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+]
+
+dependencies = [
+    # Core — sempre necessarias
+    "pydantic>=1.10",              # Compat V1 (Databricks Runtime) e V2 (dev local)
+    "pyyaml>=6.0",
+    "databricks-sdk>=0.20",
+]
+
+[project.optional-dependencies]
+# LLM providers — instale o(s) que voce pretende usar
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.50"]
+
+# Git providers
+github = ["PyGithub>=2.3"]
+
+# Dev tools
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+# Meta: tudo junto
+all = [
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "PyGithub>=2.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/RodrigoSiliunas/observer"
+Documentation = "https://github.com/RodrigoSiliunas/observer/blob/main/README.md"
+Repository = "https://github.com/RodrigoSiliunas/observer"
+Issues = "https://github.com/RodrigoSiliunas/observer/issues"
+Changelog = "https://github.com/RodrigoSiliunas/observer/blob/main/CHANGELOG.md"
+
+[project.scripts]
+observer-update-pr-feedback = "observer.scripts.update_pr_feedback:main"
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["observer*"]
+exclude = ["tests*", "docs*", "templates*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"observer/providers/*.py" = ["E501"]  # LLM prompts sao longos por natureza
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
