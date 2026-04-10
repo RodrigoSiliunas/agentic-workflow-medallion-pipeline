@@ -76,6 +76,7 @@ def create_observer():
                     "llm_provider": "anthropic",
                     "git_provider": "github",
                     "dedup_window_hours": "24",
+                    "dry_run": "false",
                 },
             ),
             timeout_seconds=900,

@@ -49,6 +49,7 @@ dbutils.widgets.text("failed_tasks", "[]", "Tasks com falha em JSON")
 dbutils.widgets.text("llm_provider", "anthropic", "LLM Provider")
 dbutils.widgets.text("git_provider", "github", "Git Provider")
 dbutils.widgets.text("dedup_window_hours", "24", "Dedup Window (hours)")
+dbutils.widgets.dropdown("dry_run", "false", ["false", "true"], "Dry Run Mode")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")
@@ -61,6 +62,8 @@ try:
     DEDUP_WINDOW_HOURS = int(dbutils.widgets.get("dedup_window_hours") or "24")
 except ValueError:
     DEDUP_WINDOW_HOURS = 24
+
+DRY_RUN = dbutils.widgets.get("dry_run").strip().lower() == "true"
 
 os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
 os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
@@ -78,6 +81,8 @@ observer = WorkflowObserver(w)
 log = []
 
 log.append(f"Observer iniciado: {datetime.now().isoformat()}")
+if DRY_RUN:
+    log.append("MODO: DRY-RUN (nao cria PRs, apenas loga e persiste diagnostico)")
 
 # Garante que o schema + tabela de diagnosticos existem (idempotente)
 store = ObserverDiagnosticsStore(spark, catalog=CATALOG)
@@ -233,7 +238,18 @@ for failure in failures:
         log.append(f"Confianca: {diagnosis.confidence:.0%}")
 
         pr_result = None
-        if diagnosis.fixed_code and diagnosis.file_to_fix:
+        if not (diagnosis.fixed_code and diagnosis.file_to_fix):
+            log.append("LLM nao gerou fix")
+            final_status = "no_fix_proposed"
+        elif DRY_RUN:
+            # Dry-run: loga detalhes e pula a criacao do PR
+            log.append(f"DRY-RUN: nao cria PR para {diagnosis.file_to_fix}")
+            preview = (diagnosis.fixed_code or "")[:300]
+            log.append(f"  Fix preview: {preview}...")
+            if diagnosis.root_cause:
+                log.append(f"  Root cause: {diagnosis.root_cause[:200]}")
+            final_status = "dry_run"
+        else:
             log.append(f"Criando PR para {diagnosis.file_to_fix}...")
             try:
                 pr_result = git.create_fix_pr(diagnosis, ctx["failed_task"])
@@ -250,9 +266,6 @@ for failure in failures:
             except Exception as e:
                 log.append(f"ERRO PR: {e}")
                 final_status = "pr_failed"
-        else:
-            log.append("LLM nao gerou fix")
-            final_status = "no_fix_proposed"
 
         persist_diagnostic(
             failure,
