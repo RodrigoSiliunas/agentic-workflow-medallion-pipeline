@@ -234,7 +234,11 @@ def load_observer_config(
             logger.info(f"Config file {path} nao encontrado — usando defaults")
 
     if overrides:
-        valid_fields = set(ObserverConfig.model_fields.keys())
+        # Compat Pydantic V1 (Databricks Runtime) e V2 (dev local)
+        _fields = getattr(ObserverConfig, "model_fields", None) or getattr(
+            ObserverConfig, "__fields__", {}
+        )
+        valid_fields = set(_fields.keys())
         for key, value in overrides.items():
             if key not in valid_fields:
                 logger.warning(f"override '{key}' nao eh campo valido de ObserverConfig")
