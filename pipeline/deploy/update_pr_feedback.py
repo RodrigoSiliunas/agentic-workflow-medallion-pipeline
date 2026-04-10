@@ -91,7 +91,7 @@ def update_pr_feedback(
     result = workspace.statement_execution.execute_statement(
         warehouse_id=warehouse_id,
         statement=update_sql,
-        wait_timeout="60s",
+        wait_timeout="50s",
     )
     if result.status.error:
         print(f"ERRO ao atualizar: {result.status.error.message}")
