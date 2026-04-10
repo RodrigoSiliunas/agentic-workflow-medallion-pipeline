@@ -19,5 +19,7 @@
 | [x] | observer-multifile_20260409 | Observer — Multi-File Fixes | 2026-04-09 | 2026-04-10 |
 | [x] | observer-feedback_20260409 | Observer — Feedback Loop | 2026-04-09 | 2026-04-10 |
 | [x] | pipeline-bronze-oom_20260410 | Pipeline — Fix OOM em bronze_ingestion | 2026-04-10 | 2026-04-10 |
+| [ ] | platform-design-namastex_20260410 | Platform — Design system Namastex.ai | 2026-04-10 | 2026-04-10 |
+| [ ] | platform-chat-shell_20260410 | Platform — Chat shell estilo Claude.ai | 2026-04-10 | 2026-04-10 |
 
 <!-- Tracks registered by /conductor:new-track -->

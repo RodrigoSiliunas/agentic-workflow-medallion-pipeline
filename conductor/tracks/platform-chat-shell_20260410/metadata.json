@@ -1,0 +1,19 @@
+{
+  "id": "platform-chat-shell_20260410",
+  "title": "Platform - Chat shell estilo Claude.ai",
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-04-10",
+  "updated": "2026-04-10",
+  "current_phase": 0,
+  "current_task": "",
+  "phases": {
+    "total": 4,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 27,
+    "completed": 0
+  },
+  "commits": []
+}
