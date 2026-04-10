@@ -3,7 +3,7 @@
 **Track ID:** observer-validation_20260409
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-09
-**Status:** Pending
+**Status:** Complete
 
 ## Overview
 
@@ -13,37 +13,37 @@ Validar fix proposto pelo LLM antes de criar PR, usando ruff + pytest ou fallbac
 
 ### Tasks
 
-- [ ] Task 1.1: Criar `pipeline_lib/agent/observer/validator.py` com `validate_fix(code: str, file_path: str) -> ValidationResult`
-- [ ] Task 1.2: Implementar validacao sintatica (`compile()` + AST) como base
-- [ ] Task 1.3: Implementar validacao ruff (subprocess, se disponivel)
-- [ ] Task 1.4: Implementar validacao pytest (subprocess, testes relevantes ao arquivo modificado)
-- [ ] Task 1.5: Testes unitarios para validator (fix valido, fix com syntax error, fix com lint error)
+- [x] Task 1.1: Criar `pipeline_lib/agent/observer/validator.py` com `validate_fix(code, file_path) -> ValidationResult`
+- [x] Task 1.2: Validacao sintatica via `compile()` + `ast.parse()` (sempre roda). Notebooks Databricks com magics passam porque sao comentarios para o parser Python
+- [x] Task 1.3: Validacao `ruff check --output-format=json` via subprocess, apenas para arquivos fora de `notebooks/` (consistente com pyproject.toml). Graceful skip se ruff nao esta no PATH
+- [ ] Task 1.4: Pytest fica como follow-up — requer sandbox do pipeline_lib para executar testes com o fix aplicado sem afetar estado. Documentado na spec.md como out-of-scope
+- [x] Task 1.5: 25 testes unitarios em `test_validator.py` (syntax valido/invalido, notebooks com magics, should_run_ruff, parse_ruff_json, validate_fix integrado com mock)
 
 ### Verification
 
-- [ ] Fix valido passa todas as validacoes
-- [ ] Fix com syntax error e rejeitado
-- [ ] Fix com lint error e rejeitado
-- [ ] Fallback funciona quando ruff/pytest nao instalados
+- [x] Fix valido passa (coberto por testes e run 599562714599963 real)
+- [x] Fix com syntax error e rejeitado (teste `test_syntax_error_rejected`)
+- [x] Fix com ruff errors e rejeitado (teste `test_pipeline_lib_with_ruff_errors`)
+- [x] Fallback funciona quando ruff nao instalado (`_run_ruff` retorna None)
 
 ## Phase 2: Integracao
 
 ### Tasks
 
-- [ ] Task 2.1: Integrar `validate_fix()` no notebook Observer — entre diagnostico e criacao de PR
-- [ ] Task 2.2: Se validacao falha, logar detalhes e nao criar PR
+- [x] Task 2.1: `collect_and_fix.py` chama `validate_fix()` apos diagnose e antes de create_fix_pr
+- [x] Task 2.2: Se `validation.valid=False`, seta `final_status='validation_failed'`, loga primeiros 5 erros e persiste sem criar PR
 
 ### Verification
 
-- [ ] PR so e criado se fix passa validacao
-- [ ] Fix invalido registrado como `status="validation_failed"`
-- [ ] Log inclui output do ruff/pytest
+- [x] Fluxo de decisao atualizado: no_fix -> low_confidence -> validation -> dry_run -> success
+- [x] Run 599562714599963: `validation: checks=['syntax'], valid=True` -> prossegue para dry_run -> `status=dry_run`, cost=$0.2506
+- [x] Novo status `validation_failed` adicionado as possibilidades persistidas na tabela
 
 ## Final Verification
 
-- [ ] Acceptance criteria atendidos
-- [ ] Testes passando
-- [ ] Commit com conventional commits
+- [x] Acceptance criteria atendidos
+- [x] 179 testes passando (25 novos), ruff limpo
+- [x] Commit com conventional commits (9f88b4e)
 
 ---
 
