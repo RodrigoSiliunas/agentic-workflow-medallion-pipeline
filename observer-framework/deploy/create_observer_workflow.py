@@ -45,9 +45,11 @@ def create_observer():
     user = w.current_user.me()
     print(f"Conectado como: {user.user_name}")
 
+    # Path do Databricks Repo — notebooks do Observer vivem em
+    # observer-framework/notebooks/ (pacote reusavel).
     repo_base = (
         f"/Repos/{user.user_name}"
-        "/agentic-workflow-medallion-pipeline/pipeline"
+        "/agentic-workflow-medallion-pipeline/observer-framework"
     )
 
     cluster_kwargs = {}
@@ -63,9 +65,7 @@ def create_observer():
             ),
             **cluster_kwargs,
             notebook_task=NotebookTask(
-                notebook_path=(
-                    f"{repo_base}/notebooks/observer/collect_and_fix"
-                ),
+                notebook_path=f"{repo_base}/notebooks/collect_and_fix",
                 base_parameters={
                     "catalog": CATALOG,
                     "scope": SECRET_SCOPE,

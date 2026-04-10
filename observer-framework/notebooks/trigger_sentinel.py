@@ -44,12 +44,14 @@ dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
 dbutils.widgets.text("observer_job_id", "", "Observer Job ID")
 dbutils.widgets.text("llm_provider", "anthropic", "LLM Provider")
 dbutils.widgets.text("git_provider", "github", "Git Provider")
+dbutils.widgets.text("observer_config_path", "", "Observer config YAML path")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")
 OBSERVER_JOB_ID = dbutils.widgets.get("observer_job_id").strip()
 LLM_PROVIDER = dbutils.widgets.get("llm_provider").strip() or "anthropic"
 GIT_PROVIDER = dbutils.widgets.get("git_provider").strip() or "github"
+OBSERVER_CONFIG_PATH = dbutils.widgets.get("observer_config_path").strip()
 
 # COMMAND ----------
 
@@ -135,6 +137,11 @@ notebook_params = build_observer_notebook_params(
     llm_provider=LLM_PROVIDER,
     git_provider=GIT_PROVIDER,
 )
+
+# Repassa o path do observer_config.yaml do pipeline (quando fornecido),
+# para que o Observer carregue a config especifica desse deploy.
+if OBSERVER_CONFIG_PATH:
+    notebook_params["config_path"] = OBSERVER_CONFIG_PATH
 
 observer_run = w.jobs.run_now(
     job_id=observer_job_id,

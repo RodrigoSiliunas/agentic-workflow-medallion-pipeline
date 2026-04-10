@@ -229,6 +229,11 @@ def create_workflow():
                     "observer_job_id": observer_job_id,
                     "llm_provider": "anthropic",
                     "git_provider": "github",
+                    # Path absoluto do observer_config.yaml deste pipeline,
+                    # repassado pelo sentinel ao Observer via notebook_params.
+                    "observer_config_path": (
+                        f"/Workspace{pipeline_path}/observer_config.yaml"
+                    ),
                 },
             ),
             max_retries=0,
