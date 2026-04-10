@@ -7,8 +7,8 @@ Uso:
   python deploy/trigger_chaos.py validation_strict    # threshold impossivel
 
 O chaos mode injeta uma falha controlada na camada escolhida.
-Fluxo esperado: task com erro -> agent_post faz rollback -> observer_trigger
-dispara o Observer Agent -> cria PR para dev.
+Fluxo esperado: task com erro -> observer_trigger dispara o Observer Agent ->
+Observer coleta contexto, chama Claude Opus e cria PR para dev.
 """
 
 import os

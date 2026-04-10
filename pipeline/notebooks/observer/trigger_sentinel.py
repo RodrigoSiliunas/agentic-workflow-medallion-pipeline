@@ -5,7 +5,7 @@
 # MAGIC upstream e dispara o job do Observer automaticamente com o `source_run_id`
 # MAGIC e metadados suficientes para diagnostico.
 # MAGIC
-# MAGIC **Camada:** Observer | **Dependencia:** tasks do workflow + `agent_post`
+# MAGIC **Camada:** Observer | **Dependencia:** todas as tasks do workflow ETL
 # MAGIC **run_if:** `AT_LEAST_ONE_FAILED`
 # MAGIC
 # MAGIC _Ultima atualizacao: 2026-04-09_

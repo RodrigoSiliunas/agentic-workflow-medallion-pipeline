@@ -159,7 +159,7 @@ logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s")
 # COMMAND ----------
 
 # DBTITLE 1,Metricas e Task Values
-# Seta task values para o agent_post coletar
+# Seta task values (disponiveis para o Observer em caso de falha)
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
     dbutils.jobs.taskValues.set(key="rows_input", value=bronze_count)

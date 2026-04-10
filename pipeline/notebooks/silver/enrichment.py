@@ -113,7 +113,7 @@ logger.info(f"Silver conversations_enriched: {conv_count} conversas em {duration
 # COMMAND ----------
 
 # DBTITLE 1,Metricas e Task Values
-# Seta task values para o agent_post coletar
+# Seta task values (disponiveis para o Observer em caso de falha)
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
     dbutils.jobs.taskValues.set(key="rows_output", value=conv_count)

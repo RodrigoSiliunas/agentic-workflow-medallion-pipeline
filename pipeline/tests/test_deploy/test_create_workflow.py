@@ -67,10 +67,10 @@ def test_create_workflow_creates_job_when_missing(monkeypatch):
     assert job_id == 777105089901314
     assert jobs_api.reset_calls == []
     tasks = {task["task_key"]: task for task in jobs_api.created_payload["tasks"]}
-    assert "agent_pre" in tasks
-    assert "agent_post" in tasks
+    assert "pre_check" in tasks
+    assert "agent_post" not in tasks
+    assert "agent_pre" not in tasks
     assert "observer_trigger" in tasks
-    assert tasks["agent_post"]["run_if"] == RunIf.ALL_DONE.value
     assert tasks["observer_trigger"]["run_if"] == RunIf.AT_LEAST_ONE_FAILED.value
     assert tasks["observer_trigger"]["notebook_task"]["base_parameters"]["observer_job_id"] == (
         "848172838529828"
@@ -101,6 +101,17 @@ def test_create_workflow_updates_latest_existing_job(monkeypatch):
     reset_job_id, job_settings = jobs_api.reset_calls[0]
     assert reset_job_id == 222
     tasks = {task.task_key: task for task in job_settings.tasks}
-    assert [dep.task_key for dep in tasks["bronze_ingestion"].depends_on] == ["agent_pre"]
-    assert [dep.task_key for dep in tasks["agent_post"].depends_on] == ["quality_validation"]
-    assert "agent_post" in [dep.task_key for dep in tasks["observer_trigger"].depends_on]
+    assert [dep.task_key for dep in tasks["bronze_ingestion"].depends_on] == ["pre_check"]
+    # observer_trigger depende de todas as tasks core do ETL (sem agent_post)
+    observer_deps = sorted(dep.task_key for dep in tasks["observer_trigger"].depends_on)
+    assert observer_deps == sorted([
+        "pre_check",
+        "bronze_ingestion",
+        "silver_dedup",
+        "silver_entities",
+        "silver_enrichment",
+        "gold_analytics",
+        "quality_validation",
+    ])
+    assert "agent_post" not in tasks
+    assert "agent_pre" not in tasks

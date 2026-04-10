@@ -1,8 +1,11 @@
 """Cria o Databricks Workflow ETL Medallion com trigger automatico do Observer.
 
-Pipeline puro de dados: Agent Pre > Bronze > Silver > Gold > Validation > Agent Post.
-O Observer Agent continua separado, mas passa a ser disparado automaticamente por uma
-task sentinel quando houver falha real no workflow.
+Pipeline puro de dados: Pre-Check > Bronze > Silver > Gold > Validation.
+O Observer Agent continua separado e eh disparado automaticamente por uma task
+sentinel (`observer_trigger`) quando houver falha real no workflow.
+
+Overwrite idempotente em cada camada — nao ha rollback Delta, em caso de falha
+o Observer entra em acao para diagnosticar e propor correcao via PR no GitHub.
 
 Uso: python deploy/create_workflow.py
 
@@ -90,7 +93,7 @@ def create_workflow():
         print("  Compute: serverless")
 
     core_dependencies = [
-        "agent_pre",
+        "pre_check",
         "bronze_ingestion",
         "silver_dedup",
         "silver_entities",
@@ -101,24 +104,24 @@ def create_workflow():
 
     tasks = [
         Task(
-            task_key="agent_pre",
-            description="Fingerprint do S3 e captura de versoes Delta",
+            task_key="pre_check",
+            description="Pre-flight check: propaga run_id e chaos_mode",
             **cluster_kwargs,
             notebook_task=NotebookTask(
-                notebook_path=nb("agent_pre"),
+                notebook_path=nb("pre_check"),
                 base_parameters={
                     **shared_params,
                     "bronze_prefix": "bronze/",
                 },
             ),
             max_retries=1,
-            timeout_seconds=300,
+            timeout_seconds=900,
         ),
         Task(
             task_key="bronze_ingestion",
             description="S3 parquet -> Delta bronze.conversations",
             depends_on=[
-                TaskDependency(task_key="agent_pre"),
+                TaskDependency(task_key="pre_check"),
             ],
             **cluster_kwargs,
             notebook_task=NotebookTask(
@@ -203,26 +206,10 @@ def create_workflow():
             timeout_seconds=300,
         ),
         Task(
-            task_key="agent_post",
-            description="Rollback Delta e notificacoes de recovery",
-            depends_on=[
-                TaskDependency(task_key="quality_validation"),
-            ],
-            run_if=RunIf.ALL_DONE,
-            **cluster_kwargs,
-            notebook_task=NotebookTask(
-                notebook_path=nb("agent_post"),
-                base_parameters=shared_params,
-            ),
-            max_retries=0,
-            timeout_seconds=600,
-        ),
-        Task(
             task_key="observer_trigger",
             description="Dispara o workflow_observer_agent apos falha real no ETL",
             depends_on=[
-                *[TaskDependency(task_key=task_key) for task_key in core_dependencies],
-                TaskDependency(task_key="agent_post"),
+                TaskDependency(task_key=task_key) for task_key in core_dependencies
             ],
             run_if=RunIf.AT_LEAST_ONE_FAILED,
             **cluster_kwargs,
@@ -244,10 +231,9 @@ def create_workflow():
     job_settings = JobSettings(
         name=WORKFLOW_NAME,
         description=(
-            "Pipeline ETL Medallion: Agent Pre > Bronze > Silver > Gold > "
-            "Validation > Agent Post.\n"
-            "Overwrite idempotente. Delta atomicity por task.\n"
-            "Observer Agent disparado automaticamente por task sentinel."
+            "Pipeline ETL Medallion: Pre-Check > Bronze > Silver > Gold > Validation.\n"
+            "Overwrite idempotente em cada camada. Sem rollback Delta.\n"
+            "Observer Agent disparado automaticamente por task sentinel em caso de falha."
         ),
         tasks=tasks,
         tags={

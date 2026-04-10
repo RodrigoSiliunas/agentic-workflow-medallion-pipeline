@@ -196,7 +196,7 @@ result = {
 
 logger.info(f"Validation: {status} ({len(errors)} errors, {len(warnings)} warnings) em {duration}s")
 
-# Seta task values para o agent_post coletar
+# Seta task values (disponiveis para o Observer em caso de falha)
 try:
     dbutils.jobs.taskValues.set(key="status", value=status)
     dbutils.jobs.taskValues.set(key="errors", value=str(errors) if errors else "none")

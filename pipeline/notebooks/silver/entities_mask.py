@@ -217,7 +217,7 @@ duration = round(time.time() - start_time, 2)
 
 logger.info(f"Silver leads_profile: {leads_count} leads em {duration}s")
 
-# Seta task values para o agent_post
+# Seta task values (disponiveis para o Observer em caso de falha)
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
     dbutils.jobs.taskValues.set(key="rows_output", value=leads_count)

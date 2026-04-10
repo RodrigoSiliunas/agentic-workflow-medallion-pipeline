@@ -57,9 +57,9 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 /
 ├── pipeline/                    # Pipeline Medallion (Databricks + AWS)
 │   ├── notebooks/               # Databricks notebooks (.py source format)
-│   │   ├── agent_pre.py         # Task 0: pre-flight checks, fingerprint S3
+│   │   ├── pre_check.py         # Task 0: pre-flight (propaga run_id + chaos_mode)
 │   │   ├── bronze/
-│   │   │   └── ingest.py        # Task 1: S3 parquet → Delta bronze
+│   │   │   └── ingest.py        # Task 1: S3 parquet → Delta bronze (overwrite)
 │   │   ├── silver/
 │   │   │   ├── dedup_clean.py   # Task 2: dedup + normalização
 │   │   │   ├── entities_mask.py # Task 3: extração + mascaramento PII
@@ -72,10 +72,9 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 │   │   │   └── ...              # +9 notebooks analíticos
 │   │   ├── validation/
 │   │   │   └── checks.py        # Task 6: quality gates
-│   │   ├── agent_post.py        # Task 7: rollback Delta + handoff para o sentinel
 │   │   └── observer/
 │   │       ├── collect_and_fix.py  # Notebook do Observer Agent
-│   │       └── trigger_sentinel.py # Task final: dispara o Observer automaticamente
+│   │       └── trigger_sentinel.py # Task sentinel: dispara o Observer em caso de falha
 │   │
 │   ├── pipeline_lib/            # Biblioteca Python compartilhada
 │   │   ├── agent/
@@ -137,7 +136,7 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 S3 (Parquet bruto)
     │
     ▼
-[agent_pre] ─── Verifica fingerprint S3, captura versoes Delta para rollback
+[pre_check] ──── Pre-flight: propaga run_id e chaos_mode via task values
     │
     ▼
 [Bronze] ─────── S3Lake.read_parquet() → schema validation → Delta overwrite
@@ -152,30 +151,26 @@ S3 (Parquet bruto)
 [Validation] ──── Row counts, null rates, consistency checks
     │
     ▼
-[agent_post] ──── Coleta resultados → rollback se falhou → handoff para sentinel
-    │
+[observer_trigger]* ─── *run_if: AT_LEAST_ONE_FAILED — so executa se houver falha
+    │                     dispara o workflow_observer_agent com o source_run_id
     ▼
-[observer_trigger] ──── dispara Observer Agent automaticamente
-    │
-    ▼
-[Observer] ─────── (Job separado) Claude API diagnostics → GitHub PR
+[Observer Agent] ─── (Job separado) Claude API diagnostics → GitHub PR
 ```
 
 ### Workflow Databricks (Job ID: 777105089901314)
 
-9 tasks sequenciais no job ETL principal:
+8 tasks no job ETL principal (7 ETL + 1 sentinel condicional):
 
 | Task | Notebook | Depends On |
 |------|----------|------------|
-| `agent_pre` | `agent_pre.py` | — |
-| `bronze_ingestion` | `bronze/ingest.py` | agent_pre |
+| `pre_check` | `pre_check.py` | — |
+| `bronze_ingestion` | `bronze/ingest.py` | pre_check |
 | `silver_dedup` | `silver/dedup_clean.py` | bronze_ingestion |
 | `silver_entities` | `silver/entities_mask.py` | silver_dedup |
-| `silver_enrichment` | `silver/enrichment.py` | silver_entities |
-| `gold_analytics` | `gold/analytics.py` | silver_enrichment |
+| `silver_enrichment` | `silver/enrichment.py` | silver_dedup |
+| `gold_analytics` | `gold/analytics.py` | silver_entities + silver_enrichment |
 | `quality_validation` | `validation/checks.py` | gold_analytics |
-| `agent_post` | `agent_post.py` | quality_validation (run_if: ALL_DONE) |
-| `observer_trigger` | `observer/trigger_sentinel.py` | agent_post + tasks upstream (run_if: AT_LEAST_ONE_FAILED) |
+| `observer_trigger` | `observer/trigger_sentinel.py` | todas as tasks (run_if: AT_LEAST_ONE_FAILED) |
 
 **Shared Parameters (widgets):**
 - `catalog` = "medallion"
@@ -202,7 +197,7 @@ dbutils.jobs.taskValues.set(key="chaos_mode", value="off")
 
 # Ler (no notebook consumidor)
 chaos_mode = dbutils.jobs.taskValues.get(
-    taskKey="agent_pre", key="chaos_mode", default="off"
+    taskKey="pre_check", key="chaos_mode", default="off"
 )
 ```
 
@@ -229,20 +224,13 @@ chaos_mode = dbutils.jobs.taskValues.get(
 | gold | negotiation_complexity | Complexidade de negociacao |
 | gold | first_contact_resolution | Resolucao no primeiro contato |
 
-### Atomicidade e Rollback
+### Atomicidade (sem rollback)
 
 - Cada notebook faz `df.write.mode("overwrite")` — atomico via Delta Lake
-- `agent_pre` captura `deltaTable.history(1)` de TODAS as tabelas antes da execucao
-- Se pipeline falha, `agent_post` faz `RESTORE TABLE ... TO VERSION AS OF {v}` para cada tabela
-- Depois do rollback, `observer_trigger` dispara o Observer com `source_run_id`, `source_job_id`, `source_job_name` e `failed_tasks`
-- Mapeamento task → tabela definido em `agent_post.py`:
-  ```python
-  ROLLBACK_MAP = {
-      "bronze_ingestion": ["bronze.conversations"],
-      "silver_dedup": ["silver.messages_clean", "silver.leads_profile"],
-      ...
-  }
-  ```
+- **Sem rollback Delta** — como eh overwrite idempotente, rodar de novo resolve qualquer falha parcial
+- Em caso de falha, `observer_trigger` dispara o Observer Agent com `source_run_id`, `source_job_id`, `source_job_name` e `failed_tasks`
+- O Observer analisa o codigo do notebook que falhou, propoe correcao via Claude Opus e abre PR no GitHub
+- **Filosofia**: ETL = dados, Observer = inteligencia. Nao misturar logica de agente no pipeline.
 
 ### Gold Analytics - Paralelismo
 
@@ -478,7 +466,7 @@ Cada notebook ETL pode receber chaos mode para teste:
 chaos_mode = ""
 try:
     chaos_mode = dbutils.jobs.taskValues.get(
-        taskKey="agent_pre", key="chaos_mode", default="off"
+        taskKey="pre_check", key="chaos_mode", default="off"
     )
 except Exception:
     chaos_mode = "off"
@@ -698,7 +686,7 @@ Fluxo do agente:
 ### Objetivo
 
 Injetar bugs controlados para testar que o agente AI funciona end-to-end:
-deteccao → rollback Delta → Claude API diagnostics → GitHub PR para dev.
+deteccao → Claude API diagnostics → GitHub PR para dev.
 
 ### 4 Cenarios
 
@@ -723,21 +711,18 @@ python pipeline/deploy/trigger_chaos.py bronze_schema
 
 ```
 1. trigger_chaos.py dispara pipeline com chaos_mode=X
-2. agent_pre → SUCCESS (propaga chaos_mode via task value)
+2. pre_check → SUCCESS (propaga chaos_mode via task value)
 3. Notebook alvo → FAILED (bug injetado)
 4. Notebooks downstream → UPSTREAM_FAILED
-5. agent_post:
-   a. Detecta falha
-   b. Rollback Delta (restaura versao anterior)
-6. observer_trigger:
+5. observer_trigger (run_if: AT_LEAST_ONE_FAILED):
    a. Recebe o parent run do workflow
-   b. Identifica as tasks que falharam de verdade
-   c. Trigger Observer Agent
-7. Observer:
+   b. Identifica as tasks que falharam de verdade (ignora UPSTREAM_FAILED em cascata)
+   c. Dispara o workflow_observer_agent com source_run_id + failed_tasks
+6. Observer Agent (job separado):
    a. Coleta codigo do notebook + erro + schema
    b. Claude Opus analisa e propoe fix
    c. GitHub PR criado em branch fix/agent-auto-*
-8. Verificar: PR no GitHub? Diagnostico correto? Fix faz sentido?
+7. Verificar: PR no GitHub? Diagnostico correto? Fix faz sentido?
 ```
 
 ---

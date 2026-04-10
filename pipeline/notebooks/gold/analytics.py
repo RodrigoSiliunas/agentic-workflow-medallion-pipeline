@@ -107,8 +107,8 @@ for phase in phases:
 # COMMAND ----------
 
 # DBTITLE 1,Resumo da Execucao
-# Calcula estatisticas de sucesso/falha
-total = len(notebooks)
+# Calcula estatisticas de sucesso/falha (total = soma de notebooks de todas as fases)
+total = sum(len(phase["notebooks"]) for phase in phases)
 succeeded = sum(1 for v in results.values() if v.startswith("SUCCESS"))
 failed = total - succeeded
 
@@ -117,7 +117,7 @@ duration = round(time.time() - start_time, 2)
 summary = f"{succeeded}/{total} notebooks OK, {failed} falhas, {duration}s"
 logger.info(summary)
 
-# Seta task values para o agent_post coletar
+# Seta task values (disponiveis para o Observer em caso de falha)
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS" if failed == 0 else "PARTIAL")
     dbutils.jobs.taskValues.set(key="succeeded", value=succeeded)

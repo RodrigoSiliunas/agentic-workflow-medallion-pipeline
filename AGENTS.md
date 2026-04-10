@@ -8,15 +8,15 @@ Para contexto completo do projeto, consulte `CODEX_MANUAL.md`.
 ```
 pipeline/                        — Pipeline Medallion (Databricks + AWS)
   notebooks/                     — Databricks notebooks (.py source format)
-    agent_pre.py                 — Task 0: fingerprint S3, captura versões Delta
-    bronze/ingest.py             — Task 1: S3 parquet → Delta bronze
+    pre_check.py                 — Task 0: pre-flight (propaga run_id + chaos_mode)
+    bronze/ingest.py             — Task 1: S3 parquet → Delta bronze (overwrite)
     silver/dedup_clean.py        — Task 2: dedup + normalização
     silver/entities_mask.py      — Task 3: extração entidades + mascaramento PII
     silver/enrichment.py         — Task 4: métricas conversacionais
     gold/analytics.py            — Task 5: orquestrador (12 notebooks em paralelo)
     gold/*.py                    — 12 notebooks analíticos (funnel, sentiment, etc.)
     validation/checks.py         — Task 6: quality gates (row counts, nulls, consistency)
-    agent_post.py                — Task 7: rollback Delta + trigger Observer
+    observer/trigger_sentinel.py — Task sentinel: dispara Observer em caso de falha
     observer/collect_and_fix.py  — Notebook do Observer Agent (job separado)
   pipeline_lib/                  — Biblioteca Python compartilhada
     agent/observer/              — Framework Observer Agent (factory pattern)
@@ -47,13 +47,14 @@ Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsAp
 ### Arquitetura ETL
 
 O pipeline ETL é **puro** — zero lógica de agente/AI nos notebooks de dados.
+Cada camada faz **overwrite idempotente** — Delta Lake garante atomicidade, sem rollback.
 O Observer Agent é um **framework genérico separado** que funciona com qualquer workflow.
 
 ```
-S3 (Parquet) → [agent_pre] → [Bronze] → [Silver x3] → [Gold x12] → [Validation] → [agent_post]
-                                                                                         │
-                                                                                    (se falhou)
-                                                                                         ▼
+S3 (Parquet) → [pre_check] → [Bronze] → [Silver x3] → [Gold x12] → [Validation] → [observer_trigger*]
+                                                                                          │
+                                                                                     *run_if: AT_LEAST_ONE_FAILED
+                                                                                          ▼
                                                                                     [Observer Agent]
                                                                                     Claude API → GitHub PR
 ```
@@ -62,16 +63,15 @@ S3 (Parquet) → [agent_pre] → [Bronze] → [Silver x3] → [Gold x12] → [Va
 
 | Job | ID | Tasks | Schedule |
 |-----|----|-------|----------|
-| ETL Pipeline | 777105089901314 | 8 tasks sequenciais | Diário 6 AM SP |
+| ETL Pipeline | 777105089901314 | 8 tasks (7 ETL + 1 sentinel) | Diário 6 AM SP |
 | Observer Agent | 848172838529828 | 1 task (on-demand) | Sem schedule |
 
-### Delta Tables e Rollback
+### Delta Tables (overwrite idempotente, sem rollback)
 
 - **Catalog**: `medallion` (schemas: bronze, silver, gold)
 - Cada notebook faz `overwrite` atômico via Delta Lake
-- `agent_pre` captura versões Delta de 17 tabelas antes da execução
-- `agent_post` faz `RESTORE TABLE ... TO VERSION AS OF` se pipeline falhar
-- Rollback (dados) + Observer/AI (código) são complementares e sempre executam juntos
+- **Sem rollback Delta** — overwrite idempotente torna rollback desnecessário
+- Em caso de falha, `observer_trigger` dispara o Observer para analisar e propor fix via PR
 
 ## Observer Agent Framework (pipeline_lib/agent/observer/)
 

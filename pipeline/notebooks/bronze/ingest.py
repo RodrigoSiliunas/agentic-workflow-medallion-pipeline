@@ -5,7 +5,7 @@
 # MAGIC em `pipeline_lib.schema`, e salva como Delta Table `bronze.conversations`
 # MAGIC no Unity Catalog. Tambem gera fingerprint S3 para deteccao de mudancas.
 # MAGIC
-# MAGIC **Camada:** Bronze | **Dependencia:** agent_pre | **Output:** `medallion.bronze.conversations`
+# MAGIC **Camada:** Bronze | **Dependencia:** pre_check | **Output:** `medallion.bronze.conversations`
 # MAGIC
 # MAGIC _Ultima atualizacao: 2026-04-09_
 
@@ -178,7 +178,7 @@ metrics = {
 
 logger.info(f"Bronze ingestion completa em {duration_sec}s: {metrics}")
 
-# Seta task values para o agent_post coletar
+# Seta task values (disponiveis para o Observer em caso de falha)
 try:
     dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
     dbutils.jobs.taskValues.set(key="rows_output", value=saved_count)
