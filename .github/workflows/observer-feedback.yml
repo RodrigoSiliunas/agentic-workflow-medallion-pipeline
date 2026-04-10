@@ -1,0 +1,54 @@
+name: Observer Feedback Loop
+
+# Atualiza a tabela medallion.observer.diagnostics quando um PR criado
+# automaticamente pelo Observer Agent eh mergeado ou fechado sem merge.
+# Fecha o loop de feedback: taxa de merge, tempo medio de resolucao etc
+# viram queryable pelo dashboard SQL.
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  update-diagnostics:
+    # So roda para PRs criados pelo Observer (branch fix/agent-auto-*)
+    if: startsWith(github.event.pull_request.head.ref, 'fix/agent-auto-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install databricks-sdk
+        run: pip install databricks-sdk
+
+      - name: Determine PR status
+        id: status
+        run: |
+          if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=closed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update observer.diagnostics
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          PIPELINE_CATALOG: medallion
+        run: |
+          python pipeline/deploy/update_pr_feedback.py \
+            --pr-number ${{ github.event.pull_request.number }} \
+            --status ${{ steps.status.outputs.status }}
+
+      - name: Summary
+        run: |
+          echo "## Observer Feedback Loop" >> "$GITHUB_STEP_SUMMARY"
+          echo "- PR #${{ github.event.pull_request.number }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: \`${{ github.event.pull_request.head.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Status: **${{ steps.status.outputs.status }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tabela atualizada: \`medallion.observer.diagnostics\`" >> "$GITHUB_STEP_SUMMARY"

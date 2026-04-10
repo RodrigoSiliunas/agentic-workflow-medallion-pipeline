@@ -148,8 +148,21 @@ class ObserverDiagnosticsStore:
         output_tokens          BIGINT,
         estimated_cost_usd     DOUBLE,
         duration_seconds       DOUBLE,
-        status                 STRING
+        status                 STRING,
+        pr_status              STRING,
+        pr_resolved_at         TIMESTAMP,
+        resolution_time_hours  DOUBLE,
+        feedback               STRING
     """
+
+    # Colunas adicionadas por migracoes apos a criacao inicial da tabela.
+    # ensure_schema() verifica e aplica ALTER TABLE ADD COLUMNS quando faltam.
+    MIGRATED_COLUMNS: list[tuple[str, str]] = [
+        ("pr_status", "STRING"),
+        ("pr_resolved_at", "TIMESTAMP"),
+        ("resolution_time_hours", "DOUBLE"),
+        ("feedback", "STRING"),
+    ]
 
     def __init__(self, spark: Any, catalog: str = "medallion"):
         self.spark = spark
@@ -162,7 +175,12 @@ class ObserverDiagnosticsStore:
         return f"{self.catalog}.{self.schema}.{self.table}"
 
     def ensure_schema(self) -> None:
-        """Cria o schema observer e a tabela diagnostics se nao existirem."""
+        """Cria schema/tabela (idempotente) e aplica migracoes de colunas.
+
+        Se a tabela ja existir de uma versao anterior, `_migrate_columns`
+        adiciona via ALTER TABLE as colunas que estao em MIGRATED_COLUMNS
+        mas ainda nao estao no schema efetivo.
+        """
         self.spark.sql(
             f"CREATE SCHEMA IF NOT EXISTS {self.catalog}.{self.schema} "
             f"COMMENT 'Observabilidade do Observer Agent'"
@@ -173,6 +191,41 @@ class ObserverDiagnosticsStore:
             f") USING DELTA "
             f"COMMENT 'Diagnosticos do Observer Agent (LLM + PR + metricas)'"
         )
+        self._migrate_columns()
+
+    def _migrate_columns(self) -> None:
+        """Aplica ALTER TABLE ADD COLUMNS para campos em MIGRATED_COLUMNS."""
+        try:
+            rows = self.spark.sql(
+                f"DESCRIBE TABLE {self.full_table_name}"
+            ).collect()
+        except Exception as exc:
+            logger.warning(
+                f"DESCRIBE TABLE falhou, skip migration: {exc}"
+            )
+            return
+
+        existing: set[str] = set()
+        for row in rows:
+            col_name = row["col_name"] if hasattr(row, "__getitem__") else ""
+            if col_name and not col_name.startswith("#"):
+                existing.add(col_name)
+
+        for col_name, col_type in self.MIGRATED_COLUMNS:
+            if col_name in existing:
+                continue
+            try:
+                self.spark.sql(
+                    f"ALTER TABLE {self.full_table_name} "
+                    f"ADD COLUMNS ({col_name} {col_type})"
+                )
+                logger.info(
+                    f"Coluna {col_name} {col_type} adicionada a {self.full_table_name}"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Falha ao adicionar coluna {col_name}: {exc}"
+                )
 
     def build_record(
         self,
@@ -240,6 +293,48 @@ class ObserverDiagnosticsStore:
         logger.info(
             f"Diagnostico {record.id[:8]} salvo em {self.full_table_name} "
             f"(status={record.status}, cost=${record.estimated_cost_usd:.4f})"
+        )
+
+    def update_pr_feedback(
+        self,
+        pr_number: int,
+        pr_status: str,
+    ) -> None:
+        """Atualiza o status de um PR na tabela de diagnosticos.
+
+        Chamado pela GitHub Action apos um PR `fix/agent-auto-*` ser
+        mergeado ou fechado. Calcula `resolution_time_hours` como a
+        diferenca entre `timestamp` e `current_timestamp()` em horas,
+        e seta `feedback='fix_accepted'` para merged ou `'fix_rejected'`
+        para closed.
+
+        Args:
+            pr_number: numero do PR no GitHub.
+            pr_status: 'merged' ou 'closed' (valida antes de executar).
+
+        Raises:
+            ValueError: se pr_status nao for 'merged' ou 'closed'.
+        """
+        if pr_status not in ("merged", "closed"):
+            raise ValueError(
+                f"pr_status invalido: {pr_status!r} (use 'merged' ou 'closed')"
+            )
+        if not pr_number or int(pr_number) <= 0:
+            raise ValueError(f"pr_number invalido: {pr_number!r}")
+
+        feedback = "fix_accepted" if pr_status == "merged" else "fix_rejected"
+
+        self.spark.sql(
+            f"UPDATE {self.full_table_name} "
+            f"SET pr_status = '{pr_status}', "
+            f"    pr_resolved_at = current_timestamp(), "
+            f"    resolution_time_hours = "
+            f"        (unix_timestamp(current_timestamp()) - unix_timestamp(timestamp)) / 3600.0, "
+            f"    feedback = '{feedback}' "
+            f"WHERE pr_number = {int(pr_number)}"
+        )
+        logger.info(
+            f"PR #{pr_number} atualizado: status={pr_status}, feedback={feedback}"
         )
 
     def find_recent_successful(

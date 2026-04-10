@@ -128,11 +128,64 @@ SELECT
     ROUND(confidence, 2) AS confianca,
     pr_number,
     pr_url,
+    pr_status,
     provider || '/' || model AS llm
 FROM medallion.observer.diagnostics
 WHERE pr_url IS NOT NULL AND pr_url <> ''
 ORDER BY timestamp DESC
 LIMIT 20;
+
+-- ============================================================
+-- PAINEL 9: Taxa de aceitacao dos fixes (feedback loop)
+-- Mostra eficacia do Observer: quantos PRs foram mergeados
+-- ============================================================
+SELECT
+    COALESCE(pr_status, 'pending') AS pr_status,
+    feedback,
+    COUNT(*) AS total,
+    ROUND(
+        COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (),
+        2
+    ) AS percentual
+FROM medallion.observer.diagnostics
+WHERE status = 'success'  -- so PRs que realmente foram criados
+GROUP BY COALESCE(pr_status, 'pending'), feedback
+ORDER BY total DESC;
+
+-- ============================================================
+-- PAINEL 10: Tempo medio de resolucao (merged vs closed)
+-- Quanto tempo entre o Observer criar o PR e ser resolvido
+-- ============================================================
+SELECT
+    pr_status,
+    COUNT(*) AS prs_resolvidos,
+    ROUND(AVG(resolution_time_hours), 2) AS tempo_medio_h,
+    ROUND(MIN(resolution_time_hours), 2) AS tempo_min_h,
+    ROUND(MAX(resolution_time_hours), 2) AS tempo_max_h
+FROM medallion.observer.diagnostics
+WHERE pr_status IN ('merged', 'closed')
+  AND resolution_time_hours IS NOT NULL
+GROUP BY pr_status;
+
+-- ============================================================
+-- PAINEL 11: Eficacia por provider/modelo
+-- Qual LLM gera fixes mais aceitos
+-- ============================================================
+SELECT
+    provider,
+    model,
+    COUNT(*) AS prs_criados,
+    SUM(CASE WHEN feedback = 'fix_accepted' THEN 1 ELSE 0 END) AS aceitos,
+    SUM(CASE WHEN feedback = 'fix_rejected' THEN 1 ELSE 0 END) AS rejeitados,
+    ROUND(
+        SUM(CASE WHEN feedback = 'fix_accepted' THEN 1 ELSE 0 END) * 100.0
+        / NULLIF(COUNT(*), 0),
+        2
+    ) AS taxa_aceitacao_pct
+FROM medallion.observer.diagnostics
+WHERE status = 'success' AND pr_number > 0
+GROUP BY provider, model
+ORDER BY taxa_aceitacao_pct DESC NULLS LAST;
 
 -- ============================================================
 -- ALERTS (criar via Databricks SQL Alerts)
