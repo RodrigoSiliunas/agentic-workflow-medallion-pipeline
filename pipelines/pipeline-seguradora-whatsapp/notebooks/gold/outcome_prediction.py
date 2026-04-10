@@ -38,7 +38,7 @@ from sklearn.preprocessing import LabelEncoder
 # Auto-detect repo path from this notebook's location
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 _repo_root = "/".join(_nb_path.split("/")[:4])
-PIPELINE_ROOT = f"/Workspace{_repo_root}/pipeline"
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
 sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake

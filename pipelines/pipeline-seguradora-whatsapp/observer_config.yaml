@@ -2,7 +2,7 @@
 # Observer Agent - Configuracao como codigo
 # ============================================================
 # Este arquivo define os parametros operacionais do Observer Agent.
-# Eh lido pelo notebook pipeline/notebooks/observer/collect_and_fix.py
+# Eh lido pelo notebook observer-framework/notebooks/collect_and_fix.py
 # via pipeline_lib.agent.observer.config.load_observer_config().
 #
 # Hierarquia de prioridade (maior -> menor):

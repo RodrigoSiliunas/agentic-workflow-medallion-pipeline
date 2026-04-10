@@ -70,13 +70,19 @@ def create_workflow():
     user = w.current_user.me()
     print(f"Conectado como: {user.user_name}")
 
-    repo_path = (
-        f"/Repos/{user.user_name}"
-        "/agentic-workflow-medallion-pipeline/pipeline"
-    )
+    # Path do Databricks Repo — o mesmo repo hospeda tanto o pipeline
+    # (pipelines/pipeline-seguradora-whatsapp/) quanto o observer framework
+    # (observer-framework/). A task sentinel referencia o notebook do
+    # framework via path absoluto, sem import Python.
+    repo_base = f"/Repos/{user.user_name}/agentic-workflow-medallion-pipeline"
+    pipeline_path = f"{repo_base}/pipelines/pipeline-seguradora-whatsapp"
+    observer_framework_path = f"{repo_base}/observer-framework"
 
     def nb(name: str) -> str:
-        return f"{repo_path}/notebooks/{name}"
+        return f"{pipeline_path}/notebooks/{name}"
+
+    def observer_nb(name: str) -> str:
+        return f"{observer_framework_path}/notebooks/{name}"
 
     shared_params = {
         "catalog": CATALOG,
@@ -214,7 +220,9 @@ def create_workflow():
             run_if=RunIf.AT_LEAST_ONE_FAILED,
             **cluster_kwargs,
             notebook_task=NotebookTask(
-                notebook_path=nb("observer/trigger_sentinel"),
+                # Notebook vive no observer-framework (framework desacoplado).
+                # O pipeline so referencia via path — zero import Python.
+                notebook_path=observer_nb("trigger_sentinel"),
                 base_parameters={
                     "catalog": CATALOG,
                     "scope": SECRET_SCOPE,

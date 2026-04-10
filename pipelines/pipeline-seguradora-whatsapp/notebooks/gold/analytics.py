@@ -33,7 +33,7 @@ SCOPE = dbutils.widgets.get("scope")
 # Auto-detect repo path for sub-notebook calls
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 _repo_root = "/".join(_nb_path.split("/")[:4])
-NOTEBOOK_BASE = f"{_repo_root}/pipeline/notebooks"
+NOTEBOOK_BASE = f"{_repo_root}/pipelines/pipeline-seguradora-whatsapp/notebooks"
 
 TIMEOUT = 600  # 10 min por notebook
 
