@@ -32,6 +32,7 @@ from pipeline_lib.agent.observer import (
     ObserverDiagnosticsStore,
     WorkflowObserver,
     check_duplicate,
+    load_observer_config,
     parse_failed_tasks_param,
 )
 
@@ -39,17 +40,20 @@ logger = logging.getLogger("observer")
 
 # COMMAND ----------
 
-# DBTITLE 1,Parametros
+# DBTITLE 1,Parametros e Configuracao
+# Widgets que identificam a origem (passados pelo sentinel ou SDK)
 dbutils.widgets.text("catalog", "medallion", "Catalog Name")
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
 dbutils.widgets.text("source_run_id", "", "Run ID que falhou")
 dbutils.widgets.text("source_job_id", "", "Job ID que falhou")
 dbutils.widgets.text("source_job_name", "", "Job Name que falhou")
 dbutils.widgets.text("failed_tasks", "[]", "Tasks com falha em JSON")
-dbutils.widgets.text("llm_provider", "anthropic", "LLM Provider")
-dbutils.widgets.text("git_provider", "github", "Git Provider")
-dbutils.widgets.text("dedup_window_hours", "24", "Dedup Window (hours)")
-dbutils.widgets.dropdown("dry_run", "false", ["false", "true"], "Dry Run Mode")
+
+# Widgets que sobrescrevem o observer_config.yaml (deixar vazio = usa YAML/default)
+dbutils.widgets.text("llm_provider", "", "LLM Provider (override)")
+dbutils.widgets.text("git_provider", "", "Git Provider (override)")
+dbutils.widgets.text("dedup_window_hours", "", "Dedup Window hours (override)")
+dbutils.widgets.dropdown("dry_run", "false", ["false", "true"], "Dry Run Mode (override)")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")
@@ -58,12 +62,17 @@ SOURCE_JOB_ID = dbutils.widgets.get("source_job_id")
 SOURCE_JOB_NAME = dbutils.widgets.get("source_job_name")
 FAILED_TASKS = parse_failed_tasks_param(dbutils.widgets.get("failed_tasks"))
 
-try:
-    DEDUP_WINDOW_HOURS = int(dbutils.widgets.get("dedup_window_hours") or "24")
-except ValueError:
-    DEDUP_WINDOW_HOURS = 24
-
-DRY_RUN = dbutils.widgets.get("dry_run").strip().lower() == "true"
+# Carrega observer_config.yaml do Repo + aplica overrides dos widgets
+CONFIG_PATH = f"{PIPELINE_ROOT}/observer_config.yaml"
+config = load_observer_config(
+    config_path=CONFIG_PATH,
+    overrides={
+        "llm_provider": dbutils.widgets.get("llm_provider"),
+        "git_provider": dbutils.widgets.get("git_provider"),
+        "dedup_window_hours": dbutils.widgets.get("dedup_window_hours"),
+        "dry_run": dbutils.widgets.get("dry_run"),
+    },
+)
 
 os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
 os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
@@ -81,7 +90,14 @@ observer = WorkflowObserver(w)
 log = []
 
 log.append(f"Observer iniciado: {datetime.now().isoformat()}")
-if DRY_RUN:
+log.append(
+    f"Config: llm={config.llm_provider}/{config.llm_model}, "
+    f"git={config.git_provider}/{config.base_branch}, "
+    f"dedup={config.dedup_window_hours}h, "
+    f"dry_run={config.dry_run}, "
+    f"confidence_threshold={config.confidence_threshold:.2f}"
+)
+if config.dry_run:
     log.append("MODO: DRY-RUN (nao cria PRs, apenas loga e persiste diagnostico)")
 
 # Garante que o schema + tabela de diagnosticos existem (idempotente)
@@ -128,18 +144,17 @@ from pipeline_lib.agent.observer.providers import (
     create_llm_provider,
 )
 
-LLM_PROVIDER = dbutils.widgets.get("llm_provider")
-GIT_PROVIDER = dbutils.widgets.get("git_provider")
-
 llm = create_llm_provider(
-    LLM_PROVIDER,
+    config.llm_provider,
     api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-    model=os.environ.get("LLM_MODEL", "claude-opus-4-20250514"),
+    model=config.llm_model,
+    max_tokens=config.llm_max_tokens,
 )
 git = create_git_provider(
-    GIT_PROVIDER,
+    config.git_provider,
     token=os.environ.get("GITHUB_TOKEN", ""),
     repo=os.environ.get("GITHUB_REPO", ""),
+    base_branch=config.base_branch,
 )
 
 log.append(f"LLM provider: {llm.name}")
@@ -200,7 +215,7 @@ for failure in failures:
     dedup_result = check_duplicate(
         store,
         ctx["error_message"],
-        window_hours=DEDUP_WINDOW_HOURS,
+        window_hours=config.dedup_window_hours,
         git_provider=git,
     )
     if dedup_result.is_duplicate:
@@ -241,7 +256,14 @@ for failure in failures:
         if not (diagnosis.fixed_code and diagnosis.file_to_fix):
             log.append("LLM nao gerou fix")
             final_status = "no_fix_proposed"
-        elif DRY_RUN:
+        elif diagnosis.confidence < config.confidence_threshold:
+            # Confianca abaixo do limite — nao cria PR
+            log.append(
+                f"LOW CONFIDENCE ({diagnosis.confidence:.2f} < "
+                f"{config.confidence_threshold:.2f}): nao cria PR"
+            )
+            final_status = "low_confidence"
+        elif config.dry_run:
             # Dry-run: loga detalhes e pula a criacao do PR
             log.append(f"DRY-RUN: nao cria PR para {diagnosis.file_to_fix}")
             preview = (diagnosis.fixed_code or "")[:300]

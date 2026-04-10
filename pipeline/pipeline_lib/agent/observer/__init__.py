@@ -1,3 +1,9 @@
+from pipeline_lib.agent.observer.config import (
+    ObserverConfig as ObserverConfig,
+)
+from pipeline_lib.agent.observer.config import (
+    load_observer_config as load_observer_config,
+)
 from pipeline_lib.agent.observer.dedup import (
     DuplicateCheckResult as DuplicateCheckResult,
 )
