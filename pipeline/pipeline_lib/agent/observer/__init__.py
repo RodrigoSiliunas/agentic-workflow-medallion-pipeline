@@ -40,4 +40,10 @@ from pipeline_lib.agent.observer.triggering import (
 from pipeline_lib.agent.observer.triggering import (
     resolve_runtime_context as resolve_runtime_context,
 )
+from pipeline_lib.agent.observer.validator import (
+    ValidationResult as ValidationResult,
+)
+from pipeline_lib.agent.observer.validator import (
+    validate_fix as validate_fix,
+)
 from pipeline_lib.agent.observer.workflow_observer import WorkflowObserver as WorkflowObserver

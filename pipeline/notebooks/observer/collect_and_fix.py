@@ -34,6 +34,7 @@ from pipeline_lib.agent.observer import (
     check_duplicate,
     load_observer_config,
     parse_failed_tasks_param,
+    validate_fix,
 )
 
 logger = logging.getLogger("observer")
@@ -252,42 +253,59 @@ for failure in failures:
         log.append(f"Diagnostico: {diagnosis.diagnosis[:200]}")
         log.append(f"Confianca: {diagnosis.confidence:.0%}")
 
+        # Fluxo de decisao do fix: no_fix -> low_confidence -> validation
+        # -> dry_run -> criacao de PR. final_status eh setado num unico
+        # ponto e persistido no final do bloco.
         pr_result = None
+        final_status = "unknown"
+
         if not (diagnosis.fixed_code and diagnosis.file_to_fix):
             log.append("LLM nao gerou fix")
             final_status = "no_fix_proposed"
         elif diagnosis.confidence < config.confidence_threshold:
-            # Confianca abaixo do limite — nao cria PR
             log.append(
                 f"LOW CONFIDENCE ({diagnosis.confidence:.2f} < "
                 f"{config.confidence_threshold:.2f}): nao cria PR"
             )
             final_status = "low_confidence"
-        elif config.dry_run:
-            # Dry-run: loga detalhes e pula a criacao do PR
-            log.append(f"DRY-RUN: nao cria PR para {diagnosis.file_to_fix}")
-            preview = (diagnosis.fixed_code or "")[:300]
-            log.append(f"  Fix preview: {preview}...")
-            if diagnosis.root_cause:
-                log.append(f"  Root cause: {diagnosis.root_cause[:200]}")
-            final_status = "dry_run"
         else:
-            log.append(f"Criando PR para {diagnosis.file_to_fix}...")
-            try:
-                pr_result = git.create_fix_pr(diagnosis, ctx["failed_task"])
-                log.append(f"PR #{pr_result.pr_number}: {pr_result.pr_url}")
-                results.append(
-                    {
-                        "job": failure["job_name"],
-                        "task": ctx["failed_task"],
-                        "pr": pr_result.pr_url,
-                        "confidence": diagnosis.confidence,
-                    }
-                )
-                final_status = "success"
-            except Exception as e:
-                log.append(f"ERRO PR: {e}")
-                final_status = "pr_failed"
+            # Validacao pre-PR: sintaxe sempre, ruff para pipeline_lib/
+            validation = validate_fix(
+                diagnosis.fixed_code, diagnosis.file_to_fix
+            )
+            log.append(
+                f"Validacao: checks={validation.checks_run}, "
+                f"valid={validation.valid}"
+            )
+            if not validation.valid:
+                log.append(f"VALIDATION FAILED: {len(validation.errors)} erros")
+                for err in validation.errors[:5]:
+                    log.append(f"  - {err}")
+                final_status = "validation_failed"
+            elif config.dry_run:
+                log.append(f"DRY-RUN: nao cria PR para {diagnosis.file_to_fix}")
+                preview = (diagnosis.fixed_code or "")[:300]
+                log.append(f"  Fix preview: {preview}...")
+                if diagnosis.root_cause:
+                    log.append(f"  Root cause: {diagnosis.root_cause[:200]}")
+                final_status = "dry_run"
+            else:
+                log.append(f"Criando PR para {diagnosis.file_to_fix}...")
+                try:
+                    pr_result = git.create_fix_pr(diagnosis, ctx["failed_task"])
+                    log.append(f"PR #{pr_result.pr_number}: {pr_result.pr_url}")
+                    results.append(
+                        {
+                            "job": failure["job_name"],
+                            "task": ctx["failed_task"],
+                            "pr": pr_result.pr_url,
+                            "confidence": diagnosis.confidence,
+                        }
+                    )
+                    final_status = "success"
+                except Exception as e:
+                    log.append(f"ERRO PR: {e}")
+                    final_status = "pr_failed"
 
         persist_diagnostic(
             failure,
