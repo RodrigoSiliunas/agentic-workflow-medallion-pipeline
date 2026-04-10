@@ -3,7 +3,7 @@
  */
 export function useSettings() {
   const api = useApiClient()
-  const settings = ref<{ preferred_model: string; credentials: Record<string, any> }>({
+  const settings = ref<{ preferred_model: string; credentials: Record<string, unknown> }>({
     preferred_model: "sonnet",
     credentials: {},
   })

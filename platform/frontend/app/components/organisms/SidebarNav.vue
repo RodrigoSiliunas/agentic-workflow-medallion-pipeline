@@ -78,7 +78,6 @@
 
 <script setup lang="ts">
 import type { Pipeline } from "~/types/pipeline"
-import type { Thread } from "~/types/chat"
 
 const props = defineProps<{
   pipelines: Pipeline[]
