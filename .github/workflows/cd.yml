@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "pipeline/**"
+      - "observer-framework/**"
+      - "pipelines/**"
       - ".github/workflows/cd.yml"
 
 # Garante que apenas um deploy roda por vez
@@ -14,10 +15,8 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy Pipeline to Databricks
+    name: Sync Databricks Repo
     runs-on: ubuntu-latest
-    # Só roda se o CI passou (deploy depende de lint + test)
-    needs: []
     environment: production
 
     steps:
@@ -27,9 +26,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Databricks CLI
+      - name: Install Databricks SDK
         run: pip install databricks-sdk
 
+      # O Databricks Repo espelha o repo Git inteiro, entao sincronizar
+      # o branch main atualiza observer-framework/ e pipelines/ de uma vez.
       - name: Sync Databricks Repo
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
@@ -44,14 +45,13 @@ jobs:
               token=os.environ['DATABRICKS_TOKEN'],
           )
 
-          # Encontra e atualiza o repo para latest main
           for repo in w.repos.list():
-              if 'agentic-workflow-medallion-pipeline' in repo.path:
+              if 'agentic-workflow-medallion-pipeline' in (repo.path or ''):
                   w.repos.update(repo_id=repo.id, branch='main')
                   print(f'Repo atualizado: {repo.path}')
                   break
           else:
-              print('WARN: Repo nao encontrado no workspace')
+              print('ERRO: Repo nao encontrado no workspace')
               exit(1)
           "
 
@@ -69,22 +69,20 @@ jobs:
               token=os.environ['DATABRICKS_TOKEN'],
           )
 
-          # Verifica que o repo esta sincronizado
           for repo in w.repos.list():
-              if 'agentic-workflow-medallion-pipeline' in repo.path:
+              if 'agentic-workflow-medallion-pipeline' in (repo.path or ''):
                   print(f'Repo: {repo.path}')
                   print(f'Branch: {repo.branch}')
                   print(f'Head commit: {repo.head_commit_id}')
                   break
 
-          # Verifica que o job existe
-          jobs = list(w.jobs.list(name='medallion_pipeline_whatsapp'))
-          if jobs:
-              job = jobs[0]
-              print(f'Job: {job.settings.name} (ID: {job.job_id})')
-              print(f'Tasks: {len(job.settings.tasks)}')
-          else:
-              print('WARN: Job nao encontrado')
+          # Verifica que os jobs existem
+          for name in ['medallion_pipeline_whatsapp', 'workflow_observer_agent']:
+              jobs = list(w.jobs.list(name=name))
+              if jobs:
+                  print(f'Job {name}: {jobs[0].job_id} ({len(jobs[0].settings.tasks)} tasks)')
+              else:
+                  print(f'WARN: Job {name} nao encontrado')
 
           print('Deploy concluido com sucesso!')
           "
@@ -96,5 +94,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Action:** Repo synced to latest" >> $GITHUB_STEP_SUMMARY
+          echo "- **Sync:** observer-framework/ + pipelines/" >> $GITHUB_STEP_SUMMARY
           echo "- **Workspace:** ${{ secrets.DATABRICKS_HOST }}" >> $GITHUB_STEP_SUMMARY
