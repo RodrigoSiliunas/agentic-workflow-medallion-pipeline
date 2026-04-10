@@ -3,7 +3,7 @@
 **Track ID:** pipeline-bronze-oom_20260410
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-10
-**Status:** In Progress
+**Status:** Complete
 
 ## Overview
 
@@ -45,28 +45,34 @@ Substituir o fluxo `boto3 -> pandas -> spark.createDataFrame` do `S3Lake.read_pa
 
 ### Tasks
 
-- [ ] Task 3.1: Commit das mudancas em branch dedicada (ex: `fix/bronze-oom`) + PR para `dev`, seguindo o padrao de CI/CD do monorepo.
+- [x] Task 3.1: Commit `7c851c1` em `dev` -> PR #12 para main. CI inicialmente falhou por falta de boto3/pandas/pyarrow no job, corrigido em `3a2e514`. CI passou nos dois jobs (observer-framework + pipeline-seguradora-whatsapp). Mergeado como `37964e4`.
 
-- [ ] Task 3.2: Apos merge em main, aguardar CD sincronizar o Databricks Repo. Verificar que o commit novo aparece em `w.repos.list()`.
+- [x] Task 3.2: CD sincronizou o Databricks Repo apos merge — head do Repo confirmado em `37964e4a` via Repos API.
 
-- [ ] Task 3.3: Executar pipeline normal (`chaos_mode=off`) via SDK. Confirmar que:
-  - `bronze_ingestion` termina em menos de 5 minutos com SUCCESS
-  - `silver x3`, `gold_analytics`, `quality_validation` rodam em sequencia com SUCCESS
-  - `observer_trigger` fica como EXCLUDED (nenhuma task falha)
-  - `SELECT COUNT(*) FROM medallion.bronze.conversations` retorna ~153k linhas
+- [x] Task 3.3: Executado pipeline normal (`chaos_mode=off`) — run `826862455884866`:
+  - `pre_check`: SUCCESS
+  - `bronze_ingestion`: SUCCESS em **125.9s** (vs OOM em 3+ retries antes do fix)
+  - `silver_dedup`: SUCCESS
+  - `silver_entities`: SUCCESS
+  - `silver_enrichment`: SUCCESS
+  - `gold_analytics`: SUCCESS
+  - `quality_validation`: SUCCESS
+  - `observer_trigger`: EXCLUDED (run_if AT_LEAST_ONE_FAILED nao satisfeito — comportamento esperado)
+  - Run state final: TERMINATED SUCCESS
+  - `SELECT COUNT(*) FROM medallion.bronze.conversations` -> **153228 linhas**
 
 ### Verification
 
-- [ ] Pipeline normal completo end-to-end
-- [ ] Contagem de linhas na tabela bronze bate com execucoes anteriores
-- [ ] Zero OOM no driver
+- [x] Pipeline normal completo end-to-end (TERMINATED SUCCESS)
+- [x] Contagem de linhas bate com execucoes anteriores (153228)
+- [x] Zero OOM no driver — bronze_ingestion roda em 2 minutos sem GC overhead
 
 ## Final Verification
 
-- [ ] Todos os acceptance criteria da spec atendidos
-- [ ] Cluster permanece `m5d.large` (sem upgrade)
-- [ ] Documentacao atualizada se necessario (CLAUDE.md, CODEX_MANUAL.md sobre o padrao S3Lake)
-- [ ] Commit com conventional commits
+- [x] Todos os acceptance criteria da spec atendidos
+- [x] Cluster permanece `m5d.large` (sem upgrade)
+- [x] Documentacao do S3Lake (docstring) atualizada explicando o novo fluxo Spark nativo
+- [x] Commit com conventional commits (`fix(pipeline): bronze_ingestion OOM`)
 
 ---
 
