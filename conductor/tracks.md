@@ -17,6 +17,6 @@
 | [x] | observer-config_20260409 | Observer — Configuracao como Codigo | 2026-04-09 | 2026-04-10 |
 | [x] | observer-validation_20260409 | Observer — Validacao Pre-PR | 2026-04-09 | 2026-04-10 |
 | [x] | observer-multifile_20260409 | Observer — Multi-File Fixes | 2026-04-09 | 2026-04-10 |
-| [ ] | observer-feedback_20260409 | Observer — Feedback Loop | 2026-04-09 | 2026-04-09 |
+| [x] | observer-feedback_20260409 | Observer — Feedback Loop | 2026-04-09 | 2026-04-10 |
 
 <!-- Tracks registered by /conductor:new-track -->
