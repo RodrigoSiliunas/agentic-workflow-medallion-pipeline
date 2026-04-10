@@ -3,7 +3,7 @@
 **Track ID:** observer-config_20260409
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-09
-**Status:** Pending
+**Status:** Complete
 
 ## Overview
 
@@ -13,37 +13,44 @@ Implementar arquivo YAML de configuracao com validacao Pydantic e hierarquia de 
 
 ### Tasks
 
-- [ ] Task 1.1: Criar `pipeline_lib/agent/observer/config.py` com Pydantic model `ObserverConfig`
-- [ ] Task 1.2: Implementar loader que le YAML do repo path via Workspace API ou filesystem
-- [ ] Task 1.3: Implementar hierarquia de prioridade: widgets > YAML > defaults
-- [ ] Task 1.4: Criar `pipeline/observer_config.yaml` com valores default documentados
-- [ ] Task 1.5: Testes unitarios para config (YAML valido, invalido, merge com widgets)
+- [x] Task 1.1: Criar `pipeline_lib/agent/observer/config.py` com `ObserverConfig` (pydantic BaseModel, 10 campos tipados)
+- [x] Task 1.2: Implementar loader `load_observer_config()` que le YAML ou JSON do filesystem (Workspace Repo acessa via POSIX no cluster)
+- [x] Task 1.3: Hierarquia de prioridade implementada: widgets > YAML > defaults. `_coerce_override_value` converte strings de widgets para tipos corretos
+- [x] Task 1.4: `pipeline/observer_config.yaml` com 10 campos documentados + suporte a layout nested (`observer:`) ou flat
+- [x] Task 1.5: 21 testes unitarios em `test_config.py` (defaults, validacao, YAML/JSON, overrides, hierarquia completa)
 
 ### Verification
 
-- [ ] Config carrega de YAML corretamente
-- [ ] Widgets sobrescrevem YAML
-- [ ] Config invalido gera erro claro
-- [ ] Testes passando
+- [x] Config carrega de YAML corretamente (validado end-to-end no Databricks via run 445294854768354)
+- [x] Widgets sobrescrevem YAML (coberto por testes unitarios)
+- [x] Config invalido levanta ValidationError (teste `extra_fields_rejected`, `negative_retries_rejected`, etc)
+- [x] 154 -> 175 testes passando no pytest (21 novos de config)
 
 ## Phase 2: Integracao
 
 ### Tasks
 
-- [ ] Task 2.1: Integrar `ObserverConfig` no notebook `observer/collect_and_fix.py`
-- [ ] Task 2.2: Substituir leitura direta de widgets por config unificado
+- [x] Task 2.1: Notebook `collect_and_fix.py` carrega config via `load_observer_config` do YAML do Repo
+- [x] Task 2.2: Widgets reduzidos a overrides opcionais (vazio = usa YAML/default); providers constru1dos com `config.llm_max_tokens`, `config.max_retries`, `config.base_branch`; novo check de `confidence_threshold` que marca `status='low_confidence'` quando abaixo do limite
 
 ### Verification
 
-- [ ] Observer funciona com YAML sem widgets
-- [ ] Observer funciona com widgets sobrescrevendo YAML
-- [ ] Retrocompativel (sem YAML, widgets funcionam como antes)
+- [x] Observer funciona com YAML sem widgets (run 445294854768354 logou "Config: llm=anthropic/claude-opus-4-20250514, git=github/dev, dedup=24h, dry_run=False, confidence_threshold=0.00" e processou normalmente)
+- [x] Observer funciona com widgets sobrescrevendo YAML (cobertura unitaria + dry_run test na track anterior)
+- [x] Retrocompativel: campos nao configurados usam defaults
+
+## Compat Pydantic
+
+Compatibilidade V1 (Databricks Runtime) e V2 (dev local) foi necessaria:
+- `class Config: extra = "forbid"` em vez de `ConfigDict`
+- `_coerce_bool` helper no lugar de `@field_validator`
+- `getattr(ObserverConfig, "model_fields", None) or ObserverConfig.__fields__`
 
 ## Final Verification
 
-- [ ] Acceptance criteria atendidos
-- [ ] Testes passando
-- [ ] Commit com conventional commits
+- [x] Acceptance criteria atendidos
+- [x] 175 testes passando, ruff limpo
+- [x] Commits: 3254c3a (inicial), 7cafa5b + 3869c4a + d1d7c41 (compat V1)
 
 ---
 
