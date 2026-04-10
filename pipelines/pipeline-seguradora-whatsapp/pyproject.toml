@@ -1,0 +1,39 @@
+[project]
+name = "pipeline-seguradora-whatsapp"
+version = "0.1.0"
+description = "Pipeline Medallion (Bronze -> Silver -> Gold) sobre conversas WhatsApp de vendas de seguro automotivo"
+requires-python = ">=3.11"
+authors = [
+    { name = "Rodrigo Siliunas" },
+]
+
+# Nenhuma dependencia do observer-framework — os dois projetos sao independentes.
+# O pipeline apenas adiciona uma task no workflow Databricks que referencia um
+# notebook do observer-framework via path (nao via import Python).
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+ml = ["pysentimiento>=0.7", "scikit-learn>=1.4"]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "pyspark>=3.5",
+    "delta-spark>=3.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["notebooks/"]  # Notebooks Databricks usam spark/dbutils injetados pelo runtime
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

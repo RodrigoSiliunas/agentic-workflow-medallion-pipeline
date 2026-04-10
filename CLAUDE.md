@@ -5,26 +5,49 @@ Instruções para AI assistants (Claude Code, Codex, etc.) trabalhando neste rep
 ## Monorepo Structure
 
 ```
-pipeline/                        — Pipeline Medallion (Databricks + AWS)
-  notebooks/                     — Databricks notebooks (.py source format)
-    pre_check.py                 — Task 0: pre-flight (propaga run_id + chaos_mode)
-    bronze/ingest.py             — Task 1: S3 parquet → Delta bronze (overwrite)
-    silver/dedup_clean.py        — Task 2: dedup + normalização
-    silver/entities_mask.py      — Task 3: extração entidades + mascaramento PII
-    silver/enrichment.py         — Task 4: métricas conversacionais
-    gold/analytics.py            — Task 5: orquestrador (12 notebooks em paralelo)
-    gold/*.py                    — 12 notebooks analíticos (funnel, sentiment, etc.)
-    validation/checks.py         — Task 6: quality gates (row counts, nulls, consistency)
-    observer/collect_and_fix.py  — Notebook do Observer Agent (job separado)
-    observer/trigger_sentinel.py — Task sentinel: dispara o Observer em caso de falha
-  pipeline_lib/                  — Biblioteca Python compartilhada
-    agent/observer/              — Framework Observer Agent (factory pattern)
-    storage/s3_client.py         — S3Lake: leitura/escrita S3 via boto3 in-memory
-    schema/                      — Contratos de schema + validador
-    extractors/                  — Extratores de entidades (CPF, phone, email, etc.)
-    masking/                     — Mascaramento PII (HMAC, redaction, format-preserving)
-  deploy/                        — Scripts de deploy Databricks (SDK)
-  tests/                         — 89 testes pytest
+observer-framework/              — Framework reusavel (futuro repo open-source privado em RodrigoSiliunas/observer)
+  observer/                      — Pacote Python `observer`
+    config.py                    — ObserverConfig + load_observer_config (YAML + overrides)
+    dedup.py                     — check_duplicate via hash SHA-256 + status do PR
+    persistence.py               — ObserverDiagnosticsStore (Delta table de observabilidade)
+    triggering.py                — Helpers do task sentinel
+    validator.py                 — validate_fix (compile + ast + ruff pre-PR)
+    workflow_observer.py         — Coleta contexto via APIs do Databricks
+    providers/                   — Factory + registry (anthropic, openai, github)
+  notebooks/                     — Notebooks Databricks genericos
+    collect_and_fix.py           — Job principal do Observer (Jobs API + LLM + PR)
+    trigger_sentinel.py          — Task referenciada pelos workflows dos pipelines
+  deploy/create_observer_workflow.py  — Cria o job do Observer no Databricks
+  scripts/update_pr_feedback.py  — CLI chamado pela GitHub Action do feedback loop
+  templates/                     — dashboard_queries.sql + observer_config.yaml
+  tests/                         — 113 testes pytest (config, dedup, persistence, providers, etc.)
+  docs/                          — ARCHITECTURE.md, USAGE.md, EXTENDING.md
+  README.md, LICENSE, CHANGELOG.md, CONTRIBUTING.md, pyproject.toml
+
+pipelines/                       — Guarda-chuva para multiplos pipelines one-click deploy
+  pipeline-seguradora-whatsapp/  — Pipeline WhatsApp de seguro auto (primeiro template)
+    notebooks/                   — Databricks notebooks (.py source format)
+      pre_check.py               — Task 0: pre-flight (propaga run_id + chaos_mode)
+      bronze/ingest.py           — Task 1: S3 parquet → Delta bronze (overwrite)
+      silver/dedup_clean.py      — Task 2: dedup + normalização
+      silver/entities_mask.py    — Task 3: extração entidades + mascaramento PII
+      silver/enrichment.py       — Task 4: métricas conversacionais
+      gold/analytics.py          — Task 5: orquestrador (12 notebooks em paralelo)
+      gold/*.py                  — 12 notebooks analíticos (funnel, sentiment, etc.)
+      validation/checks.py       — Task 6: quality gates (row counts, nulls, consistency)
+    pipeline_lib/                — Biblioteca Python especifica WhatsApp
+      storage/s3_client.py       — S3Lake: leitura/escrita S3 via boto3 in-memory
+      schema/                    — Contratos de schema + validador
+      extractors/                — Extratores de entidades (CPF, phone, email, etc.)
+      masking/                   — Mascaramento PII (HMAC, redaction, format-preserving)
+    deploy/                      — Scripts de deploy Databricks (SDK)
+      create_workflow.py         — Cria o workflow ETL; task sentinel referencia o notebook do observer-framework via path
+      setup_catalog.py, trigger_chaos.py, trigger_run.py, upload_data.py
+    tests/                       — 91 testes pytest (extractors, masking, schema, deploy)
+    data/conversations_bronze.parquet  — Dados de sample (gitignored)
+    observer_config.yaml         — Config do Observer para esse deploy especifico
+    pyproject.toml
+
 platform/frontend/               — Plataforma Conversacional (Nuxt 4.4.2 + Vue 3)
 platform/backend/                — API da Plataforma (FastAPI async)
 platform/design/                 — Design system references
@@ -34,7 +57,19 @@ docs/                            — Análise arquitetural, specs
 .github/workflows/               — CI (ruff + pytest) + CD (Databricks sync)
 ```
 
-## Pipeline (pipeline/)
+## Zero interdependência entre Observer Framework e Pipeline
+
+O `observer-framework/` e o `pipelines/pipeline-seguradora-whatsapp/` são **dois projetos Python independentes**:
+
+- O pipeline **não importa nada** do framework (nenhum `from observer import ...`)
+- O framework **não importa nada** do pipeline
+- O único ponto de contato é o workflow YAML: `deploy/create_workflow.py` adiciona uma task `observer_trigger` que referencia o notebook `observer-framework/notebooks/trigger_sentinel` via path absoluto no Databricks Repo
+- No cluster, os notebooks do observer-framework adicionam `/Workspace{repo_root}/observer-framework` ao `sys.path` para importar `observer`. Os notebooks do pipeline adicionam `/Workspace{repo_root}/pipelines/pipeline-seguradora-whatsapp` ao `sys.path` para importar `pipeline_lib`
+- **Nunca** adicione `from observer import ...` em código do pipeline. **Nunca** adicione lógica específica de seguro/WhatsApp no observer-framework
+
+Isso permite extrair o `observer-framework/` como repositório Git standalone no futuro (o repo privado `RodrigoSiliunas/observer` já existe como placeholder).
+
+## Pipeline seguradora WhatsApp (pipelines/pipeline-seguradora-whatsapp/)
 
 Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsApp de seguro auto (~153k mensagens).
 
@@ -42,8 +77,8 @@ Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsAp
 - **Engine**: PySpark em cluster dedicado (m5d.large) — NÃO serverless
 - **Workspace**: `data-capture-engine-prd` em `https://dbc-1bad7a6a-cc31.cloud.databricks.com`
 - **Cluster ID**: `0409-064526-q0k9e0pd`
-- **Testes**: 89 testes (pytest), ruff lint
-- **Deploy**: Scripts em `pipeline/deploy/` usando `databricks-sdk`
+- **Testes**: 91 testes (pytest), ruff lint
+- **Deploy**: Scripts em `pipelines/pipeline-seguradora-whatsapp/deploy/` usando `databricks-sdk`
 
 ### Arquitetura ETL
 
@@ -82,20 +117,20 @@ Via `dbutils.jobs.taskValues.set/get`. Widgets compartilhados: `catalog`, `scope
 
 ### S3Lake
 
-Client S3 in-memory (`pipeline_lib/storage/s3_client.py`):
+Client S3 in-memory (`pipelines/pipeline-seguradora-whatsapp/pipeline_lib/storage/s3_client.py`):
 - Usa `dbutils.secrets` para credenciais AWS (multi-tenant ready)
 - Leitura: S3 → BytesIO → pandas → Spark DataFrame
 - Escrita particionada em chunks de 50k linhas (evita OOM no driver)
 - NÃO usa DBFS (desabilitado em serverless)
 
-## Observer Agent Framework (pipeline_lib/agent/observer/)
+## Observer Framework (observer-framework/)
 
-Framework genérico de observabilidade para qualquer workflow Databricks.
+Framework genérico de observabilidade para qualquer workflow Databricks. Pacote Python `observer`, 113 testes, documentação completa em `observer-framework/docs/`. Para detalhes técnicos ver `observer-framework/README.md` e `observer-framework/docs/ARCHITECTURE.md`.
 
 ### Factory Pattern
 
 ```python
-from pipeline_lib.agent.observer.providers import (
+from observer.providers import (
     create_llm_provider,    # "anthropic", "openai"
     create_git_provider,    # "github"
     DiagnosisRequest, DiagnosisResult, PRResult,
@@ -142,8 +177,9 @@ from pipeline_lib.agent.observer.providers import (
 
 ## CI/CD
 
-- **CI** (`.github/workflows/ci.yml`): ruff + pytest em push para main/dev e PRs. Job extra para branches `fix/*` e `feat/*` (PRs do agente).
-- **CD** (`.github/workflows/cd.yml`): Sync Databricks Repo com `main` automaticamente em push.
+- **CI** (`.github/workflows/ci.yml`): roda ruff + pytest em dois jobs separados — `observer-framework` e `pipeline-seguradora-whatsapp`. Job extra `validate-agent-pr` para branches `fix/*` e `feat/*` rodando ambos.
+- **CD** (`.github/workflows/cd.yml`): sincroniza o Databricks Repo com `main` automaticamente. Paths monitorados: `observer-framework/**` e `pipelines/**`. O Repo Databricks espelha o repo inteiro, então observer-framework e pipelines são atualizados atomicamente.
+- **Observer Feedback** (`.github/workflows/observer-feedback.yml`): GitHub Action chamada quando PRs `fix/agent-auto-*` são mergeados/fechados — executa `observer-framework/scripts/update_pr_feedback.py`.
 - **Fluxo**: Observer cria PR para `dev` → CI valida → humano revisa → merge → dev → PR para main → CD deploya.
 
 ## Chaos Testing
@@ -151,7 +187,7 @@ from pipeline_lib.agent.observer.providers import (
 Injeção controlada de falhas para testar o agente AI end-to-end:
 
 ```bash
-python pipeline/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_zero|validation_strict
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_zero|validation_strict
 ```
 
 Widget `chaos_mode` propagado via task values. Cada notebook ETL tem bloco condicional que injeta falha controlada.
@@ -161,7 +197,7 @@ Widget `chaos_mode` propagado via task values. Cada notebook ETL tem bloco condi
 - **Commits**: Conventional Commits em pt-BR (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`)
 - **Lint Python**: ruff (line-length=100, py311). Notebooks excluídos do lint.
 - **Lint JS/TS**: ESLint flat config + Prettier (double quotes, 2 spaces, 100 chars)
-- **Testes Python**: pytest. TDD moderado (obrigatório para pipeline_lib/, flexível para notebooks)
+- **Testes Python**: pytest. TDD moderado (obrigatório para `observer/` e `pipeline_lib/`, flexível para notebooks)
 - **Testes JS**: Vitest + Vue Test Utils
 - **Branch strategy**: PRs do agente AI para `dev` (fix/agent-auto-*, feat/*)
 - **Dados sensíveis**: Mascaramento na Silver, HMAC obrigatório sem fallback, redaction do message_body

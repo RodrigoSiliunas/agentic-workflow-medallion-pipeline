@@ -55,57 +55,75 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 
 ```
 /
-├── pipeline/                    # Pipeline Medallion (Databricks + AWS)
-│   ├── notebooks/               # Databricks notebooks (.py source format)
-│   │   ├── pre_check.py         # Task 0: pre-flight (propaga run_id + chaos_mode)
-│   │   ├── bronze/
-│   │   │   └── ingest.py        # Task 1: S3 parquet → Delta bronze (overwrite)
-│   │   ├── silver/
-│   │   │   ├── dedup_clean.py   # Task 2: dedup + normalização
-│   │   │   ├── entities_mask.py # Task 3: extração + mascaramento PII
-│   │   │   └── enrichment.py    # Task 4: métricas conversacionais
-│   │   ├── gold/
-│   │   │   ├── analytics.py     # Task 5: orquestrador (12 notebooks paralelos)
-│   │   │   ├── funnel.py        # Funil de vendas
-│   │   │   ├── sentiment.py     # Análise de sentimento
-│   │   │   ├── lead_scoring.py  # Scoring de leads
-│   │   │   └── ...              # +9 notebooks analíticos
-│   │   ├── validation/
-│   │   │   └── checks.py        # Task 6: quality gates
-│   │   └── observer/
-│   │       ├── collect_and_fix.py  # Notebook do Observer Agent
-│   │       └── trigger_sentinel.py # Task sentinel: dispara o Observer em caso de falha
-│   │
-│   ├── pipeline_lib/            # Biblioteca Python compartilhada
-│   │   ├── agent/
-│   │   │   ├── observer/        # Framework Observer Agent
-│   │   │   │   ├── workflow_observer.py
-│   │   │   │   └── providers/   # Factory pattern (LLM + Git)
-│   │   │   │       ├── __init__.py        # Registry + factory
-│   │   │   │       ├── base.py            # ABCs + dataclasses
-│   │   │   │       ├── anthropic_provider.py
-│   │   │   │       ├── openai_provider.py
-│   │   │   │       └── github_provider.py
-│   │   │   ├── llm_diagnostics.py  # (legacy, substituido pelo observer)
-│   │   │   └── github_pr.py        # (legacy, substituido pelo observer)
-│   │   ├── storage/
-│   │   │   └── s3_client.py     # S3Lake: leitura/escrita S3 via boto3 in-memory
-│   │   ├── schema/
-│   │   │   ├── contracts.py     # Colunas obrigatorias + constraints
-│   │   │   └── validator.py     # Validador de schema
-│   │   ├── extractors/          # Extratores de entidades (CPF, phone, email, etc)
-│   │   └── masking/             # Mascaramento PII (HMAC, redaction, format-preserving)
-│   │
-│   ├── deploy/                  # Scripts de deploy/gestao Databricks
-│   │   ├── create_workflow.py          # Cria job ETL (6 tasks)
-│   │   ├── create_observer_workflow.py # Cria job Observer (1 task)
-│   │   ├── trigger_run.py              # Dispara execucao do pipeline
-│   │   ├── trigger_chaos.py            # Dispara chaos testing
-│   │   ├── upload_data.py              # Upload parquet para S3
-│   │   ├── setup_catalog.py            # Cria catalog + schemas no Unity Catalog
-│   │   └── dashboard_queries.sql       # Queries para dashboard SQL
-│   │
-│   └── tests/                   # Testes pytest (89 testes)
+├── observer-framework/           # Framework reusavel (futuro repo open-source)
+│   ├── observer/                 # Pacote Python `observer`
+│   │   ├── __init__.py
+│   │   ├── config.py             # ObserverConfig + load_observer_config
+│   │   ├── dedup.py              # check_duplicate via hash SHA-256 + PR status
+│   │   ├── persistence.py        # ObserverDiagnosticsStore (Delta)
+│   │   ├── triggering.py         # Helpers do task sentinel
+│   │   ├── validator.py          # compile + ast + ruff pre-PR
+│   │   ├── workflow_observer.py  # Coleta contexto via APIs do Databricks
+│   │   └── providers/            # Factory + registry
+│   │       ├── __init__.py
+│   │       ├── base.py           # ABCs + dataclasses
+│   │       ├── anthropic_provider.py
+│   │       ├── openai_provider.py
+│   │       └── github_provider.py
+│   ├── notebooks/                # Notebooks Databricks genericos do observer
+│   │   ├── collect_and_fix.py    # Notebook principal do job
+│   │   └── trigger_sentinel.py   # Task referenciada pelos pipelines
+│   ├── deploy/
+│   │   └── create_observer_workflow.py  # Cria o job Observer no Databricks
+│   ├── scripts/
+│   │   └── update_pr_feedback.py  # CLI da GitHub Action de feedback loop
+│   ├── templates/
+│   │   ├── dashboard_queries.sql
+│   │   └── observer_config.yaml
+│   ├── tests/                    # 113 testes (config, dedup, persistence, etc)
+│   ├── docs/                     # ARCHITECTURE, USAGE, EXTENDING
+│   ├── README.md, LICENSE, CHANGELOG.md, CONTRIBUTING.md
+│   └── pyproject.toml            # Pacote `observer` standalone
+│
+├── pipelines/                    # Guarda-chuva para multiplos pipelines one-click
+│   └── pipeline-seguradora-whatsapp/   # Pipeline WhatsApp de seguro auto
+│       ├── notebooks/            # Databricks notebooks (.py source format)
+│       │   ├── pre_check.py      # Task 0: pre-flight (propaga run_id + chaos_mode)
+│       │   ├── bronze/
+│       │   │   └── ingest.py     # Task 1: S3 parquet → Delta bronze (overwrite)
+│       │   ├── silver/
+│       │   │   ├── dedup_clean.py   # Task 2: dedup + normalização
+│       │   │   ├── entities_mask.py # Task 3: extração + mascaramento PII
+│       │   │   └── enrichment.py    # Task 4: métricas conversacionais
+│       │   ├── gold/
+│       │   │   ├── analytics.py     # Task 5: orquestrador (12 notebooks paralelos)
+│       │   │   ├── funnel.py        # Funil de vendas
+│       │   │   ├── sentiment.py     # Análise de sentimento
+│       │   │   ├── lead_scoring.py  # Scoring de leads
+│       │   │   └── ...              # +9 notebooks analíticos
+│       │   └── validation/
+│       │       └── checks.py        # Task 6: quality gates
+│       │
+│       ├── pipeline_lib/         # Biblioteca Python especifica WhatsApp
+│       │   ├── storage/
+│       │   │   └── s3_client.py     # S3Lake: leitura/escrita S3 via boto3 in-memory
+│       │   ├── schema/
+│       │   │   ├── contracts.py     # Colunas obrigatorias + constraints
+│       │   │   └── validator.py     # Validador de schema
+│       │   ├── extractors/       # CPF, phone, email, plate, vehicle, etc
+│       │   └── masking/          # HMAC, redaction, format-preserving
+│       │
+│       ├── deploy/               # Scripts de deploy/gestao Databricks
+│       │   ├── create_workflow.py    # Cria job ETL; task sentinel referencia observer-framework
+│       │   ├── setup_catalog.py      # Cria catalog + schemas no Unity Catalog
+│       │   ├── trigger_chaos.py      # Dispara chaos testing
+│       │   ├── trigger_run.py        # Dispara execucao do pipeline
+│       │   └── upload_data.py        # Upload parquet para S3
+│       │
+│       ├── tests/                # 91 testes pytest (extractors, masking, schema, deploy)
+│       ├── data/conversations_bronze.parquet  # Sample (gitignored)
+│       ├── observer_config.yaml  # Config do Observer para esse deploy
+│       └── pyproject.toml
 │
 ├── platform/
 │   ├── frontend/                # Nuxt 4.4.2 + Vue 3 + TypeScript
@@ -275,7 +293,7 @@ WorkflowObserver (coleta contexto)
 **Arquivo:** `pipeline_lib/agent/observer/providers/__init__.py`
 
 ```python
-from pipeline_lib.agent.observer.providers import (
+from observer.providers import (
     create_llm_provider,    # Factory para LLM
     create_git_provider,    # Factory para Git
     DiagnosisRequest,       # Input do diagnóstico
@@ -455,7 +473,7 @@ Todo notebook que chama sub-notebooks usa:
 ```python
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 _repo_root = "/".join(_nb_path.split("/")[:4])
-NOTEBOOK_BASE = f"{_repo_root}/pipeline/notebooks"
+NOTEBOOK_BASE = f"{_repo_root}/pipelines/pipeline-seguradora-whatsapp/notebooks"
 ```
 
 ### Chaos Mode Pattern
@@ -557,22 +575,22 @@ export DATABRICKS_HOST="https://dbc-1bad7a6a-cc31.cloud.databricks.com"
 export DATABRICKS_TOKEN="dapi..."
 
 # Criar workflow ETL
-python pipeline/deploy/create_workflow.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/create_workflow.py
 
 # Criar workflow Observer
-python pipeline/deploy/create_observer_workflow.py
+python observer-framework/deploy/create_observer_workflow.py
 
 # Setup Unity Catalog (catalog + schemas)
-python pipeline/deploy/setup_catalog.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/setup_catalog.py
 
 # Upload dados para S3
-python pipeline/deploy/upload_data.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/upload_data.py
 
 # Disparar execucao
-python pipeline/deploy/trigger_run.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_run.py
 
 # Disparar chaos test
-python pipeline/deploy/trigger_chaos.py bronze_schema
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema
 ```
 
 ### Parametrizacao por Empresa
@@ -636,13 +654,13 @@ Roda em push para `main`/`dev` e em PRs:
 ```yaml
 jobs:
   pipeline-lint-test:
-    - ruff check pipeline/pipeline_lib/   # Lint
-    - pytest pipeline/tests/ -v           # 89 testes
+    - ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/   # Lint
+    - pytest pipelines/pipeline-seguradora-whatsapp/tests/ -v           # 89 testes
 
   validate-agent-pr:
     # Roda apenas em branches fix/* e feat/* (PRs do agente)
-    - ruff check pipeline/pipeline_lib/
-    - pytest pipeline/tests/ -v
+    - ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/
+    - pytest pipelines/pipeline-seguradora-whatsapp/tests/ -v
 ```
 
 ### CD (`.github/workflows/cd.yml`)
@@ -701,7 +719,7 @@ deteccao → Claude API diagnostics → GitHub PR para dev.
 
 ```bash
 # Via CLI
-python pipeline/deploy/trigger_chaos.py bronze_schema
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema
 
 # Via Databricks UI
 # Job Settings → Edit → Base Parameters → chaos_mode = "bronze_schema" → Run Now
@@ -911,7 +929,7 @@ PIPELINE_CLUSTER_ID=0409-064526-q0k9e0pd
 | `PlanMetrics not JSON serializable` | `toPandas()` em serverless | `collect()` + `asDict()` |
 | Lambda/UDF em `F.transform` | Serverless bloqueia UDFs | Usar `collect()` → pandas → apply |
 | `dbutils.notebook.exit()` dentro de try | Exit lanca excecao capturada | Exit FORA de try/except |
-| Repo path `[:5]` vs `[:4]` | Double `/pipeline/pipeline` | Sempre `[:4]` para repo root |
+| Repo path `[:5]` vs `[:4]` | Split do path repo_root pega nivel errado | Sempre `[:4]` = `/Repos/user/repo-name` |
 
 ### S3
 
@@ -954,32 +972,32 @@ Tracks do Conductor precisam ser criados para cada melhoria.
 
 ```bash
 # Lint
-ruff check pipeline/pipeline_lib/
+ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/
 
 # Testes
-pytest pipeline/tests/ -v
+pytest pipelines/pipeline-seguradora-whatsapp/tests/ -v
 
 # Lint + fix
-ruff check pipeline/pipeline_lib/ --fix
+ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/ --fix
 ```
 
 ### Deploy
 
 ```bash
 # Setup completo (primeira vez)
-python pipeline/deploy/setup_catalog.py
-python pipeline/deploy/upload_data.py
-python pipeline/deploy/create_workflow.py
-python pipeline/deploy/create_observer_workflow.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/setup_catalog.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/upload_data.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/create_workflow.py
+python observer-framework/deploy/create_observer_workflow.py
 
 # Execucao
-python pipeline/deploy/trigger_run.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_run.py
 
 # Chaos testing
-python pipeline/deploy/trigger_chaos.py bronze_schema
-python pipeline/deploy/trigger_chaos.py silver_null
-python pipeline/deploy/trigger_chaos.py gold_divide_zero
-python pipeline/deploy/trigger_chaos.py validation_strict
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py silver_null
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py gold_divide_zero
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py validation_strict
 ```
 
 ### Git

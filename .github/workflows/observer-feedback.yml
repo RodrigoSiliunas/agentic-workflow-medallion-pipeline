@@ -41,7 +41,7 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           PIPELINE_CATALOG: medallion
         run: |
-          python pipeline/deploy/update_pr_feedback.py \
+          python observer-framework/scripts/update_pr_feedback.py \
             --pr-number ${{ github.event.pull_request.number }} \
             --status ${{ steps.status.outputs.status }}
 

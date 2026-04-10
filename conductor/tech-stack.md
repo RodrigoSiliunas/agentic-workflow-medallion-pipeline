@@ -1,5 +1,17 @@
 # Tech Stack
 
+## Monorepo Layout
+
+- `observer-framework/` — Framework reusavel (pacote Python `observer`, futuro repo open-source)
+- `pipelines/pipeline-seguradora-whatsapp/` — Pipeline WhatsApp de seguro auto (primeiro template para one-click deploy futuro)
+- `platform/` — Plataforma conversacional (Nuxt frontend + FastAPI backend)
+- `infra/aws/` — Terraform (01-foundation + 02-datalake)
+- `conductor/` — Tracks e workflow do monorepo
+- `docs/` — Análise arquitetural
+- `.github/workflows/` — CI (jobs separados para observer e pipeline) + CD (sync Databricks Repo) + observer-feedback
+
+Zero interdependência entre observer-framework e pipeline: o pipeline apenas referencia notebooks do framework via path absoluto no Databricks Repo, sem import Python.
+
 ## Core Platform
 
 | Componente | Tecnologia | Papel |
@@ -28,18 +40,25 @@
 - `dbutils` — Comunicacao entre tasks, filesystem, secrets
 - `logging` — Logs nativos capturados pelo Databricks
 
-## Bibliotecas Complementares (lib/)
+## Bibliotecas Complementares
 
+**observer-framework/observer/**:
+- `pydantic` — ObserverConfig + validacao de providers
+- `pyyaml` — Load de observer_config.yaml
+- `databricks-sdk` — Jobs/Workspace/UnityCatalog APIs
+- `anthropic` / `openai` / `PyGithub` — opcionais via extras
+
+**pipelines/pipeline-seguradora-whatsapp/pipeline_lib/**:
 - `pydantic` — Validacao de contratos de schema
 - `re` / `hashlib` / `hmac` — Extratores e mascaramento (stdlib)
 
-## Opcional (Fase 5)
+## Opcional (ML, Pipeline)
 
 - `pysentimiento` — Sentimento pt-BR via BERT
 - `scikit-learn` — Clusterizacao de personas (K-Means)
 
 ## Desenvolvimento Local
 
-- `pytest` + `ruff` para testes e lint da `lib/`
+- `pytest` + `ruff` para testes e lint de ambos os projetos
 - `pyspark` (dev dependency) para testes que precisam de Spark
-- Dados locais em `data/conversations_bronze.parquet` (gitignored)
+- Dados locais em `pipelines/pipeline-seguradora-whatsapp/data/conversations_bronze.parquet` (gitignored)

@@ -6,43 +6,54 @@ Para contexto completo do projeto, consulte `CODEX_MANUAL.md`.
 ## Monorepo Structure
 
 ```
-pipeline/                        — Pipeline Medallion (Databricks + AWS)
-  notebooks/                     — Databricks notebooks (.py source format)
-    pre_check.py                 — Task 0: pre-flight (propaga run_id + chaos_mode)
-    bronze/ingest.py             — Task 1: S3 parquet → Delta bronze (overwrite)
-    silver/dedup_clean.py        — Task 2: dedup + normalização
-    silver/entities_mask.py      — Task 3: extração entidades + mascaramento PII
-    silver/enrichment.py         — Task 4: métricas conversacionais
-    gold/analytics.py            — Task 5: orquestrador (12 notebooks em paralelo)
-    gold/*.py                    — 12 notebooks analíticos (funnel, sentiment, etc.)
-    validation/checks.py         — Task 6: quality gates (row counts, nulls, consistency)
-    observer/trigger_sentinel.py — Task sentinel: dispara Observer em caso de falha
-    observer/collect_and_fix.py  — Notebook do Observer Agent (job separado)
-  pipeline_lib/                  — Biblioteca Python compartilhada
-    agent/observer/              — Framework Observer Agent (factory pattern)
-    storage/s3_client.py         — S3Lake: leitura/escrita S3 via boto3 in-memory
-    schema/                      — Contratos de schema + validador
-    extractors/                  — Extratores de entidades (CPF, phone, email, etc.)
-    masking/                     — Mascaramento PII (HMAC, redaction, format-preserving)
-  deploy/                        — Scripts de deploy Databricks (SDK)
-  tests/                         — 89 testes pytest
+observer-framework/              — Framework reusavel (futuro repo open-source)
+  observer/                      — Pacote Python `observer`
+    config, dedup, persistence, triggering, validator, workflow_observer
+    providers/                   — Factory + registry (anthropic, openai, github)
+  notebooks/                     — Notebooks Databricks genericos
+    collect_and_fix.py           — Job principal do Observer
+    trigger_sentinel.py          — Referenciado pelos workflows dos pipelines
+  deploy/create_observer_workflow.py  — Cria o job do Observer
+  scripts/update_pr_feedback.py  — CLI da GitHub Action de feedback loop
+  templates/                     — dashboard_queries.sql + observer_config.yaml
+  tests/                         — 113 testes pytest
+  docs/                          — ARCHITECTURE, USAGE, EXTENDING
+  README, LICENSE, CHANGELOG, CONTRIBUTING, pyproject.toml
+
+pipelines/                       — Guarda-chuva para multiplos pipelines one-click deploy
+  pipeline-seguradora-whatsapp/  — Pipeline WhatsApp de seguro auto (primeiro template)
+    notebooks/                   — Databricks notebooks (pre_check, bronze, silver, gold, validation)
+    pipeline_lib/                — Biblioteca Python especifica (storage, schema, extractors, masking)
+    deploy/                      — Scripts de deploy Databricks (SDK)
+    tests/                       — 91 testes pytest
+    observer_config.yaml         — Config do Observer para esse deploy
+    pyproject.toml
+
 platform/frontend/               — Plataforma Conversacional (Nuxt 4.4.2 + Vue 3)
 platform/backend/                — API da Plataforma (FastAPI async)
 infra/aws/                       — Terraform (01-foundation, 02-datalake)
 conductor/                       — Tracks e workflow do projeto
 docs/                            — Análise arquitetural, specs
-.github/workflows/               — CI (ruff + pytest) + CD (Databricks sync)
+.github/workflows/               — CI (observer + pipeline) + CD (Databricks sync) + observer-feedback
 ```
 
-## Pipeline (pipeline/)
+## Zero interdependência entre Observer e Pipeline
+
+O `observer-framework/` e o `pipelines/pipeline-seguradora-whatsapp/` são **dois projetos Python independentes**:
+
+- O pipeline **não importa nada** do framework (`from observer import ...` é proibido em código do pipeline)
+- O framework **não importa nada** do pipeline
+- O único ponto de contato é o workflow: `deploy/create_workflow.py` do pipeline adiciona uma task `observer_trigger` que referencia o notebook `observer-framework/notebooks/trigger_sentinel` via path absoluto no Databricks Repo
+
+## Pipeline seguradora WhatsApp (pipelines/pipeline-seguradora-whatsapp/)
 
 Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsApp de seguro auto (~153k mensagens).
 
 - **Plataforma**: Databricks Trial (AWS), Unity Catalog, Delta Lake
 - **Engine**: PySpark em cluster dedicado (m5d.large) — NÃO serverless
 - **Workspace**: `data-capture-engine-prd` em `https://dbc-1bad7a6a-cc31.cloud.databricks.com`
-- **Testes**: 89 testes (pytest), ruff lint
-- **Deploy**: Scripts em `pipeline/deploy/` usando `databricks-sdk`
+- **Testes**: 91 testes (pytest), ruff lint
+- **Deploy**: Scripts em `pipelines/pipeline-seguradora-whatsapp/deploy/` usando `databricks-sdk`
 
 ### Arquitetura ETL
 
@@ -73,14 +84,14 @@ S3 (Parquet) → [pre_check] → [Bronze] → [Silver x3] → [Gold x12] → [Va
 - **Sem rollback Delta** — overwrite idempotente torna rollback desnecessário
 - Em caso de falha, `observer_trigger` dispara o Observer para analisar e propor fix via PR
 
-## Observer Agent Framework (pipeline_lib/agent/observer/)
+## Observer Framework (observer-framework/)
 
-Framework genérico de observabilidade para qualquer workflow Databricks.
+Framework genérico de observabilidade para qualquer workflow Databricks. Pacote Python `observer`, 113 testes, documentação completa em `observer-framework/docs/`.
 
 ### Factory Pattern
 
 ```python
-from pipeline_lib.agent.observer.providers import (
+from observer.providers import (
     create_llm_provider,    # "anthropic", "openai"
     create_git_provider,    # "github"
     DiagnosisRequest, DiagnosisResult, PRResult,
@@ -91,6 +102,8 @@ from pipeline_lib.agent.observer.providers import (
 - **Git Providers**: GitHubProvider (cria branch `fix/agent-auto-*` + PR para `dev`)
 - Registry via decorators: `@register_llm_provider("nome")`, `@register_git_provider("nome")`
 - Retry com exponential backoff (`@with_retry`) em todas as chamadas externas
+
+Detalhes completos em `observer-framework/README.md` e `observer-framework/docs/ARCHITECTURE.md`.
 
 ## Platform Frontend (platform/frontend/)
 
@@ -118,8 +131,9 @@ from pipeline_lib.agent.observer.providers import (
 
 ## CI/CD
 
-- **CI**: ruff + pytest em push para main/dev e PRs. Job extra para branches `fix/*` e `feat/*`.
-- **CD**: Sync Databricks Repo com `main` automaticamente em push.
+- **CI**: 2 jobs separados (observer-framework + pipeline-seguradora-whatsapp), ambos rodam ruff + pytest. Job `validate-agent-pr` roda ambos para branches `fix/*` e `feat/*`.
+- **CD**: Sync Databricks Repo com `main` automaticamente. Paths monitorados: `observer-framework/**` e `pipelines/**`.
+- **Observer Feedback**: GitHub Action chama `observer-framework/scripts/update_pr_feedback.py` quando PRs `fix/agent-auto-*` são mergeados/fechados.
 - **Fluxo**: Observer cria PR para `dev` → CI valida → humano revisa → merge → dev → PR para main → CD deploya.
 
 ## Chaos Testing
@@ -127,7 +141,7 @@ from pipeline_lib.agent.observer.providers import (
 Injeção controlada de falhas para testar o agente AI end-to-end:
 
 ```bash
-python pipeline/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_zero|validation_strict
+python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_zero|validation_strict
 ```
 
 ## Convenções
@@ -135,11 +149,11 @@ python pipeline/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_ze
 - **Commits**: Conventional Commits em pt-BR (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`)
 - **Lint Python**: ruff (line-length=100, py311). Notebooks excluídos do lint.
 - **Lint JS/TS**: ESLint flat config + Prettier (double quotes, 2 spaces, 100 chars)
-- **Testes Python**: pytest. TDD moderado (obrigatório para pipeline_lib/, flexível para notebooks)
+- **Testes Python**: pytest. TDD moderado (obrigatório para `observer/` e `pipeline_lib/`, flexível para notebooks)
 - **Testes JS**: Vitest + Vue Test Utils
 - **Branch strategy**: PRs do agente AI para `dev` (fix/agent-auto-*, feat/*)
 - **Dados sensíveis**: Mascaramento na Silver, HMAC obrigatório sem fallback, redaction do message_body
-- **Pacote**: `pipeline_lib` (NÃO `lib` — conflita com stdlib Python no Windows)
+- **Pacotes**: `observer` (framework) e `pipeline_lib` (pipeline WhatsApp). Nunca `lib` — conflita com stdlib Python no Windows
 - **Schema evolution**: Colunas novas aceitas via Delta `mergeSchema`, nunca rejeitadas
 - **Deploy scripts**: Sempre parametrizados via env vars, nunca hardcoded
 
@@ -153,18 +167,16 @@ python pipeline/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_ze
 6. **`dbutils.notebook.exit()`** NUNCA dentro de try/except
 7. Separador entre células: `# COMMAND ----------`
 
-## Roadmap — Melhorias Aprovadas
+## Roadmap — Todas as 8 tracks do Observer COMPLETAS
 
-### Observer Agent (8 melhorias, em ordem de prioridade)
-
-1. **Trigger automático** — Webhook/task final dispara Observer imediatamente
-2. **Observabilidade** — Tabela `observer.diagnostics` + Dashboard SQL
-3. **Deduplicação** — Cache de diagnósticos (hash do erro), evita PRs duplicados
-4. **Modo dry-run** — Diagnostica mas NÃO cria PR
-5. **Config como código** — YAML/JSON no repo ao invés de widgets
-6. **Validação pré-PR** — ruff + pytest antes de criar PR
-7. **Multi-file fixes** — LLM propõe changes em N arquivos
-8. **Feedback loop** — Webhook GitHub notifica merge/close de PRs
+1. ✅ **Trigger automático** — Task sentinel dispara Observer via `run_if: AT_LEAST_ONE_FAILED`
+2. ✅ **Observabilidade** — Tabela `observer.diagnostics` + Dashboard SQL (11 painéis + 3 alerts)
+3. ✅ **Deduplicação** — Cache via hash SHA-256 + status do PR no GitHub
+4. ✅ **Modo dry-run** — Diagnostica mas NÃO cria PR
+5. ✅ **Config como código** — YAML versionado no repo (`observer_config.yaml`)
+6. ✅ **Validação pré-PR** — `compile` + `ast.parse` + `ruff` antes do PR
+7. ✅ **Multi-file fixes** — `DiagnosisResult.fixes` para N arquivos por PR
+8. ✅ **Feedback loop** — GitHub Action atualiza `pr_status` na tabela
 
 ### Visão de Produto — One-Click Deploy
 
@@ -172,5 +184,6 @@ Marketplace de pipeline templates com deploy one-click. Terraform programático 
 
 ## GitHub
 
-- **Repo**: `RodrigoSiliunas/agentic-workflow-medallion-pipeline`
+- **Monorepo**: `RodrigoSiliunas/agentic-workflow-medallion-pipeline`
+- **Observer standalone (privado)**: `RodrigoSiliunas/observer` — placeholder para futura extração do `observer-framework/`
 - **Admin email**: `administrator@idlehub.com.br`

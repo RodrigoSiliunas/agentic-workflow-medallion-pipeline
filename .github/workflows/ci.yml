@@ -7,12 +7,15 @@ on:
     branches: [main, dev]
 
 jobs:
-  pipeline-lint-test:
-    name: Pipeline (lint + test)
+  # ============================================================
+  # Observer framework (reusavel, futuro repo open-source)
+  # ============================================================
+  observer-framework:
+    name: Observer framework (lint + test)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: pipeline
+        working-directory: observer-framework
 
     steps:
       - uses: actions/checkout@v4
@@ -22,22 +25,51 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install ruff pytest pydantic
+        run: |
+          pip install ruff pytest pydantic pyyaml databricks-sdk
+          # Providers opcionais — o CI roda testes que importam desses modulos
+          pip install anthropic PyGithub openai
 
       - name: Lint
-        run: ruff check .
+        run: ruff check observer scripts tests
 
       - name: Test
         run: pytest tests/ -v
 
-  # Validacao extra para PRs do agente de IA
+  # ============================================================
+  # Pipeline WhatsApp (consumidor do framework)
+  # ============================================================
+  pipeline-seguradora-whatsapp:
+    name: Pipeline seguradora WhatsApp (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipelines/pipeline-seguradora-whatsapp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest pydantic databricks-sdk
+
+      - name: Lint
+        run: ruff check pipeline_lib deploy tests
+
+      - name: Test
+        run: pytest tests/ -v
+
+  # ============================================================
+  # Validacao extra para PRs do agente AI (branches fix/* ou feat/*)
+  # ============================================================
   validate-agent-pr:
     name: Validate agent-generated PR
     runs-on: ubuntu-latest
     if: startsWith(github.head_ref, 'fix/') || startsWith(github.head_ref, 'feat/')
-    defaults:
-      run:
-        working-directory: pipeline
 
     steps:
       - uses: actions/checkout@v4
@@ -47,10 +79,18 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install ruff pytest pydantic
+        run: |
+          pip install ruff pytest pydantic pyyaml databricks-sdk
+          pip install anthropic PyGithub openai
 
-      - name: Lint
-        run: ruff check .
+      - name: Observer lint + test
+        working-directory: observer-framework
+        run: |
+          ruff check observer scripts tests
+          pytest tests/ -v
 
-      - name: Test
-        run: pytest tests/ -v
+      - name: Pipeline lint + test
+        working-directory: pipelines/pipeline-seguradora-whatsapp
+        run: |
+          ruff check pipeline_lib deploy tests
+          pytest tests/ -v
