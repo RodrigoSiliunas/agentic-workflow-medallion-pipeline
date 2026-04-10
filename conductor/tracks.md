@@ -11,7 +11,7 @@
 | [x] | platform-frontend_20260408 | Platform Frontend (Nuxt 4) — Chat + Sidebar + Settings + QR | 2026-04-08 | 2026-04-08 |
 | [ ] | platform-omni_20260408 | Omni Integration — WhatsApp + Discord + Telegram | 2026-04-08 | 2026-04-08 |
 | [x] | observer-trigger_20260409 | Observer — Trigger Automatico | 2026-04-09 | 2026-04-09 |
-| [ ] | observer-observability_20260409 | Observer — Observabilidade | 2026-04-09 | 2026-04-09 |
+| [x] | observer-observability_20260409 | Observer — Observabilidade | 2026-04-09 | 2026-04-10 |
 | [ ] | observer-dedup_20260409 | Observer — Deduplicacao de Diagnosticos | 2026-04-09 | 2026-04-09 |
 | [ ] | observer-dryrun_20260409 | Observer — Modo Dry-Run | 2026-04-09 | 2026-04-09 |
 | [ ] | observer-config_20260409 | Observer — Configuracao como Codigo | 2026-04-09 | 2026-04-09 |
