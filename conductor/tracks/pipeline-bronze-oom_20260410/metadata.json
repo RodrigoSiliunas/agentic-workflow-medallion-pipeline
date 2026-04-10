@@ -2,18 +2,21 @@
   "id": "pipeline-bronze-oom_20260410",
   "title": "Pipeline - Fix OOM em bronze_ingestion",
   "type": "bug",
-  "status": "in_progress",
+  "status": "complete",
   "created": "2026-04-10",
   "updated": "2026-04-10",
   "current_phase": 3,
-  "current_task": "3.1",
+  "current_task": "3.3",
   "phases": {
     "total": 3,
-    "completed": 2
+    "completed": 3
   },
   "tasks": {
     "total": 9,
-    "completed": 6
+    "completed": 9
   },
-  "commits": []
+  "commits": [
+    "7c851c1",
+    "3a2e514"
+  ]
 }

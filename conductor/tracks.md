@@ -18,6 +18,6 @@
 | [x] | observer-validation_20260409 | Observer — Validacao Pre-PR | 2026-04-09 | 2026-04-10 |
 | [x] | observer-multifile_20260409 | Observer — Multi-File Fixes | 2026-04-09 | 2026-04-10 |
 | [x] | observer-feedback_20260409 | Observer — Feedback Loop | 2026-04-09 | 2026-04-10 |
-| [ ] | pipeline-bronze-oom_20260410 | Pipeline — Fix OOM em bronze_ingestion | 2026-04-10 | 2026-04-10 |
+| [x] | pipeline-bronze-oom_20260410 | Pipeline — Fix OOM em bronze_ingestion | 2026-04-10 | 2026-04-10 |
 
 <!-- Tracks registered by /conductor:new-track -->
