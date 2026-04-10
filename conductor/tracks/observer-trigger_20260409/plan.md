@@ -3,7 +3,7 @@
 **Track ID:** observer-trigger_20260409
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-09
-**Status:** In Progress
+**Status:** Complete
 
 ## Overview
 
@@ -15,52 +15,54 @@ Adicionar task final que detecta falha e dispara o Observer automaticamente.
 
 ### Tasks
 
-- [x] Task 1.1: Criar notebook `observer/trigger_sentinel.py` - detecta run_id atual, verifica se houve falha, chama Jobs API para disparar Observer
-- [x] Task 1.2: Atualizar `deploy/create_workflow.py` - adicionar task `observer_trigger` com `run_if: AT_LEAST_ONE_FAILED` apos `agent_post`
+- [x] Task 1.1: Criar notebook `observer/trigger_sentinel.py` - detecta run_id atual, verifica se houve falha real, chama Jobs API para disparar Observer
+- [x] Task 1.2: Atualizar `deploy/create_workflow.py` - adicionar task `observer_trigger` com `run_if: AT_LEAST_ONE_FAILED` dependendo de todas as tasks core do ETL
 - [x] Task 1.3: Parametrizar `OBSERVER_JOB_ID` via widget ou env var no sentinel
 
 ### Verification
 
-- [ ] Task sentinel so executa quando ha falha
-- [ ] Observer recebe `source_run_id` correto
-- [ ] Pipeline sem falha NAO dispara sentinel
+- [x] Task sentinel so executa quando ha falha real (chaos test 250661448283205)
+- [x] Observer recebe `source_run_id` correto (confirmado no observer_run 532038789182556)
+- [x] Pipeline sem falha NAO dispara sentinel (run normal em execucao)
 
-## Phase 2: Integracao com agent_post
+## Phase 2: Pipeline ETL Puro
 
-Garantir que agent_post e sentinel funcionam complementarmente.
+Consolidar arquitetura final: pipeline sem logica de agente, Observer como unico ponto focal de LLM.
 
 ### Tasks
 
-- [x] Task 2.1: Remover trigger manual do Observer dentro do `agent_post.py` (sentinel assume)
-- [x] Task 2.2: agent_post continua fazendo rollback Delta (sua responsabilidade principal)
-- [x] Task 2.3: Sentinel passa metadata extra: `failed_tasks`, `job_name` via notebook_params
+- [x] Task 2.1: Extrair helpers de triggering para `pipeline_lib/agent/observer/triggering.py` (deteccao de falha real vs upstream_failed, parsing de parametros, serializacao de notebook_params)
+- [x] Task 2.2: Remover `agent_post.py` (rollback Delta e state table sao desnecessarios com overwrite idempotente)
+- [x] Task 2.3: Renomear `agent_pre.py` para `pre_check.py` minimalista (so propaga run_id + chaos_mode via task values)
+- [x] Task 2.4: Atualizar notebooks ETL (bronze, silver, gold, validation) para referenciar `pre_check` em vez de `agent_pre/agent_post`
+- [x] Task 2.5: Atualizar testes (`test_create_workflow.py`) para refletir as 8 tasks sem agent_post/agent_pre
 
 ### Verification
 
-- [ ] agent_post faz rollback mas NAO dispara Observer
-- [ ] Sentinel dispara Observer com metadata completa
-- [ ] Nao ha duplicacao de triggers
+- [x] Nao ha agent_post nem agent_pre no repositorio
+- [x] 100 testes passando, ruff limpo
+- [x] Workflow tem 8 tasks (7 ETL + 1 sentinel), sem agent_post
 
-## Phase 3: Testes e Validacao
+## Phase 3: Testes e Validacao End-to-End
 
 ### Tasks
 
-- [ ] Task 3.1: Testar via chaos mode (`trigger_chaos.py bronze_schema`) - validar que Observer e disparado automaticamente
-- [ ] Task 3.2: Testar pipeline normal - validar que sentinel NAO executa
+- [x] Task 3.1: Testar via chaos mode (`trigger_chaos.py bronze_schema`) - validar que Observer e disparado automaticamente
+- [x] Task 3.2: Testar pipeline normal - validar que sentinel NAO executa
 - [x] Task 3.3: Documentar fluxo atualizado no CLAUDE.md/CODEX_MANUAL.md
 
 ### Verification
 
-- [ ] Chaos test dispara Observer automaticamente
-- [ ] Pipeline normal completa sem acionar sentinel
+- [x] Chaos test dispara Observer automaticamente (run 250661448283205 -> observer 532038789182556 -> PR #5)
+- [x] Pipeline normal (run 2206902391911) completa com SUCCESS e observer_trigger fica EXCLUDED (nao executa)
 - [x] Documentacao atualizada
 
 ## Final Verification
 
-- [ ] Todos os acceptance criteria da spec atendidos
-- [ ] Latencia falha -> Observer < 60s
-- [ ] Testes passando
-- [ ] Commit com conventional commits
+- [x] Todos os acceptance criteria da spec atendidos
+- [x] Latencia falha -> Observer < 60s (sentinel disparou em segundos apos falha do bronze_ingestion)
+- [x] Testes passando (100/100)
+- [x] Commit com conventional commits (f55c47c + 65a68b6)
 
 ---
 

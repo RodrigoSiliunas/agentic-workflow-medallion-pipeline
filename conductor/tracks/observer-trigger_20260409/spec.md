@@ -12,7 +12,7 @@ Fazer o Observer Agent ser disparado automaticamente quando o pipeline falha, ao
 
 ## Context
 
-Hoje o Observer precisa ser disparado manualmente via SDK ou pelo `agent_post`. O ideal e que o Databricks notifique automaticamente quando um run falha, disparando o Observer com o `run_id` da falha. Isso reduz o tempo entre falha e diagnostico de minutos para segundos.
+Hoje o Observer precisa ser disparado manualmente via SDK. O ideal e que o Databricks notifique automaticamente quando um run falha, disparando o Observer com o `run_id` da falha. Isso reduz o tempo entre falha e diagnostico de minutos para segundos.
 
 ## User Story
 
