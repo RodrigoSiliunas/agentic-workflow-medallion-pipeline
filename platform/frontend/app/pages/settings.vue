@@ -49,11 +49,13 @@
       <section>
         <h2 class="text-lg font-semibold mb-3">Canais</h2>
         <div class="space-y-3">
-          <CredentialInput label="Discord Bot Token" type="discord_bot_token"
+          <CredentialInput
+label="Discord Bot Token" type="discord_bot_token"
             :is-configured="settings.credentials.discord_bot_token?.is_configured"
             @save="(v: string) => handleSave('discord_bot_token', v)"
           />
-          <CredentialInput label="Telegram Bot Token" type="telegram_bot_token"
+          <CredentialInput
+label="Telegram Bot Token" type="telegram_bot_token"
             :is-configured="settings.credentials.telegram_bot_token?.is_configured"
             @save="(v: string) => handleSave('telegram_bot_token', v)"
           />
@@ -86,8 +88,9 @@ async function handleSave(type: string, value: string) {
   try {
     await saveCredential(type, value)
     toast.add({ title: "Credencial salva", color: "green" })
-  } catch (e: any) {
-    toast.add({ title: "Erro", description: e.message, color: "red" })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Erro desconhecido"
+    toast.add({ title: "Erro", description: message, color: "red" })
   }
 }
 

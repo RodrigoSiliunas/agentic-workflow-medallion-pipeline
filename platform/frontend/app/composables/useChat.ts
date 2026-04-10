@@ -100,8 +100,8 @@ export function useChat(threadId: Ref<string>) {
           }
         }
       }
-    } catch (e: any) {
-      assistantMsg.content = `Erro: ${e.message}`
+    } catch (e: unknown) {
+      assistantMsg.content = `Erro: ${e instanceof Error ? e.message : "desconhecido"}`
     } finally {
       isStreaming.value = false
     }

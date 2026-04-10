@@ -3,7 +3,7 @@
     <h2 class="text-2xl font-semibold mb-2" style="color: var(--text-primary)">Entrar</h2>
     <p class="text-sm mb-6" style="color: var(--text-secondary)">Acesse sua conta para conversar com seus pipelines</p>
 
-    <form @submit.prevent="handleLogin" class="space-y-4">
+    <form class="space-y-4" @submit.prevent="handleLogin">
       <UFormGroup label="Email">
         <UInput v-model="email" type="email" placeholder="seu@email.com" required />
       </UFormGroup>
@@ -41,8 +41,8 @@ async function handleLogin() {
     await auth.login(email.value, password.value)
     const redirect = (route.query.redirect as string) || "/chat"
     navigateTo(redirect)
-  } catch (e: any) {
-    error.value = e.message || "Erro ao entrar"
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : "Erro ao entrar"
   } finally {
     loading.value = false
   }

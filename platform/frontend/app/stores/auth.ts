@@ -72,7 +72,6 @@ export const useAuthStore = defineStore("auth", {
 
     async fetchUser() {
       if (!this.accessToken) return
-      const config = useRuntimeConfig()
       try {
         // Decode JWT para pegar user info (sem chamada extra)
         const payload = JSON.parse(atob(this.accessToken.split(".")[1]))

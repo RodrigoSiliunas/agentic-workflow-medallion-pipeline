@@ -23,7 +23,12 @@
 
 <script setup lang="ts">
 const props = defineProps<{
-  action: { type?: string; action?: string; status?: string; details?: Record<string, any> }
+  action: {
+    type?: string
+    action?: string
+    status?: string
+    details?: Record<string, unknown>
+  }
 }>()
 
 const actionType = computed(() => props.action.action || props.action.type || "unknown")
