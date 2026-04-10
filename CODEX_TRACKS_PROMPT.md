@@ -137,7 +137,8 @@ Quando todas as tasks estiverem concluidas:
 
 A validacao deve ser proporcional ao tipo de mudanca:
 
-- Mudancas em `pipeline_lib/`: rodar `ruff check pipeline/pipeline_lib/` e testes relevantes em `pipeline/tests/`
+- Mudancas em `observer-framework/observer/`: rodar `ruff check observer-framework/observer/` e `pytest observer-framework/tests/`
+- Mudancas em `pipelines/pipeline-seguradora-whatsapp/pipeline_lib/`: rodar `ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/` e `pytest pipelines/pipeline-seguradora-whatsapp/tests/`
 - Mudancas em notebooks/scripts de deploy: rodar os testes ou checks que fizerem sentido para os arquivos alterados
 - Mudancas apenas de documentacao/conductor: nao inventar testes, apenas informe que nao houve execucao de testes
 
