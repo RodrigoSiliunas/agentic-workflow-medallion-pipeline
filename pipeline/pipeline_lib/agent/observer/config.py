@@ -185,10 +185,11 @@ def _read_config_file(path: Path) -> dict[str, Any]:
         )
 
     # Suporta arquivo com secao 'observer:' encapsulando a config
-    if "observer" in data and isinstance(data["observer"], dict):
-        result = data["observer"]
-    else:
-        result = data
+    result = (
+        data["observer"]
+        if "observer" in data and isinstance(data["observer"], dict)
+        else data
+    )
 
     # Coerce dry_run para bool caso venha como string no YAML (defensivo —
     # pyyaml ja retorna bool para `dry_run: true`, mas aceitamos `dry_run: "true"`)
