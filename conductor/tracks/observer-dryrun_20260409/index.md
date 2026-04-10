@@ -1,0 +1,19 @@
+# Track: Observer — Modo Dry-Run
+
+**ID:** observer-dryrun_20260409
+**Status:** Pending
+
+## Documents
+
+- [Specification](./spec.md)
+- [Implementation Plan](./plan.md)
+
+## Progress
+
+- Phases: 0/2 complete
+- Tasks: 0/6 complete
+
+## Quick Links
+
+- [Back to Tracks](../../tracks.md)
+- [Product Context](../../product.md)

@@ -1,0 +1,19 @@
+{
+  "id": "observer-trigger_20260409",
+  "title": "Observer - Trigger Automatico",
+  "type": "feature",
+  "status": "in_progress",
+  "created": "2026-04-09",
+  "updated": "2026-04-09",
+  "current_phase": 3,
+  "current_task": "3.1",
+  "phases": {
+    "total": 3,
+    "completed": 2
+  },
+  "tasks": {
+    "total": 9,
+    "completed": 7
+  },
+  "commits": []
+}

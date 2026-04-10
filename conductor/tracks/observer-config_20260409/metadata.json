@@ -1,0 +1,19 @@
+{
+  "id": "observer-config_20260409",
+  "title": "Observer — Configuracao como Codigo",
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-04-09",
+  "updated": "2026-04-09",
+  "current_phase": 0,
+  "current_task": "",
+  "phases": {
+    "total": 2,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 7,
+    "completed": 0
+  },
+  "commits": []
+}

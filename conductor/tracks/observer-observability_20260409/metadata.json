@@ -1,0 +1,19 @@
+{
+  "id": "observer-observability_20260409",
+  "title": "Observer — Observabilidade",
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-04-09",
+  "updated": "2026-04-09",
+  "current_phase": 0,
+  "current_task": "",
+  "phases": {
+    "total": 3,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 10,
+    "completed": 0
+  },
+  "commits": []
+}
