@@ -3,7 +3,7 @@
 **Track ID:** pipeline-bronze-oom_20260410
 **Spec:** [spec.md](./spec.md)
 **Created:** 2026-04-10
-**Status:** Pending
+**Status:** In Progress
 
 ## Overview
 
@@ -13,36 +13,33 @@ Substituir o fluxo `boto3 -> pandas -> spark.createDataFrame` do `S3Lake.read_pa
 
 ### Tasks
 
-- [ ] Task 1.1: Adicionar metodo `configure_spark_s3()` em `S3Lake` que chama `spark.conf.set` com as credenciais do secret scope (aws-access-key-id, aws-secret-access-key, aws-region). Chamado lazy na primeira leitura.
+- [x] Task 1.1: `S3Lake.configure_spark_s3()` implementado — idempotente via flag `_spark_configured`, aplica `spark.conf.set` com `spark.hadoop.fs.s3a.access.key`, `secret.key` e `endpoint` (computado a partir de `aws-region`). Credenciais guardadas em `__init__` para reuso.
 
-- [ ] Task 1.2: Adicionar novo metodo `read_parquet_native(s3_prefix)` que:
-  - Chama `configure_spark_s3()` (idempotente)
-  - Retorna `self.spark.read.parquet(f"s3a://{self._bucket}/{s3_prefix}")`
-  - Zero materializacao no driver
+- [x] Task 1.2: `S3Lake.read_parquet_native(s3_prefix)` implementado — chama `configure_spark_s3()` lazy, normaliza o prefix (strip trailing slash) e retorna `spark.read.parquet("s3a://...")`. Levanta `RuntimeError` se spark ausente.
 
-- [ ] Task 1.3: Substituir o corpo de `read_parquet` para delegar a `read_parquet_native` quando `self.spark` esta disponivel. Manter o fluxo antigo como fallback apenas para ambientes sem Spark (testes unitarios locais).
+- [x] Task 1.3: `read_parquet()` agora delega para `read_parquet_native()` quando `self.spark` nao eh None. Fallback para `_read_parquet_in_memory()` (antigo fluxo boto3 + pandas, refatorado para metodo privado) em ambientes sem Spark.
 
 ### Verification
 
-- [ ] `S3Lake.read_parquet` usa Spark nativo quando possivel
-- [ ] Fallback in-memory continua funcional para testes unitarios sem Spark
-- [ ] Configuracao de credenciais eh idempotente (nao re-aplica se ja configurado)
+- [x] `S3Lake.read_parquet` usa Spark nativo quando possivel
+- [x] Fallback in-memory continua funcional (testes mockam via `patch.object`)
+- [x] Configuracao de credenciais eh idempotente (teste `test_is_idempotent`)
 
 ## Phase 2: Testes e validacao local
 
 ### Tasks
 
-- [ ] Task 2.1: Atualizar testes unitarios de `S3Lake` (se existirem) para cobrir o novo fluxo. Mockar `spark.read.parquet` e `spark.conf.set`.
+- [x] Task 2.1: Criado `tests/test_storage/test_s3_client.py` com 12 testes cobrindo: configure_spark_s3 (4 testes: access/secret, endpoint, idempotencia, noop sem spark), read_parquet_native (6 testes: s3a path, strip slash, nested prefix, empty prefix, configures_spark_first, raises sem spark), read_parquet delegation (2 testes: delega para native com spark, fallback in-memory sem spark)
 
-- [ ] Task 2.2: Rodar `pytest pipelines/pipeline-seguradora-whatsapp/tests/` e confirmar que todos os 91 testes continuam passando.
+- [x] Task 2.2: 103 testes passando em `pipelines/pipeline-seguradora-whatsapp/tests/` (91 antigos + 12 novos de storage)
 
-- [ ] Task 2.3: Rodar `ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/` e confirmar lint limpo.
+- [x] Task 2.3: `ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/` limpo (ajustes de import order automaticos no test_s3_client.py)
 
 ### Verification
 
-- [ ] 91 testes passando
-- [ ] Lint limpo
-- [ ] Nenhuma regressao em outros notebooks que usam `S3Lake` (silver/dedup_clean, silver/entities_mask, silver/enrichment, validation/checks)
+- [x] 103 testes passando
+- [x] Lint limpo
+- [x] Nenhuma regressao em outros notebooks (eles chamam `lake.read_parquet` que agora delega para native automaticamente)
 
 ## Phase 3: Validacao end-to-end no Databricks
 

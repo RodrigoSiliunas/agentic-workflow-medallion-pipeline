@@ -1,7 +1,7 @@
 # Track: Pipeline — Fix OOM em bronze_ingestion
 
 **ID:** pipeline-bronze-oom_20260410
-**Status:** Pending
+**Status:** In Progress
 
 ## Documents
 
@@ -10,8 +10,8 @@
 
 ## Progress
 
-- Phases: 0/3 complete
-- Tasks: 0/9 complete
+- Phases: 2/3 complete
+- Tasks: 6/9 complete
 
 ## Quick Links
 
