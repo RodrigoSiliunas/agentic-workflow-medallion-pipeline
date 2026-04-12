@@ -154,6 +154,7 @@ export function useChatApi() {
           },
           body: JSON.stringify({ thread_id: threadId, message }),
           signal: controller.signal,
+          credentials: "include",
         })
 
         if (!response.ok || !response.body) {

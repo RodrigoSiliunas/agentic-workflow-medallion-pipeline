@@ -215,7 +215,7 @@ async def run_saga(
                 )
 
                 step_start_ms = _now_ms()
-                _log_lock = asyncio.Lock()
+                log_lock = asyncio.Lock()
 
                 async def emit_log(
                     level: str, message: str, step_id: str | None = None
@@ -232,7 +232,7 @@ async def run_saga(
                     """
                     if cancel_event.is_set():
                         return
-                    async with _log_lock:
+                    async with log_lock:  # noqa: B023
                         log = DeploymentLog(
                             deployment_id=deployment_id,
                             level=level,

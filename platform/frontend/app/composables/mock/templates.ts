@@ -60,6 +60,16 @@ export const MOCK_TEMPLATES: Template[] = [
         required: true,
         helper: "Chave HMAC usada para mascarar CPF, telefone, email",
       },
+      {
+        key: "cluster_id",
+        label: "Cluster ID (opcional)",
+        type: "text",
+        required: false,
+        placeholder: "auto-detect",
+        helper:
+          "ID do cluster dedicado (ex: 0409-064526-q0k9e0pd). Vazio = auto-detect do workspace. "
+          + "Necessario porque serverless nao suporta spark.hadoop.fs.s3a.*",
+      },
     ],
     changelog: [
       {

@@ -20,5 +20,7 @@ async def test_metrics_shape_for_new_company(
     # Company recem criada ja tem o pipeline default (via register-company)
     assert data["pipelines"]["total"] >= 1
     assert data["channels"]["total"] == 0
-    # Observer metrics sao mockadas mas o shape deve estar certo
-    assert data["observer"]["estimated_cost_usd"] > 0
+    # Observer metrics reais — empresa nova tem zero diagnosticos
+    assert data["observer"]["estimated_cost_usd"] >= 0
+    assert "prs_created" in data["observer"]
+    assert "total_diagnostics" in data["observer"]

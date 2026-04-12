@@ -45,6 +45,35 @@ def _to_quartz_cron(cron: str) -> str:
 class WorkflowStep:
     step_id = "workflow"
 
+    @staticmethod
+    async def _auto_detect_cluster(ctx: StepContext) -> str:
+        """Auto-detecta o primeiro cluster disponivel no workspace.
+
+        Necessario porque serverless nao suporta spark.hadoop.fs.s3a.*
+        que o S3Lake usa pra ler/escrever dados.
+        """
+        import asyncio
+
+        w = workspace_client(ctx.credentials)
+
+        def _find() -> str:
+            clusters = list(w.clusters.list())
+            if not clusters:
+                return ""
+            # Prefere cluster que ja esteja running ou que tenha "pipeline" no nome
+            pipeline_cluster = next(
+                (c for c in clusters if "pipeline" in (c.cluster_name or "").lower()), None
+            )
+            chosen = pipeline_cluster or clusters[0]
+            return chosen.cluster_id or ""
+
+        cluster_id = await asyncio.to_thread(_find)
+        if cluster_id:
+            await ctx.info(f"Cluster auto-detectado: {cluster_id}")
+        else:
+            await ctx.warn("Nenhum cluster encontrado — usando serverless (pode falhar com S3)")
+        return cluster_id
+
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
         catalog = env.get("catalog", ctx.shared.catalog or "medallion")
@@ -66,6 +95,8 @@ class WorkflowStep:
             )
 
         cluster_id = env.get("cluster_id", "")
+        if not cluster_id:
+            cluster_id = await self._auto_detect_cluster(ctx)
         pipeline_notebooks = (
             f"{repo_path}/pipelines/pipeline-seguradora-whatsapp/notebooks"
         )

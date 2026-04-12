@@ -40,6 +40,9 @@ class S3Step:
         ctx.shared.s3_bucket = bucket_name
         ctx.shared.s3_bucket_url = f"s3://{bucket_name}"
 
+        # Upload sample data se existir localmente
+        await self._upload_sample_data(ctx, bucket_name)
+
     @staticmethod
     async def _bucket_exists(ctx: StepContext, bucket_name: str) -> bool:
         session = boto3_session(ctx.credentials)
@@ -114,6 +117,33 @@ class S3Step:
             f"Bucket criado: s3://{bucket_name} "
             f"(versioning=on, encryption=AES256, public_access=blocked)"
         )
+
+
+    @staticmethod
+    async def _upload_sample_data(ctx: StepContext, bucket_name: str) -> None:
+        """Upload do parquet de sample se existir localmente."""
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[6]
+        sample = (
+            repo_root / "pipelines/pipeline-seguradora-whatsapp"
+            / "data/conversations_bronze.parquet"
+        )
+        if not sample.exists():
+            await ctx.info("Sem dados de sample locais — pule ou faca upload manual")
+            return
+
+        session = boto3_session(ctx.credentials)
+        s3 = session.client("s3")
+        key = f"bronze/{sample.name}"
+        size_mb = sample.stat().st_size / 1024 / 1024
+
+        def _upload() -> None:
+            s3.upload_file(str(sample), bucket_name, key)
+
+        await ctx.info(f"Uploading sample data ({size_mb:.1f} MB) -> s3://{bucket_name}/{key}")
+        await asyncio.to_thread(_upload)
+        await ctx.success(f"Sample data uploaded: {key}")
 
 
 def _resolve_bucket_name(ctx: StepContext) -> str:
