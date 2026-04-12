@@ -64,6 +64,14 @@
           <button
             class="w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors hover:bg-[var(--surface-elevated)]"
             :style="{ color: 'var(--text-secondary)' }"
+            @click="exportCsv"
+          >
+            <AppIcon name="arrow-down-tray" size="xs" />
+            Exportar CSV
+          </button>
+          <button
+            class="w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors hover:bg-[var(--surface-elevated)]"
+            :style="{ color: 'var(--text-secondary)' }"
             @click="$emit('clear'); showMenu = false"
           >
             <AppIcon name="trash" size="xs" />
@@ -97,6 +105,29 @@ function copyThreadId() {
     navigator.clipboard.writeText(props.threadId)
   }
   showMenu.value = false
+}
+
+function exportCsv() {
+  showMenu.value = false
+  if (!props.threadId) return
+  const threadsStore = useThreadsStore()
+  const thread = threadsStore.getById(props.threadId)
+  if (!thread || !thread.messages.length) return
+
+  const escCsv = (s: string) => `"${s.replace(/"/g, '""').replace(/\n/g, " ")}"`
+  const rows = [
+    "timestamp,role,content",
+    ...thread.messages.map(
+      (m) => `${m.timestamp},${m.role},${escCsv(m.content)}`,
+    ),
+  ]
+  const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `chat-${props.threadId.slice(0, 8)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function onClickOutside(e: MouseEvent) {
