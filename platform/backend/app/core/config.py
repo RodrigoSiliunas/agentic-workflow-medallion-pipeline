@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     APP_NAME: str = "Namastex Platform"
     API_V1_PREFIX: str = "/api/v1"
+    AUTO_SEED: bool = True  # Seed templates at startup — idempotente
+    # Runner concreto que executa cada etapa do one-click deploy.
+    # "mock" (default) = sleeps + logs fake. "terraform" = stub NotImplemented.
+    SAGA_RUNNER: str = "mock"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/namastex"

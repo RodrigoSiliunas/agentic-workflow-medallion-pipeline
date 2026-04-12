@@ -1,5 +1,8 @@
 <template>
-  <div class="p-4 rounded-xl" style="background: var(--bg-surface); border: 1px solid var(--border-default)">
+  <div
+    class="p-4 rounded-[var(--radius-lg)]"
+    :style="{ background: 'var(--surface)', border: '1px solid var(--border)' }"
+  >
     <div class="flex items-center justify-between mb-2">
       <h3 class="font-medium text-sm">{{ label }}</h3>
       <div class="flex items-center gap-2">

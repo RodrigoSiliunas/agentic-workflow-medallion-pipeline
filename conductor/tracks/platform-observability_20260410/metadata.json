@@ -1,0 +1,13 @@
+{
+  "id": "platform-observability_20260410",
+  "title": "Observability Metrics + Widget",
+  "type": "feature",
+  "status": "complete",
+  "created": "2026-04-10",
+  "updated": "2026-04-10",
+  "current_phase": 1,
+  "current_task": "",
+  "phases": {"total": 1, "completed": 1},
+  "tasks": {"total": 9, "completed": 9},
+  "commits": []
+}

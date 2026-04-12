@@ -1,6 +1,6 @@
 /* ============================================================
- * Namastex Platform — Global Styles
- * Design System: Cohere + namastex.ai (purple-forward, dark-first)
+ * Safatechx Platform — Global Styles
+ * Design System: purple-forward, dark-first, minimal tech
  * Reference: DESIGN.md
  * ============================================================ */
 
@@ -8,24 +8,25 @@
 @import "@nuxt/ui";
 
 /* ------------------------------------------------------------
- * Tailwind 4 @theme — registra a cor `namastex` na escala 50→900
+ * Tailwind 4 @theme — registra a cor `safatechx` na escala 50→900
  * para que @nuxt/ui possa usar via app.config.ts > colors.primary
  * ------------------------------------------------------------ */
 @theme static {
-  --color-namastex-50: #f5f3ff;
-  --color-namastex-100: #ede9fe;
-  --color-namastex-200: #ddd6fe;
-  --color-namastex-300: #c4b5fd;
-  --color-namastex-400: #a78bfa;
-  --color-namastex-500: #8e51f6;
-  --color-namastex-600: #7f22fe;
-  --color-namastex-700: #7008e7;
-  --color-namastex-800: #5b0fb7;
-  --color-namastex-900: #3b0764;
-  --color-namastex-950: #2c0750;
+  --color-safatechx-50: #f5f3ff;
+  --color-safatechx-100: #ede9fe;
+  --color-safatechx-200: #ddd6fe;
+  --color-safatechx-300: #c4b5fd;
+  --color-safatechx-400: #a78bfa;
+  --color-safatechx-500: #8e51f6;
+  --color-safatechx-600: #7f22fe;
+  --color-safatechx-700: #7008e7;
+  --color-safatechx-800: #5b0fb7;
+  --color-safatechx-900: #3b0764;
+  --color-safatechx-950: #2c0750;
 
   --font-sans: "Geist", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", Consolas, monospace;
+  --font-display: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
 }
 
 /* ------------------------------------------------------------
@@ -33,7 +34,7 @@
  * Acesso direto via var(--token) ou bg-[var(--token)] / text-[var(--token)]
  * ------------------------------------------------------------ */
 :root {
-  /* Brand purple — Namastex scale (50 → 700) */
+  /* Brand purple — Safatechx scale (50 → 700) */
   --brand-50: #f5f3ff;
   --brand-100: #ede9fe;
   --brand-200: #ddd6fe;
@@ -130,7 +131,7 @@ samp {
 }
 
 /* ------------------------------------------------------------
- * Headings — Namastex tracking signature (negative)
+ * Headings — Safatechx tracking signature (negative)
  * ------------------------------------------------------------ */
 h1 {
   font-weight: 600;
@@ -154,7 +155,7 @@ h4 {
 }
 
 /* ------------------------------------------------------------
- * Hero signature (Namastex) — gradient blur circles
+ * Hero signature (Safatechx) — gradient blur circles
  * ------------------------------------------------------------ */
 .hero-blur-purple {
   position: absolute;
@@ -174,7 +175,7 @@ h4 {
 }
 
 /* ------------------------------------------------------------
- * Status pulse animation (Namastex running indicator)
+ * Status pulse animation (Safatechx running indicator)
  * ------------------------------------------------------------ */
 @keyframes status-pulse {
   0%,
@@ -190,6 +191,122 @@ h4 {
 
 .status-pulse {
   animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------
+ * Landing page animations — shimmer, breathe, pulse-glow
+ * ------------------------------------------------------------ */
+
+/* Gradient shimmer horizontal — aplicado em headings com background-clip text */
+@keyframes shimmer-slide {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.text-shimmer {
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-slide 6s linear infinite;
+}
+
+.text-shimmer-slow {
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-slide 10s linear infinite;
+}
+
+/* Breathing glow — pulsa lentamente (background decorativo) */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateX(-50%) scale(0.9);
+  }
+  50% {
+    opacity: 0.75;
+    transform: translateX(-50%) scale(1.05);
+  }
+}
+
+@keyframes breathe-simple {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.breathing-glow {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: breathe 7s ease-in-out infinite;
+}
+
+/* Pulse glow atras de CTAs (halo purple pulsante) */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+.cta-glow {
+  position: relative;
+  display: inline-block;
+}
+
+.cta-glow::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: var(--radius-md);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(127, 34, 254, 0.5),
+    rgba(127, 34, 254, 0.2) 40%,
+    transparent 70%
+  );
+  filter: blur(16px);
+  z-index: -1;
+  animation: pulse-glow 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Rainbow purple gradient — varios tons de roxo oscilando */
+.text-rainbow-purple {
+  background: linear-gradient(
+    120deg,
+    #c4b5fd 0%,
+    #a78bfa 14%,
+    #8e51f6 28%,
+    #7f22fe 42%,
+    #8e51f6 56%,
+    #a78bfa 70%,
+    #c4b5fd 84%,
+    #a78bfa 100%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-slide 8s linear infinite;
 }
 
 /* ------------------------------------------------------------

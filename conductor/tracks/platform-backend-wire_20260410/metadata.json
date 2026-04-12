@@ -1,0 +1,19 @@
+{
+  "id": "platform-backend-wire_20260410",
+  "title": "Platform - Backend Wire-up",
+  "type": "feature",
+  "status": "complete",
+  "created": "2026-04-10",
+  "updated": "2026-04-10",
+  "current_phase": 4,
+  "current_task": "4.7",
+  "phases": {
+    "total": 4,
+    "completed": 4
+  },
+  "tasks": {
+    "total": 26,
+    "completed": 26
+  },
+  "commits": []
+}

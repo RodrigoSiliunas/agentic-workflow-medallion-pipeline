@@ -7,8 +7,8 @@
 </template>
 
 <script setup lang="ts">
-// Forca dark mode como default. O usuario pode alternar no futuro
-// via toggle de tema, mas o brand Namastex eh dark-first.
+// Força dark mode como default. O usuário pode alternar no futuro
+// via toggle de tema, mas o brand Safatechx é dark-first.
 const colorMode = useColorMode()
 onMounted(() => {
   if (!colorMode.preference || colorMode.preference === "system") {
@@ -17,12 +17,12 @@ onMounted(() => {
 })
 
 useHead({
-  title: "Namastex Platform",
+  title: "Safatechx Platform",
   meta: [
     {
       name: "description",
       content:
-        "Plataforma agentic de pipelines de dados — Bronze, Silver, Gold com agente AI autonomo.",
+        "Plataforma agêntica de pipelines de dados — Bronze, Silver, Gold com agente AI autônomo.",
     },
   ],
   link: [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],

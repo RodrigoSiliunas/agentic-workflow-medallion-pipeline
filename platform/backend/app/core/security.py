@@ -11,12 +11,18 @@ from app.core.config import settings
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Fernet encryption (SEPARADA do JWT — para credenciais de empresa)
-_fernet_key = (
-    Fernet.generate_key()
-    if settings.ENCRYPTION_KEY == "change-me-encryption-key"
-    else settings.ENCRYPTION_KEY.encode()
-)
+# Fernet encryption (SEPARADA do JWT — para credenciais de empresa).
+# Fail-fast: se a key for o default sentinel, credenciais encriptadas
+# ficariam irrecuperaveis no proximo restart (Fernet.generate_key() gera
+# key aleatoria que morre com o processo).
+if settings.ENCRYPTION_KEY == "change-me-encryption-key":
+    raise RuntimeError(
+        "ENCRYPTION_KEY nao configurada. Gere uma com:\n"
+        '  python -c "from cryptography.fernet import Fernet;'
+        ' print(Fernet.generate_key().decode())"\n'
+        "e salve no .env do backend."
+    )
+_fernet_key = settings.ENCRYPTION_KEY.encode()
 fernet = Fernet(_fernet_key)
 
 

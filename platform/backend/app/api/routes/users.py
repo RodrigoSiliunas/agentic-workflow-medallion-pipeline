@@ -6,13 +6,26 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import AuthContext, require_permission
+from app.api.deps import AuthContext, get_current_user, require_permission
 from app.core.security import hash_password
 from app.database.session import get_db
 from app.models.user import ROLE_HIERARCHY, User
 from app.schemas.auth import CreateUserRequest, UpdateUserRoleRequest, UserResponse
 
 router = APIRouter()
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retorna o usuario autenticado a partir do JWT (perfil completo do DB)."""
+    result = await db.execute(select(User).where(User.id == auth.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario nao encontrado")
+    return user
 
 
 @router.get("", response_model=list[UserResponse])

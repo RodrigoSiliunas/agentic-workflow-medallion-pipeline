@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.database.session import get_db
+from app.middleware.rate_limiter import rate_limit_webhook
 from app.models.channel import ActiveSession, ChannelIdentity
 from app.models.chat import Message
 from app.models.pipeline import Pipeline
@@ -28,7 +29,7 @@ def verify_hmac(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
-@router.post("/omni")
+@router.post("/omni", dependencies=[rate_limit_webhook])
 async def webhook_omni(request: Request, db: AsyncSession = Depends(get_db)):
     """Recebe mensagens normalizadas do Omni.
 
@@ -38,9 +39,13 @@ async def webhook_omni(request: Request, db: AsyncSession = Depends(get_db)):
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
 
-    if settings.OMNI_WEBHOOK_SECRET and (
-        not signature or not verify_hmac(body, signature, settings.OMNI_WEBHOOK_SECRET)
-    ):
+    if not settings.OMNI_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook secret nao configurado (OMNI_WEBHOOK_SECRET vazio)",
+        )
+
+    if not signature or not verify_hmac(body, signature, settings.OMNI_WEBHOOK_SECRET):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="HMAC signature invalida",

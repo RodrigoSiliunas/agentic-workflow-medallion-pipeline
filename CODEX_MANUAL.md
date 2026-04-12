@@ -637,7 +637,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 |-----|-----------|
 | `aws-access-key-id` | IAM access key |
 | `aws-secret-access-key` | IAM secret key |
-| `aws-region` | `us-east-1` |
+| `aws-region` | `us-east-2` |
 | `s3-bucket` | `namastex-medallion-datalake` |
 | `anthropic-api-key` | Claude API key |
 | `github-token` | GitHub PAT |
@@ -910,7 +910,7 @@ PIPELINE_CLUSTER_ID=0409-064526-q0k9e0pd
 ### AWS Account
 
 - Account ID: `051457670776`
-- Regiao: `us-east-1`
+- Regiao: `us-east-2`
 - IAM user: criado via Terraform
 - Buckets: `namastex-medallion-datalake`, `namastex-databricks-root`
 

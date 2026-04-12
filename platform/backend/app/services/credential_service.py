@@ -18,7 +18,22 @@ CREDENTIAL_TYPES = {
     "github_repo",
     "databricks_host",
     "databricks_token",
+    # AWS — credenciais que o saga usa pra Terraform/boto3
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_region",
 }
+
+# Credenciais que o wizard pode pre-preencher/sobrescrever por deploy.
+# Mantido em ordem pra frontend saber o que mostrar.
+DEPLOY_CREDENTIAL_TYPES = (
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_region",
+    "databricks_host",
+    "databricks_token",
+    "github_token",
+)
 
 
 class CredentialService:
@@ -86,6 +101,20 @@ class CredentialService:
             return None
         return self.encryption.decrypt(cred.encrypted_value)
 
+    async def get_all_decrypted(self, company_id: uuid.UUID) -> dict[str, str]:
+        """Retorna TODAS as credenciais decriptadas da empresa em 1 query.
+
+        Uso interno para o POST /deployments — evita N queries sequenciais.
+        """
+        result = await self.db.execute(
+            select(CompanyCredential).where(CompanyCredential.company_id == company_id)
+        )
+        creds = result.scalars().all()
+        return {
+            c.credential_type: self.encryption.decrypt(c.encrypted_value)
+            for c in creds
+        }
+
     async def test_credential(
         self, company_id: uuid.UUID, credential_type: str
     ) -> dict:
@@ -140,6 +169,16 @@ class CredentialService:
             return {"success": False, "error": str(e)}
 
     async def _test_databricks(self, company_id: uuid.UUID, host: str) -> dict:
+        # SSRF protection: so aceitar URLs de workspaces Databricks reais
+        import re
+
+        if not re.match(
+            r"^https://[\w.-]+\.(cloud\.databricks\.com|azuredatabricks\.net)", host
+        ):
+            return {
+                "success": False,
+                "error": "URL invalida — apenas hosts *.cloud.databricks.com aceitos",
+            }
         token = await self.get_decrypted(company_id, "databricks_token")
         if not token:
             return {"success": False, "error": "Token Databricks nao configurado"}

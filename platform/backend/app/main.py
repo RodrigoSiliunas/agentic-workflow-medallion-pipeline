@@ -8,9 +8,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, chat, pipelines, settings, users, webhooks
+from app.api.routes import (
+    auth,
+    channels,
+    chat,
+    deployments,
+    observability,
+    pipelines,
+    settings,
+    templates,
+    users,
+    webhooks,
+)
 from app.core.config import settings as app_settings
 from app.core.exceptions import AppError
+from app.database.seed import seed_templates
+from app.database.session import AsyncSessionLocal
 from app.middleware.request_id import RequestIDMiddleware
 from app.services.omni_service import OmniService
 
@@ -24,6 +37,14 @@ async def lifespan(app: FastAPI):
 
     # TODO: Initialize Redis connection pool
     # TODO: Start background tasks (subscription scheduler, etc.)
+
+    # Seed templates (idempotente)
+    if app_settings.AUTO_SEED:
+        try:
+            async with AsyncSessionLocal() as db:
+                await seed_templates(db)
+        except Exception as e:
+            logger.warning("template seed skipped", error=str(e))
 
     # Check Omni health
     omni = OmniService()
@@ -72,6 +93,12 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["pipelines"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
+app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"])
+app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["deployments"])
+app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
+app.include_router(
+    observability.router, prefix="/api/v1/observability", tags=["observability"]
+)
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 
 

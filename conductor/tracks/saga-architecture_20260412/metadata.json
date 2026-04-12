@@ -1,0 +1,9 @@
+{
+  "id": "saga-architecture_20260412",
+  "title": "Saga — Architecture Cleanup",
+  "status": "pending",
+  "priority": 4,
+  "created": "2026-04-12",
+  "updated": "2026-04-12",
+  "review_findings": ["#10", "#11", "#12", "#20", "#21"]
+}
