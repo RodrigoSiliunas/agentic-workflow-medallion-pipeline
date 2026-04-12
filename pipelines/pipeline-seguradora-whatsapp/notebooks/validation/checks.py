@@ -143,10 +143,10 @@ except Exception as e:
 # DBTITLE 1,Gold Checks
 # Verifica existencia e dados de todas as tabelas Gold
 gold_tables = [
-    "funil_vendas", "agent_performance", "sentiment", "lead_scoring",
-    "email_providers", "temporal_analysis", "competitor_intel", "campaign_roi",
-    "personas", "churn_reengagement", "negotiation_complexity",
-    "first_contact_resolution",
+    "agent_performance", "campaign_geo", "campaign_roi", "churn_reengagement",
+    "competitor_intel", "email_providers", "fcr_summary", "first_contact_resolution",
+    "lead_scoring", "negotiation_by_outcome", "negotiation_complexity",
+    "persona_summary", "personas", "sentiment", "temporal_analysis",
 ]
 
 for table_name in gold_tables:
