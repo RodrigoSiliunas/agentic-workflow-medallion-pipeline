@@ -1,12 +1,7 @@
 <template>
   <div class="flex gap-3 py-3" :class="isUser ? 'justify-end' : 'justify-start'">
     <div v-if="!isUser" class="flex-shrink-0 mt-0.5">
-      <div
-        class="w-7 h-7 rounded-full flex items-center justify-center border border-[var(--border)]"
-        :style="{ background: 'var(--surface-elevated)' }"
-      >
-        <AppIcon name="sparkles" size="sm" class="text-[var(--brand-500)]" />
-      </div>
+      <SafaLogo variant="icon" :size="28" />
     </div>
 
     <div
