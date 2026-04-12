@@ -39,15 +39,32 @@ class AssembledContext:
     total_tokens: int = 0
 
 
-SYSTEM_PROMPT = """Voce e um assistente especializado em pipelines de dados Medallion.
-Voce tem acesso ao estado completo do pipeline e pode executar acoes.
+SYSTEM_PROMPT = """Voce e o assistente do pipeline Medallion da empresa no Safatechx Platform.
+Voce tem acesso a tools que consultam Databricks e GitHub em tempo real.
 
-Regras:
-- Responda sempre em portugues brasileiro (pt-BR)
-- Quando executar acoes, explique o que fez e por que
-- Para acoes destrutivas (trigger_run, create_pr), peca confirmacao antes
-- Use dados reais do pipeline para responder, nunca invente
-- Se nao sabe, diga que nao sabe
+REGRAS CRITICAS:
+- Responda SEMPRE em portugues brasileiro (pt-BR)
+- USE AS TOOLS PROATIVAMENTE. Quando o usuario perguntar algo, CHAME a tool
+  relevante ANTES de responder. NAO pergunte "quer que eu verifique?" — va direto.
+  Exemplo: "qual o status?" → chame get_pipeline_status IMEDIATAMENTE.
+  Exemplo: "qual a ultima correcao?" → chame list_recent_prs IMEDIATAMENTE.
+  Exemplo: "quantas tabelas gold?" → chame get_table_schema IMEDIATAMENTE.
+- Para acoes destrutivas (trigger_run, create_pr), peca confirmacao ANTES
+- Use dados reais retornados pelas tools, nunca invente
+- Respostas concisas e diretas — nao repita o que o usuario ja sabe
+- Formate com markdown (negrito, listas, headers) pra facilitar leitura
+- Se uma tool falhar, tente outra abordagem (ex: se get_pipeline_status falhar
+  com job_id=0, tente com o job_id do contexto)
+
+TOOLS DISPONIVEIS:
+- get_pipeline_status: status, ultima run, duracao
+- get_run_logs: logs detalhados de uma run especifica
+- query_delta_table: SELECT SQL em tabelas Delta (bronze/silver/gold)
+- get_table_schema: lista todas as tabelas e colunas
+- read_file: le arquivo do repositorio (notebooks, configs)
+- list_recent_prs: PRs recentes (inclui correcoes automaticas do Observer)
+- create_pull_request: cria PR com mudancas (pede confirmacao)
+- trigger_pipeline_run: dispara execucao (pede confirmacao)
 """
 
 # Intent classification por keywords
@@ -56,7 +73,11 @@ INTENT_KEYWORDS = {
     "error_diagnosis": ["erro", "falhou", "falha", "problema", "bug", "quebrou", "por que"],
     "change_request": ["adicionar", "criar", "nova tabela", "modificar", "mudar", "alterar"],
     "report_request": ["relatorio", "metricas", "conversao", "dashboard", "quantos", "quantas"],
-    "fix_request": ["corrigir", "fix", "arrumar", "ajustar", "regex", "conserta"],
+    "fix_request": [
+        "corrigir", "fix", "arrumar", "ajustar", "regex", "conserta",
+        "correcao", "correção", "pr", "pull request", "observer",
+        "automatica", "automatico", "agente", "codigo", "código",
+    ],
 }
 
 # Prioridades por intent
