@@ -126,7 +126,12 @@ class DatabricksService:
         return schemas
 
     async def get_pipeline_summary(self, job_id: int) -> dict:
-        """Resumo completo do pipeline (para Context Engine nivel 1)."""
+        """Resumo completo do pipeline (para Context Engine nivel 1).
+
+        Timestamps sao convertidos de milissegundos Unix pra ISO string
+        legivel (timezone America/Sao_Paulo) pra evitar que o LLM erre
+        a conversao.
+        """
         try:
             runs = await self.list_runs(job_id, limit=1)
             latest = runs[0] if runs else None
@@ -136,7 +141,7 @@ class DatabricksService:
                     latest.get("state", {}).get("result_state", "UNKNOWN")
                     if latest else "NO_RUNS"
                 ),
-                "last_run_at": latest.get("start_time") if latest else None,
+                "last_run_at": _ms_to_iso(latest.get("start_time")) if latest else None,
                 "duration_sec": (latest.get("run_duration", 0) / 1000) if latest else 0,
                 "tasks": {
                     t["task_key"]: t.get("state", {}).get("result_state", "UNKNOWN")
@@ -146,3 +151,13 @@ class DatabricksService:
         except Exception as e:
             logger.error("Erro ao obter resumo do pipeline", error=str(e))
             return {"status": "ERROR", "error": str(e)}
+
+
+def _ms_to_iso(ms: int | None) -> str | None:
+    """Converte timestamp Databricks (milissegundos Unix) pra ISO string SP."""
+    if not ms:
+        return None
+    from datetime import datetime, timedelta, timezone
+
+    dt = datetime.fromtimestamp(ms / 1000, tz=timezone(timedelta(hours=-3)))
+    return dt.strftime("%Y-%m-%d %H:%M:%S (horario de Brasilia)")
