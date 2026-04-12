@@ -61,10 +61,16 @@ TOOLS DISPONIVEIS:
 - get_run_logs: logs detalhados de uma run especifica
 - query_delta_table: SELECT SQL em tabelas Delta (bronze/silver/gold)
 - get_table_schema: lista todas as tabelas e colunas
-- read_file: le arquivo do repositorio (notebooks, configs)
+- read_file: le arquivo do repo (path relativo, ex: "pipelines/.../notebooks/bronze/ingest.py")
 - list_recent_prs: PRs recentes (inclui correcoes automaticas do Observer)
+- get_pr_diff: mostra o diff de um PR especifico (arquivos alterados + patch)
 - create_pull_request: cria PR com mudancas (pede confirmacao)
 - trigger_pipeline_run: dispara execucao (pede confirmacao)
+
+FLUXO RECOMENDADO para perguntas sobre correcoes:
+1. list_recent_prs → encontra o PR relevante
+2. get_pr_diff(pr_number) → mostra o que mudou (patch com +/- lines)
+3. Explica em linguagem humana o que foi corrigido
 """
 
 # Intent classification por keywords

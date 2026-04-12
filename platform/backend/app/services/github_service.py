@@ -73,6 +73,42 @@ class GitHubService:
                 for pr in resp.json()
             ]
 
+    async def get_pr_diff(self, pr_number: int) -> dict:
+        """Retorna o diff de um PR especifico (arquivos alterados + patch)."""
+        await self._ensure_credentials()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{self._repo}/pulls/{pr_number}",
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            pr = resp.json()
+
+            files_resp = await client.get(
+                f"https://api.github.com/repos/{self._repo}/pulls/{pr_number}/files",
+                headers=self._headers(),
+            )
+            files_resp.raise_for_status()
+            files = [
+                {
+                    "filename": f["filename"],
+                    "status": f["status"],
+                    "additions": f["additions"],
+                    "deletions": f["deletions"],
+                    "patch": f.get("patch", "")[:2000],
+                }
+                for f in files_resp.json()
+            ]
+
+            return {
+                "number": pr["number"],
+                "title": pr["title"],
+                "state": pr["state"],
+                "body": (pr.get("body") or "")[:1000],
+                "files_changed": len(files),
+                "files": files,
+            }
+
     async def create_pr(
         self, title: str, body: str, branch: str,
         base: str = "dev", files: dict[str, str] | None = None

@@ -81,6 +81,15 @@ TOOLS = [
         },
     },
     {
+        "name": "get_pr_diff",
+        "description": "Mostra o diff de um PR — arquivos alterados e o patch.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"pr_number": {"type": "integer"}},
+            "required": ["pr_number"],
+        },
+    },
+    {
         "name": "create_pull_request",
         "description": "Cria PR com mudancas no codigo. REQUER CONFIRMACAO.",
         "input_schema": {
@@ -298,6 +307,9 @@ class LLMOrchestrator:
                         input_data.get("limit", 10),
                     )
                 }
+
+            if name == "get_pr_diff":
+                return await self.github.get_pr_diff(input_data["pr_number"])
 
             if name == "create_pull_request":
                 branch = f"feat/{self.user_name}/{input_data['branch']}"
