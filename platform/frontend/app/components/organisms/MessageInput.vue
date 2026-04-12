@@ -27,7 +27,7 @@
         />
       </form>
       <p class="mt-2 text-[10px] text-center" :style="{ color: 'var(--text-tertiary)' }">
-        Mocks ativos. Enter envia, Shift+Enter quebra linha.
+        {{ isMock ? 'Modo mock ativo.' : 'Modo ativo.' }} Enter envia, Shift+Enter quebra linha.
       </p>
     </div>
   </div>
@@ -47,6 +47,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ send: [content: string] }>()
 
+const isMock = Boolean(useRuntimeConfig().public.mockMode)
 const value = ref("")
 const textarea = ref<HTMLTextAreaElement | null>(null)
 

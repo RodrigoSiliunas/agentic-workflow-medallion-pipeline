@@ -304,10 +304,19 @@ async def run_saga(
 
             # Cria o Pipeline real na tabela `pipelines` — assim o chat passa
             # a listar esse workflow e o usuario pode conversar com ele.
+            # Tenta ler o workflow_job_id do shared state do runner
+            # (so funciona com RealSagaRunner — MockRunner nao tem shared state).
+            workflow_job_id = None
+            if hasattr(step_runner, "_shared_per_deployment"):
+                shared = step_runner._shared_per_deployment.get(dep_id_str)
+                if shared is not None:
+                    workflow_job_id = getattr(shared, "workflow_job_id", None)
+
             pipeline = Pipeline(
                 company_id=deployment.company_id,
                 name=deployment.name,
                 description=f"Deploy de {deployment.template_name}",
+                databricks_job_id=workflow_job_id,
                 config={
                     "template_slug": deployment.template_slug,
                     "deployment_id": str(deployment.id),

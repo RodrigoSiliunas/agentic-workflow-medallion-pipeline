@@ -18,7 +18,8 @@ function fromApi(dto: PipelineApiDTO): Pipeline {
   return {
     id: dto.id,
     name: dto.name,
-    status: "IDLE",
+    // Pipeline com job Databricks configurado = ativo (deployado com sucesso)
+    status: dto.databricks_job_id ? "SUCCESS" : "IDLE",
     lastRunAt: null,
     nextRunAt: null,
     threadCount: 0,

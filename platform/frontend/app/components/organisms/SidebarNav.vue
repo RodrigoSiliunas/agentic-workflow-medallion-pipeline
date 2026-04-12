@@ -244,6 +244,14 @@ const templatesStore = useTemplatesStore()
 const deploymentsStore = useDeploymentsStore()
 const channelsStore = useChannelsStore()
 
+// Carrega pipelines da empresa no mount — necessario pra sidebar mostrar
+// o pipeline ativo e pro chat funcionar com dados reais.
+onMounted(() => {
+  if (!pipelinesStore.loaded) {
+    pipelinesStore.load()
+  }
+})
+
 // Carrega canais quando entra no mode channels
 watch(
   () => route.path,
