@@ -131,7 +131,15 @@ class LLMOrchestrator:
             raise ValueError("Anthropic API key nao configurada para esta empresa")
         return anthropic.AsyncAnthropic(api_key=api_key)
 
-    async def _get_model(self) -> str:
+    MODEL_MAP = {
+        "sonnet": "claude-sonnet-4-20250514",
+        "opus": "claude-opus-4-20250514",
+        "haiku": "claude-haiku-4-5-20251001",
+    }
+
+    async def _get_model(self, override: str | None = None) -> str:
+        if override and override in self.MODEL_MAP:
+            return self.MODEL_MAP[override]
         from sqlalchemy import select
 
         from app.models.company import Company
@@ -139,20 +147,18 @@ class LLMOrchestrator:
             select(Company.preferred_model).where(Company.id == self.company_id)
         )
         pref = result.scalar_one_or_none() or "sonnet"
-        return {
-            "sonnet": "claude-sonnet-4-20250514",
-            "opus": "claude-opus-4-20250514",
-        }.get(pref, "claude-sonnet-4-20250514")
+        return self.MODEL_MAP.get(pref, self.MODEL_MAP["sonnet"])
 
     async def process_message(
         self,
         user_message: str,
         pipeline_job_id: int,
         conversation_history: list[dict],
+        model_override: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Processa mensagem do usuario. Yields SSE events."""
         client = await self._get_anthropic_client()
-        model = await self._get_model()
+        model = await self._get_model(model_override)
 
         # Montar contexto
         context = await self.context_engine.assemble(

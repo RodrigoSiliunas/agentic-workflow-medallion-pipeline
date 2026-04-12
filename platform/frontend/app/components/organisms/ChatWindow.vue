@@ -4,7 +4,7 @@
 
     <MessageList :messages="messages" :is-streaming="isStreaming" />
 
-    <MessageInput :disabled="isStreaming" @send="handleSend" />
+    <MessageInput :disabled="isStreaming" @send="handleSend" @update:model="selectedModel = $event" />
   </div>
 </template>
 
@@ -23,12 +23,13 @@ const activePipeline = computed(() => {
 })
 
 const isStreaming = ref(false)
+const selectedModel = ref("sonnet")
 
 async function handleSend(content: string) {
   if (isStreaming.value || !thread.value) return
   isStreaming.value = true
   try {
-    await threadsStore.streamAssistantReply(props.threadId, content)
+    await threadsStore.streamAssistantReply(props.threadId, content, selectedModel.value)
   } finally {
     isStreaming.value = false
   }

@@ -10,6 +10,7 @@ class SendMessageRequest(BaseModel):
     thread_id: str
     message: str
     pipeline_job_id: int | None = None
+    model: str | None = None  # "opus", "sonnet", "haiku" — override per-message
 
 
 class CreateThreadRequest(BaseModel):

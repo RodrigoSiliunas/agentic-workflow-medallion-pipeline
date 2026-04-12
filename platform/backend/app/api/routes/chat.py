@@ -211,7 +211,8 @@ async def send_message(
             async for event in orchestrator.process_message(
                 user_message=data.message,
                 pipeline_job_id=job_id,
-                conversation_history=conversation_history[:-1],  # Exclui a msg atual
+                conversation_history=conversation_history[:-1],
+                model_override=data.model,
             ):
                 if event["type"] == "token":
                     full_response += event["content"]

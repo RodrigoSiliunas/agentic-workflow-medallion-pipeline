@@ -154,7 +154,7 @@ export const useThreadsStore = defineStore("threads", () => {
    * Streaming de resposta do LLM. O composable useChatApi ja lida
    * com mock vs real internamente via sendMessageStream.
    */
-  async function streamAssistantReply(threadId: string, userContent: string): Promise<void> {
+  async function streamAssistantReply(threadId: string, userContent: string, model?: string): Promise<void> {
     addMessage(threadId, { role: "user", content: userContent, channel: "web" })
     const assistantMsg = addMessage(threadId, {
       role: "assistant",
@@ -172,6 +172,7 @@ export const useThreadsStore = defineStore("threads", () => {
         resolve()
       }
       api.sendMessageStream(threadId, userContent, {
+        model,
         onToken: (content) => {
           assistantMsg.content += content
         },

@@ -121,7 +121,7 @@ export function useChatApi() {
   function sendMessageStream(
     threadId: string,
     message: string,
-    handlers: ChatStreamHandlers,
+    handlers: ChatStreamHandlers & { model?: string },
   ): () => void {
     if (!import.meta.client) return () => {}
 
@@ -152,7 +152,7 @@ export function useChatApi() {
             Authorization: `Bearer ${auth.accessToken}`,
             Accept: "text/event-stream",
           },
-          body: JSON.stringify({ thread_id: threadId, message }),
+          body: JSON.stringify({ thread_id: threadId, message, model: handlers.model }),
           signal: controller.signal,
           credentials: "include",
         })
