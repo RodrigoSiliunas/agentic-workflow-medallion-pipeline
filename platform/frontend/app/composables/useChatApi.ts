@@ -145,7 +145,12 @@ export function useChatApi() {
 
     void (async () => {
       try {
-        const response = await fetch(url, {
+        // Garante token fresco antes do SSE (auto-refresh se expirado)
+        if (!auth.accessToken) {
+          await auth.refresh()
+        }
+
+        let response = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -156,6 +161,26 @@ export function useChatApi() {
           signal: controller.signal,
           credentials: "include",
         })
+
+        // Token expirado — refresh e retry uma vez
+        if (response.status === 401) {
+          await auth.refresh()
+          if (!auth.accessToken) {
+            handlers.onError?.("Sessao expirada. Faca login novamente.")
+            return
+          }
+          response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${auth.accessToken}`,
+              Accept: "text/event-stream",
+            },
+            body: JSON.stringify({ thread_id: threadId, message, model: handlers.model }),
+            signal: controller.signal,
+            credentials: "include",
+          })
+        }
 
         if (!response.ok || !response.body) {
           const errorText = await response.text().catch(() => "")
