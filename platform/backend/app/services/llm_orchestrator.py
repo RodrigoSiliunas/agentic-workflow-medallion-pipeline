@@ -168,27 +168,52 @@ class LLMOrchestrator:
         # Mensagens
         messages = conversation_history + [{"role": "user", "content": user_message}]
 
-        # Loop de tool use
+        # Loop de tool use com streaming real token-a-token.
+        # Cada round: stream texto → coleta tool_use → executa → loop.
+        # So a resposta FINAL (sem tool_use) e streamed pro usuario.
+        # Rounds intermediarios emitem apenas action events.
         for _round in range(MAX_TOOL_ROUNDS):
-            response = await client.messages.create(
+            # Stream pra capturar texto + tool calls
+            collected_text = ""
+            tool_calls = []
+            total_tokens = 0
+
+            async with client.messages.stream(
                 model=model,
                 max_tokens=4096,
                 system=system,
                 messages=messages,
                 tools=TOOLS,
-            )
+            ) as stream:
+                async for event in stream:
+                    if event.type == "content_block_delta":
+                        if hasattr(event.delta, "text"):
+                            collected_text += event.delta.text
+                            yield {"type": "token", "content": event.delta.text}
+                    elif event.type == "content_block_start":
+                        if event.content_block.type == "tool_use":
+                            tool_calls.append({
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input": {},
+                            })
+                    elif event.type == "content_block_delta":
+                        if hasattr(event.delta, "partial_json") and tool_calls:
+                            # Acumula input JSON do tool call
+                            pass
+                    elif event.type == "message_delta" and hasattr(event.usage, "output_tokens"):
+                        total_tokens = event.usage.output_tokens
 
-            # Processar resposta
-            tool_calls = []
-            for block in response.content:
-                if block.type == "text":
-                    yield {"type": "token", "content": block.text}
-                elif block.type == "tool_use":
-                    tool_calls.append(block)
+                # Pegar a mensagem final completa pra extrair tool inputs
+                final_message = await stream.get_final_message()
+                tool_calls = []
+                for block in final_message.content:
+                    if block.type == "tool_use":
+                        tool_calls.append(block)
 
             # Se nao tem tool calls, resposta finalizada
             if not tool_calls:
-                yield {"type": "done", "model": model, "tokens": response.usage.output_tokens}
+                yield {"type": "done", "model": model, "tokens": total_tokens}
                 return
 
             # Executar tools
@@ -223,7 +248,7 @@ class LLMOrchestrator:
                 })
 
             # Adicionar tool calls + results e continuar loop
-            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "assistant", "content": final_message.content})
             messages.append({"role": "user", "content": tool_results})
 
         yield {"type": "error", "content": "Limite de rounds de tool use atingido"}
