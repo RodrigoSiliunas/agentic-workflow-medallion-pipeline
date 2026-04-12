@@ -279,6 +279,9 @@ _PIPELINE_KEYWORDS = {
     # Temporal / follow-up (usuario perguntando sobre resultado anterior)
     "data", "quando", "hora", "ultimo", "ultima", "executou", "rodou",
     "sucesso", "success", "resultado", "duracao", "correcao", "correção",
+    # Codigo / mudancas
+    "codigo", "código", "mudou", "alterou", "alteracao", "commit",
+    "arquivo", "diff", "patch", "branch", "merge",
 }
 
 _OFF_TOPIC_RESPONSE = (
