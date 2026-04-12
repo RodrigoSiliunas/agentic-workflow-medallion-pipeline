@@ -1,6 +1,12 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <WorkflowHeader :pipeline="activePipeline" :thread-title="thread?.title" />
+    <WorkflowHeader
+      :pipeline="activePipeline"
+      :thread-title="thread?.title"
+      :thread-id="props.threadId"
+      @refresh="refreshMessages"
+      @clear="clearThread"
+    />
 
     <MessageList :messages="messages" :is-streaming="isStreaming" />
 
@@ -32,6 +38,19 @@ async function handleSend(content: string) {
     await threadsStore.streamAssistantReply(props.threadId, content, selectedModel.value)
   } finally {
     isStreaming.value = false
+  }
+}
+
+async function refreshMessages() {
+  if (thread.value) {
+    await threadsStore.loadMessages(thread.value.id)
+  }
+}
+
+async function clearThread() {
+  if (thread.value) {
+    threadsStore.remove(thread.value.id)
+    navigateTo("/chat")
   }
 }
 
