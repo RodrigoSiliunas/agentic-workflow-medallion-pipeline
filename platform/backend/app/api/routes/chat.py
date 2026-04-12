@@ -3,6 +3,7 @@
 import json
 import uuid
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -19,6 +20,8 @@ from app.schemas.chat import (
     ThreadResponse,
 )
 from app.services.llm_orchestrator import LLMOrchestrator
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -171,7 +174,10 @@ async def send_message(
     # Stream response via SSE
     orchestrator = LLMOrchestrator(db, auth.company_id, auth.name)
 
+    orchestrator_model = "unknown"
+
     async def event_stream():
+        nonlocal orchestrator_model
         full_response = ""
         actions = []
 
@@ -186,16 +192,34 @@ async def send_message(
                 elif event["type"] == "action":
                     actions.append(event)
                 elif event["type"] == "done":
-                    pass  # Stream finalizado
+                    orchestrator_model = event.get("model", "unknown")
 
                 yield f"data: {json.dumps(event)}\n\n"
 
         except Exception as e:
+            logger.exception("chat stream error", thread_id=str(thread.id))
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             full_response = f"Erro: {e}"
 
-        # Salvar resposta do assistente (fora do stream, nova session)
-        # TODO: mover para background task para nao bloquear SSE close
+        # Persistir resposta do assistente no DB pra que sobreviva refresh.
+        # Usa nova session porque a session do request pode ja ter fechado.
+        if full_response:
+            try:
+                from app.database.session import AsyncSessionLocal
+
+                async with AsyncSessionLocal() as save_db:
+                    assistant_msg = Message(
+                        thread_id=thread.id,
+                        role="assistant",
+                        content=full_response,
+                        channel="web",
+                        actions=actions if actions else None,
+                        model=orchestrator_model,
+                    )
+                    save_db.add(assistant_msg)
+                    await save_db.commit()
+            except Exception as save_err:
+                logger.error("Failed to save assistant msg", error=str(save_err))
 
     return StreamingResponse(
         event_stream(),
