@@ -134,6 +134,32 @@ async def send_message(
             status_code=status.HTTP_404_NOT_FOUND, detail="Thread nao encontrado"
         )
 
+    # Filtro de intencao — rejeita perguntas off-topic ANTES de gastar
+    # tokens com o LLM. Resposta local instantanea, custo zero.
+    off_topic = _check_off_topic(data.message)
+    if off_topic:
+        user_msg = Message(
+            thread_id=thread.id, role="user", content=data.message, channel="web"
+        )
+        db.add(user_msg)
+        assistant_msg = Message(
+            thread_id=thread.id, role="assistant", content=off_topic, channel="web"
+        )
+        db.add(assistant_msg)
+        if not thread.title:
+            thread.title = data.message[:100]
+        await db.commit()
+
+        async def _off_topic_stream():
+            yield f"data: {json.dumps({'type': 'token', 'content': off_topic})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'model': 'local', 'tokens': 0})}\n\n"
+
+        return StreamingResponse(
+            _off_topic_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     # Obter pipeline para job_id
     pipeline_result = await db.execute(
         select(Pipeline).where(Pipeline.id == thread.pipeline_id)
@@ -230,3 +256,70 @@ async def send_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Filtro de intencao — rejeita off-topic sem gastar tokens LLM
+# ---------------------------------------------------------------------------
+_PIPELINE_KEYWORDS = {
+    "pipeline", "bronze", "silver", "gold", "etl", "medallion", "databricks",
+    "delta", "spark", "notebook", "job", "run", "task", "workflow", "observer",
+    "agente", "agent", "falha", "erro", "error", "fail", "status", "log",
+    "deploy", "schema", "tabela", "table", "coluna", "column", "query", "sql",
+    "s3", "bucket", "parquet", "ingestion", "ingest", "dedup", "validation",
+    "check", "quality", "pr", "pull request", "github", "fix", "diagnos",
+    "custo", "cost", "token", "claude", "anthropic", "llm", "modelo",
+    "secret", "credential", "catalog", "warehouse", "cluster",
+    "whatsapp", "seguro", "seguradora", "conversa", "mensagem",
+    "mascaramento", "pii", "hmac", "cpf", "telefone", "email",
+    "sentiment", "funnel", "nps", "churn", "lead", "persona",
+    "schedule", "cron", "trigger", "chaos", "rollback", "overwrite",
+    "metric", "metrica", "dashboard", "observability", "monitor",
+}
+
+_OFF_TOPIC_RESPONSE = (
+    "Essa pergunta esta fora do escopo do que posso ajudar. "
+    "Sou o assistente do seu pipeline Medallion — posso:\n\n"
+    "- Verificar **status** e **logs** de execucoes\n"
+    "- Consultar **tabelas** Delta (SELECT)\n"
+    "- Analisar **erros** e diagnosticar falhas\n"
+    "- Listar **PRs** do Observer Agent\n"
+    "- Verificar **schemas** e **metricas**\n"
+    "- Disparar runs ou criar PRs\n\n"
+    "Pergunte algo sobre o pipeline e terei prazer em ajudar!"
+)
+
+
+def _check_off_topic(message: str) -> str | None:
+    """Retorna resposta local se a mensagem e off-topic, None se on-topic.
+
+    Heuristica simples: se a mensagem nao contem nenhuma keyword relacionada
+    ao pipeline E tem menos de 15 palavras (perguntas curtas genericas como
+    "que dia e hoje", "tudo bem"), retorna resposta padrao.
+
+    Mensagens longas (>15 palavras) sao passadas pro LLM mesmo sem keywords
+    porque podem ter contexto implicito.
+    """
+    words = message.lower().split()
+
+    # Saudacoes curtas — responde localmente
+    greetings = {"oi", "ola", "hey", "hi", "hello", "e ai", "fala", "bom dia", "boa tarde"}
+    if len(words) <= 3 and any(g in message.lower() for g in greetings):
+        return (
+            "Ola! Sou o assistente do seu pipeline Medallion. "
+            "Como posso ajudar? Pergunte sobre status, logs, erros, "
+            "tabelas ou qualquer aspecto do pipeline."
+        )
+
+    # Mensagens longas — sempre passa pro LLM (pode ter contexto implicito)
+    if len(words) > 15:
+        return None
+
+    # Checa se alguma keyword do pipeline esta presente
+    msg_lower = message.lower()
+    for kw in _PIPELINE_KEYWORDS:
+        if kw in msg_lower:
+            return None  # On-topic — passa pro LLM
+
+    # Nenhuma keyword encontrada em mensagem curta — off-topic
+    return _OFF_TOPIC_RESPONSE
