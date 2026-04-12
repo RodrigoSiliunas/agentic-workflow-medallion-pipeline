@@ -42,5 +42,10 @@
 | [x] | mock-strategy-pattern_20260412 | Architecture — Mock Strategy Pattern (#22) | 2026-04-12 | 2026-04-12 |
 | [x] | saga-blueprint-api_20260412 | Architecture — SAGA_BLUEPRINT via API (#12) | 2026-04-12 | 2026-04-12 |
 | [x] | rate-limiter-routes_20260412 | Security — Rate Limiter on Auth Routes | 2026-04-12 | 2026-04-12 |
+| [x] | cluster-autodetect_20260412 | Platform — Cluster ID Auto-detect | 2026-04-12 | 2026-04-12 |
+| [x] | sample-data-upload_20260412 | Platform — Sample Data Upload no Deploy | 2026-04-12 | 2026-04-12 |
+| [x] | ci-cd-update_20260412 | CI/CD — Backend Tests + Frontend Lint | 2026-04-12 | 2026-04-12 |
+| [x] | observability-real_20260412 | Platform — Observability Dashboard Real | 2026-04-12 | 2026-04-12 |
+| [x] | chat-agent-wire_20260412 | Platform — Chat Agent Wire-up | 2026-04-12 | 2026-04-12 |
 
 <!-- Tracks registered by /conductor:new-track -->
