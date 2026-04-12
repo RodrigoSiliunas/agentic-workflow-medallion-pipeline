@@ -78,7 +78,11 @@ const renderedContent = computed(() => {
     /`([^`]+)`/g,
     '<code class="bg-[var(--surface-elevated)] border border-[var(--border)] px-1 py-0.5 rounded text-[11px]">$1</code>',
   )
-  // Headers (## Titulo → <h3>)
+  // Headers (#### → h5, ### → h4, ## → h3) — ordem do mais especifico pro generico
+  text = text.replace(
+    /^#{4,} (.+)$/gm,
+    '<h5 class="text-xs font-semibold mt-3 mb-1" style="color: var(--text-primary)">$1</h5>',
+  )
   text = text.replace(
     /^### (.+)$/gm,
     '<h4 class="text-sm font-semibold mt-3 mb-1" style="color: var(--text-primary)">$1</h4>',
@@ -87,12 +91,35 @@ const renderedContent = computed(() => {
     /^## (.+)$/gm,
     '<h3 class="text-base font-semibold mt-3 mb-1" style="color: var(--text-primary)">$1</h3>',
   )
+  // Horizontal rule (---)
+  text = text.replace(
+    /^-{3,}$/gm,
+    '<hr class="border-t border-[var(--border)] my-3" />',
+  )
   // Bold
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+  // Italic (single *)
+  text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>")
   // Links
   text = text.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener" class="underline text-[var(--brand-500)]">$1</a>',
+  )
+  // Tables (| col1 | col2 | ... |)
+  text = text.replace(
+    /^(\|.+\|)\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/gm,
+    (_match, header, body) => {
+      const ths = header.split("|").filter(Boolean).map(
+        (c: string) => `<th class="px-2 py-1 text-left text-[10px] font-semibold" style="color:var(--text-tertiary)">${c.trim()}</th>`
+      ).join("")
+      const rows = body.trim().split("\n").map((row: string) => {
+        const tds = row.split("|").filter(Boolean).map(
+          (c: string) => `<td class="px-2 py-1 text-[11px] border-t border-[var(--border)]">${c.trim()}</td>`
+        ).join("")
+        return `<tr>${tds}</tr>`
+      }).join("")
+      return `<table class="w-full border border-[var(--border)] rounded-[var(--radius-md)] overflow-hidden my-2"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`
+    },
   )
   // Lists (- item)
   text = text.replace(
