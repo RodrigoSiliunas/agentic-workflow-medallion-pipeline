@@ -1,0 +1,140 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e17]:
+          - heading "Safatechx" [level=1] [ref=e18]
+          - paragraph [ref=e19]: Pipeline agent platform
+      - navigation [ref=e21]:
+        - link "Chat" [ref=e22] [cursor=pointer]:
+          - /url: /chat
+          - generic [ref=e24]: Chat
+        - link "Market" [ref=e25] [cursor=pointer]:
+          - /url: /marketplace
+          - generic [ref=e27]: Market
+        - link "Deploys" [ref=e28] [cursor=pointer]:
+          - /url: /deployments
+          - generic [ref=e30]: Deploys
+        - link "Canais" [ref=e31] [cursor=pointer]:
+          - /url: /channels
+          - generic [ref=e33]: Canais
+      - generic [ref=e34]:
+        - textbox "Buscar templates..." [ref=e38]
+        - generic [ref=e39]:
+          - heading "Categorias" [level=4] [ref=e40]
+          - button "Todos 3" [ref=e41]:
+            - generic [ref=e43]: Todos
+            - generic [ref=e44]: "3"
+          - button "CRM 1" [ref=e45]:
+            - generic [ref=e47]: CRM
+            - generic [ref=e48]: "1"
+          - button "E-commerce 1" [ref=e49]:
+            - generic [ref=e51]: E-commerce
+            - generic [ref=e52]: "1"
+          - button "ETL 1" [ref=e53]:
+            - generic [ref=e55]: ETL
+            - generic [ref=e56]: "1"
+          - heading "Atalhos" [level=4] [ref=e57]
+          - link "Deployments ativos" [ref=e58] [cursor=pointer]:
+            - /url: /deployments
+            - generic [ref=e60]: Deployments ativos
+      - generic [ref=e61]:
+        - generic [ref=e63]: RS
+        - generic [ref=e64]:
+          - paragraph [ref=e65]: Rodrigo Siliunas
+          - paragraph [ref=e66]: root
+        - link [ref=e67] [cursor=pointer]:
+          - /url: /settings
+    - main [ref=e69]:
+      - generic [ref=e159]:
+        - generic [ref=e160]:
+          - generic [ref=e163]:
+            - generic [ref=e164]:
+              - generic [ref=e165]: ETL
+              - generic [ref=e166]: v1.3.0
+              - generic [ref=e167]: Popular
+            - heading "Pipeline Seguradora WhatsApp" [level=1] [ref=e168]
+            - paragraph [ref=e169]: Medallion ETL para conversas WhatsApp de seguro auto
+          - link "Deploy" [ref=e170] [cursor=pointer]:
+            - /url: /deploy/pipeline-seguradora-whatsapp
+            - text: Deploy
+        - generic [ref=e172]:
+          - generic [ref=e173]:
+            - paragraph [ref=e174]: Author
+            - paragraph [ref=e175]: Namastex Labs
+          - generic [ref=e176]:
+            - paragraph [ref=e177]: Deploys
+            - paragraph [ref=e178]: 47 empresas
+          - generic [ref=e179]:
+            - paragraph [ref=e180]: Duração estimada
+            - paragraph [ref=e181]: 8-12 min
+        - generic [ref=e182]:
+          - heading "Sobre este template" [level=2] [ref=e183]
+          - paragraph [ref=e184]: Pipeline Medallion (Bronze → Silver → Gold) sobre conversas WhatsApp de seguradora, com mascaramento PII, 12 tabelas analiticas e Observer Agent autonomo que corrige bugs via PRs no GitHub.
+        - generic [ref=e185]:
+          - heading "Arquitetura" [level=2] [ref=e186]
+          - list [ref=e187]:
+            - listitem [ref=e188]: "Bronze ingestion: S3 parquet -> Delta Lake (overwrite idempotente)"
+            - listitem [ref=e190]: "Silver: dedup + mascaramento PII (HMAC) + enrichment conversacional"
+            - listitem [ref=e192]: "Gold: 12 tabelas analiticas (funnel, sentiment, NPS, handle_time)"
+            - listitem [ref=e194]: "Validation gate: row counts, nulls, consistency"
+            - listitem [ref=e196]: "Observer Agent: Claude Opus diagnostica falhas + cria PR no GitHub"
+        - generic [ref=e198]:
+          - heading "Tags" [level=2] [ref=e199]
+          - generic [ref=e200]:
+            - generic [ref=e201]: whatsapp
+            - generic [ref=e202]: seguros
+            - generic [ref=e203]: etl
+            - generic [ref=e204]: medallion
+            - generic [ref=e205]: pii
+            - generic [ref=e206]: observer
+        - generic [ref=e207]:
+          - heading "Changelog" [level=2] [ref=e208]
+          - generic [ref=e209]:
+            - generic [ref=e210]:
+              - generic [ref=e211]:
+                - generic [ref=e212]: v1.3.0
+                - generic [ref=e213]: 2026-04-10
+              - list [ref=e214]:
+                - listitem [ref=e215]:
+                  - generic [ref=e216]: •
+                  - generic [ref=e217]: Observer agora usa trigger automatico via task sentinel
+                - listitem [ref=e218]:
+                  - generic [ref=e219]: •
+                  - generic [ref=e220]: Dedup de diagnosticos via cache Delta
+                - listitem [ref=e221]:
+                  - generic [ref=e222]: •
+                  - generic [ref=e223]: Multi-file fixes suportados
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - generic [ref=e226]: v1.2.0
+                - generic [ref=e227]: 2026-03-22
+              - list [ref=e228]:
+                - listitem [ref=e229]:
+                  - generic [ref=e230]: •
+                  - generic [ref=e231]: Observer feedback loop via GitHub Action
+                - listitem [ref=e232]:
+                  - generic [ref=e233]: •
+                  - generic [ref=e234]: Validacao pre-PR com ruff + pytest
+            - generic [ref=e235]:
+              - generic [ref=e236]:
+                - generic [ref=e237]: v1.1.0
+                - generic [ref=e238]: 2026-02-15
+              - list [ref=e239]:
+                - listitem [ref=e240]:
+                  - generic [ref=e241]: •
+                  - generic [ref=e242]: Mascaramento HMAC obrigatorio
+                - listitem [ref=e243]:
+                  - generic [ref=e244]: •
+                  - generic [ref=e245]: Schema evolution via mergeSchema
+  - generic:
+    - img
+  - generic [ref=e144]:
+    - button "Toggle Nuxt DevTools" [ref=e145] [cursor=pointer]:
+      - img [ref=e146]
+    - generic "Page load time" [ref=e149]:
+      - generic [ref=e150]: "92"
+      - generic [ref=e151]: ms
+    - button "Toggle Component Inspector" [ref=e153] [cursor=pointer]:
+      - img [ref=e154]

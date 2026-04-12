@@ -1,0 +1,12 @@
+<svg viewBox="0 0 48 48" fill="#7f22fe" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="blade" d="M 24 4 Q 31 10 30 19 Q 30 23 26 23 Q 23 21 23 14 Q 22 9 24 4 Z"/>
+  </defs>
+  <use href="#blade"/>
+  <use href="#blade" transform="rotate(60 24 24)"/>
+  <use href="#blade" transform="rotate(120 24 24)"/>
+  <use href="#blade" transform="rotate(180 24 24)"/>
+  <use href="#blade" transform="rotate(240 24 24)"/>
+  <use href="#blade" transform="rotate(300 24 24)"/>
+  <circle cx="24" cy="24" r="3" fill="#090a0b"/>
+</svg>

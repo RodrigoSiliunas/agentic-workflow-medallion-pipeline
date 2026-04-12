@@ -1,19 +1,21 @@
 """Schemas de auth (request/response)."""
 
-from pydantic import BaseModel, EmailStr
+import uuid
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class RegisterCompanyRequest(BaseModel):
-    company_name: str
-    company_slug: str
-    admin_name: str
+    company_name: str = Field(..., min_length=2, max_length=100)
+    company_slug: str = Field(..., min_length=2, max_length=50, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
+    admin_name: str = Field(..., min_length=2, max_length=100)
     admin_email: EmailStr
-    admin_password: str
+    admin_password: str = Field(..., min_length=8, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -27,14 +29,14 @@ class RefreshRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str
+    # Pydantic v2 serializa UUID como str no JSON output automaticamente.
+    id: uuid.UUID
     email: str
     name: str
     role: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CreateUserRequest(BaseModel):

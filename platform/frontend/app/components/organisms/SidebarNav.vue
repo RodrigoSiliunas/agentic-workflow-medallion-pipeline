@@ -1,113 +1,389 @@
 <template>
-  <div class="space-y-1">
-    <!-- Search -->
-    <div class="px-2 pb-2">
-      <UInput
-        v-model="search"
-        placeholder="Buscar pipeline..."
-        icon="i-heroicons-magnifying-glass"
-        size="xs"
-      />
-    </div>
-
-    <!-- Pipeline list -->
-    <div v-for="pipeline in filteredPipelines" :key="pipeline.id">
-      <!-- Pipeline item -->
-      <button
-        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors"
-        :style="{
-          background: sidebar.expandedPipelineId === pipeline.id ? 'var(--bg-elevated)' : 'transparent',
-          color: 'var(--text-primary)',
-        }"
-        @click="handlePipelineClick(pipeline.id)"
-      >
-        <UIcon
-          :name="sidebar.expandedPipelineId === pipeline.id ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-          class="text-xs flex-shrink-0"
-          style="color: var(--text-tertiary)"
-        />
-        <span class="flex-1 truncate">{{ pipeline.name }}</span>
-        <StatusBadge :status="pipeline.status || 'IDLE'" />
-      </button>
-
-      <!-- Threads (expandido) -->
-      <div v-if="sidebar.expandedPipelineId === pipeline.id" class="ml-5 mt-1 space-y-0.5">
-        <button
-          v-for="thread in pipelineThreads"
-          :key="thread.id"
-          class="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-left transition-colors group"
-          :style="{
-            background: sidebar.activeThreadId === thread.id ? 'var(--bg-elevated)' : 'transparent',
-            borderLeft: sidebar.activeThreadId === thread.id ? '2px solid var(--brand-primary)' : '2px solid transparent',
-          }"
-          @click="sidebar.selectThread(pipeline.id, thread.id)"
-        >
-          <ChannelIcon v-if="thread.channel && thread.channel !== 'web'" :channel="thread.channel" size="xs" />
-          <span class="flex-1 truncate" style="color: var(--text-secondary)">
-            {{ thread.title || '(sem titulo)' }}
-          </span>
-          <UButton
-            variant="ghost"
-            icon="i-heroicons-x-mark"
-            size="xs"
-            class="opacity-0 group-hover:opacity-100"
-            @click.stop="handleDeleteThread(thread.id)"
-          />
-        </button>
-
-        <!-- + Nova conversa -->
-        <button
-          class="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors"
-          style="color: var(--brand-primary)"
-          @click="handleNewThread(pipeline.id)"
-        >
-          <UIcon name="i-heroicons-plus" class="text-xs" />
-          <span>Nova conversa</span>
-        </button>
+  <aside
+    class="w-[320px] flex-shrink-0 flex flex-col h-full border-r"
+    :style="{
+      background: 'var(--surface)',
+      borderColor: 'var(--border)',
+    }"
+  >
+    <!-- Workspace header -->
+    <div
+      class="px-4 py-4 flex items-center gap-2.5 border-b"
+      :style="{ borderColor: 'var(--border)' }"
+    >
+      <SafaLogo variant="icon" :size="28" />
+      <div class="flex-1 min-w-0">
+        <h1 class="text-sm font-semibold truncate" :style="{ color: 'var(--text-primary)' }">
+          Safatechx
+        </h1>
+        <p class="text-[10px] truncate" :style="{ color: 'var(--text-tertiary)' }">
+          Pipeline agent platform
+        </p>
       </div>
     </div>
 
-    <!-- Empty state -->
-    <div v-if="filteredPipelines.length === 0" class="px-3 py-4 text-center">
-      <p class="text-xs" style="color: var(--text-tertiary)">
-        {{ pipelines.length === 0 ? 'Nenhum pipeline' : 'Nenhum resultado' }}
-      </p>
+    <!-- Module switcher -->
+    <div class="px-3 pt-3">
+      <ModuleSwitcher />
     </div>
-  </div>
+
+    <!-- Context-aware body -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- CHAT MODE -->
+      <template v-if="mode === 'chat'">
+        <div class="px-3 pt-3 pb-2 space-y-2">
+          <NewThreadButton @click="onNewThread" />
+          <AppInput
+            v-model="search"
+            placeholder="Buscar conversas..."
+            icon="i-heroicons-magnifying-glass"
+            size="sm"
+          />
+        </div>
+
+        <div class="px-3 pb-2">
+          <div
+            class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-elevated)]/50 px-3 py-2"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <AppIcon name="cpu-chip" size="xs" class="text-[var(--brand-500)] flex-shrink-0" />
+                <span
+                  class="text-[11px] font-medium truncate"
+                  :style="{ color: 'var(--text-secondary)' }"
+                >
+                  {{ activePipeline?.name ?? "Sem pipeline" }}
+                </span>
+              </div>
+              <StatusBadge v-if="activePipeline" :status="activePipeline.status" />
+            </div>
+          </div>
+        </div>
+
+        <ThreadList
+          :groups="filteredGroups"
+          :active-id="threadsStore.activeThreadId"
+          @select="onSelectThread"
+          @delete="onDeleteThread"
+        />
+      </template>
+
+      <!-- MARKETPLACE MODE -->
+      <template v-else-if="mode === 'marketplace'">
+        <div class="px-3 pt-3 pb-2 space-y-2">
+          <AppInput
+            v-model="localMarketplaceSearch"
+            placeholder="Buscar templates..."
+            icon="i-heroicons-magnifying-glass"
+            size="sm"
+            @update:model-value="onMarketplaceSearch"
+          />
+        </div>
+        <div class="px-3 pb-2 space-y-0.5 flex-1 overflow-y-auto">
+          <h4
+            class="px-2 pb-1 text-[10px] uppercase tracking-wider font-medium"
+            :style="{ color: 'var(--text-tertiary)' }"
+          >
+            Categorias
+          </h4>
+          <button
+            class="w-full flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-md)] text-xs text-left transition-colors"
+            :style="categoryStyle(null)"
+            @click="setCategory(null)"
+          >
+            <AppIcon name="squares-2x2" size="xs" />
+            <span class="flex-1">Todos</span>
+            <span class="text-[10px] tabular-nums" :style="{ color: 'var(--text-tertiary)' }">
+              {{ templatesStore.templates.length }}
+            </span>
+          </button>
+          <button
+            v-for="cat in templatesStore.categories"
+            :key="cat"
+            class="w-full flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-md)] text-xs text-left transition-colors"
+            :style="categoryStyle(cat)"
+            @click="setCategory(cat)"
+          >
+            <AppIcon :name="categoryIcon(cat)" size="xs" />
+            <span class="flex-1">{{ cat }}</span>
+            <span class="text-[10px] tabular-nums" :style="{ color: 'var(--text-tertiary)' }">
+              {{ countByCategory(cat) }}
+            </span>
+          </button>
+
+          <h4
+            class="px-2 pt-4 pb-1 text-[10px] uppercase tracking-wider font-medium"
+            :style="{ color: 'var(--text-tertiary)' }"
+          >
+            Atalhos
+          </h4>
+          <NuxtLink
+            to="/deployments"
+            class="w-full flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-md)] text-xs transition-colors text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
+          >
+            <AppIcon name="rocket-launch" size="xs" class="text-[var(--brand-500)]" />
+            <span>Deployments ativos</span>
+          </NuxtLink>
+        </div>
+      </template>
+
+      <!-- CHANNELS MODE -->
+      <template v-else-if="mode === 'channels'">
+        <div class="px-3 pt-3 pb-2">
+          <AppButton
+            size="sm"
+            icon="i-heroicons-plus"
+            class="w-full justify-center"
+            @click="onNewChannelClick"
+          >
+            Nova instância
+          </AppButton>
+        </div>
+        <div class="px-3 pb-2 flex-1 overflow-y-auto space-y-0.5">
+          <h4
+            class="px-2 pb-1 text-[10px] uppercase tracking-wider font-medium"
+            :style="{ color: 'var(--text-tertiary)' }"
+          >
+            Canais ativos
+          </h4>
+          <div
+            v-for="instance in channelsStore.instances.filter((i) => i.state !== 'disconnected')"
+            :key="instance.id"
+            class="w-full flex items-center gap-2 px-3 py-2 rounded-[var(--radius-md)] text-xs"
+            :style="{ color: 'var(--text-secondary)' }"
+          >
+            <ChannelIcon :channel="instance.channel" size="xs" />
+            <span class="flex-1 truncate">{{ instance.name }}</span>
+            <span
+              class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              :class="{ 'status-pulse': instance.state === 'connecting' }"
+              :style="{ background: channelDotColor(instance.state) }"
+            />
+          </div>
+          <EmptyState
+            v-if="channelsStore.instances.length === 0"
+            icon="phone"
+            title="Sem canais"
+            description="Conecte WhatsApp, Discord ou Telegram."
+          />
+        </div>
+      </template>
+
+      <!-- DEPLOYMENTS MODE -->
+      <template v-else-if="mode === 'deployments'">
+        <div class="px-3 pt-3 pb-2">
+          <AppButton to="/marketplace" size="sm" icon="i-heroicons-plus" class="w-full justify-center">
+            Novo deploy
+          </AppButton>
+        </div>
+        <div class="px-3 pb-2 flex-1 overflow-y-auto space-y-0.5">
+          <h4
+            class="px-2 pb-1 text-[10px] uppercase tracking-wider font-medium"
+            :style="{ color: 'var(--text-tertiary)' }"
+          >
+            Recentes
+          </h4>
+          <NuxtLink
+            v-for="d in deploymentsStore.list.slice(0, 10)"
+            :key="d.id"
+            :to="`/deployments/${d.id}`"
+            class="w-full flex items-center gap-2 px-3 py-2 rounded-[var(--radius-md)] text-xs transition-colors"
+            :class="
+              isActiveDeployment(d.id)
+                ? 'bg-[var(--surface-elevated)] text-[var(--text-primary)]'
+                : 'text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]/60'
+            "
+          >
+            <span
+              class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              :class="{ 'status-pulse': d.status === 'running' }"
+              :style="{ background: dotForStatus(d.status) }"
+            />
+            <span class="flex-1 truncate">{{ d.config.name }}</span>
+          </NuxtLink>
+
+          <EmptyState
+            v-if="deploymentsStore.list.length === 0"
+            icon="rocket-launch"
+            title="Sem deployments"
+            description="Comece um deploy no marketplace."
+          />
+        </div>
+      </template>
+    </div>
+
+    <!-- User footer -->
+    <div
+      class="px-3 py-3 border-t flex items-center gap-2"
+      :style="{ borderColor: 'var(--border)' }"
+    >
+      <AppAvatar size="sm" :name="authStore.userName || 'Usuario'" />
+      <div class="flex-1 min-w-0">
+        <p class="text-[12px] font-medium truncate" :style="{ color: 'var(--text-primary)' }">
+          {{ authStore.userName || "Visitante" }}
+        </p>
+        <p class="text-[10px] truncate capitalize" :style="{ color: 'var(--text-tertiary)' }">
+          {{ authStore.userRole }}
+        </p>
+      </div>
+      <AppButton variant="ghost" size="sm" icon="i-heroicons-question-mark-circle" square to="/help" />
+      <AppButton variant="ghost" size="sm" icon="i-heroicons-cog-6-tooth" square to="/settings" />
+    </div>
+  </aside>
 </template>
 
 <script setup lang="ts">
-import type { Pipeline } from "~/types/pipeline"
+import type { OmniInstanceState } from "~/types/channel"
+import type { DeploymentStatus } from "~/types/deployment"
 
-const props = defineProps<{
-  pipelines: Pipeline[]
-}>()
+const route = useRoute()
+const threadsStore = useThreadsStore()
+const pipelinesStore = usePipelinesStore()
+const authStore = useAuthStore()
+const templatesStore = useTemplatesStore()
+const deploymentsStore = useDeploymentsStore()
+const channelsStore = useChannelsStore()
 
-const sidebar = useSidebar()
-const search = ref("")
+// Carrega canais quando entra no mode channels
+watch(
+  () => route.path,
+  () => {
+    if (route.path.startsWith("/channels") && !channelsStore.loaded) {
+      channelsStore.load()
+    }
+  },
+  { immediate: true },
+)
 
-const filteredPipelines = computed(() => {
-  if (!search.value) return props.pipelines
-  const q = search.value.toLowerCase()
-  return props.pipelines.filter((p) => p.name.toLowerCase().includes(q))
+// Carrega threads do pipeline ativo quando entra no chat
+watch(
+  () => [route.path, pipelinesStore.activePipelineId] as const,
+  async ([path, pid]) => {
+    if (path.startsWith("/chat") && pid) {
+      await threadsStore.loadForPipeline(pid)
+    }
+  },
+  { immediate: true },
+)
+
+const mode = computed<"chat" | "marketplace" | "deployments" | "channels">(() => {
+  if (route.path.startsWith("/marketplace") || route.path.startsWith("/deploy/")) return "marketplace"
+  if (route.path.startsWith("/deployments")) return "deployments"
+  if (route.path.startsWith("/channels")) return "channels"
+  return "chat"
 })
 
-// Threads do pipeline expandido
-const activePipelineId = computed(() => sidebar.expandedPipelineId)
-const { threads: pipelineThreads, create, remove } = useThreads(activePipelineId)
+// --- CHAT ---
+const search = ref("")
+const activePipeline = computed(() => pipelinesStore.activePipeline)
 
-function handlePipelineClick(pipelineId: string) {
-  sidebar.togglePipeline(pipelineId)
+const filteredGroups = computed(() => {
+  const groups = threadsStore.groupedByBucket(activePipeline.value?.id)
+  if (!search.value.trim()) return groups
+  const q = search.value.toLowerCase()
+  const result: Record<string, (typeof groups)[string]> = {}
+  for (const [bucket, items] of Object.entries(groups)) {
+    const filtered = items.filter((t) => t.title.toLowerCase().includes(q))
+    if (filtered.length > 0) result[bucket] = filtered
+  }
+  return result
+})
+
+async function onNewThread() {
+  const pipelineId = activePipeline.value?.id
+  if (!pipelineId) {
+    navigateTo("/chat")
+    return
+  }
+  const thread = await threadsStore.create("Nova conversa", pipelineId)
+  navigateTo(`/chat/${thread.id}`)
 }
 
-async function handleNewThread(pipelineId: string) {
-  const thread = await create()
-  if (thread) {
-    sidebar.selectThread(pipelineId, thread.id)
+function onSelectThread(id: string) {
+  threadsStore.setActive(id)
+  navigateTo(`/chat/${id}`)
+}
+
+function onDeleteThread(id: string) {
+  threadsStore.remove(id)
+  if (threadsStore.activeThreadId === null) {
+    navigateTo("/chat")
   }
 }
 
-async function handleDeleteThread(threadId: string) {
-  await remove(threadId)
+// --- MARKETPLACE ---
+const localMarketplaceSearch = ref(templatesStore.searchQuery)
+
+function onMarketplaceSearch(v: string) {
+  templatesStore.setSearch(v)
+}
+
+function setCategory(cat: string | null) {
+  templatesStore.setCategory(cat)
+  if (route.path !== "/marketplace") navigateTo("/marketplace")
+}
+
+function categoryStyle(cat: string | null): Record<string, string> {
+  const isActive = templatesStore.activeCategory === cat
+  return {
+    background: isActive ? "var(--surface-elevated)" : "transparent",
+    color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+    borderLeft: isActive ? "2px solid var(--brand-500)" : "2px solid transparent",
+  }
+}
+
+const CATEGORY_ICONS: Record<string, string> = {
+  ETL: "cpu-chip",
+  CRM: "building-office-2",
+  "E-commerce": "shopping-cart",
+  Analytics: "chart-bar",
+  Observability: "eye",
+}
+
+function categoryIcon(cat: string): string {
+  return CATEGORY_ICONS[cat] ?? "squares-2x2"
+}
+
+function countByCategory(cat: string): number {
+  return templatesStore.templates.filter((t) => t.category === cat).length
+}
+
+// --- DEPLOYMENTS ---
+function isActiveDeployment(id: string): boolean {
+  return route.path === `/deployments/${id}`
+}
+
+function dotForStatus(status: DeploymentStatus): string {
+  switch (status) {
+    case "success":
+      return "var(--status-success)"
+    case "failed":
+      return "var(--status-error)"
+    case "running":
+      return "var(--status-warning)"
+    case "cancelled":
+      return "var(--text-tertiary)"
+    default:
+      return "var(--text-tertiary)"
+  }
+}
+
+// --- CHANNELS ---
+function channelDotColor(state: OmniInstanceState): string {
+  switch (state) {
+    case "connected":
+      return "var(--status-success)"
+    case "connecting":
+      return "var(--status-warning)"
+    case "failed":
+      return "var(--status-error)"
+    default:
+      return "var(--text-tertiary)"
+  }
+}
+
+function onNewChannelClick() {
+  // Navega para /channels e abre o modal via query param
+  navigateTo({ path: "/channels", query: { new: "1" } })
 }
 </script>

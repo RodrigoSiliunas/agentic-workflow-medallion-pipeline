@@ -1,39 +1,50 @@
 <template>
-  <div class="flex gap-3" :class="isUser ? 'flex-row-reverse' : ''">
-    <!-- Avatar -->
-    <UAvatar
-      :text="isUser ? 'U' : 'A'"
-      size="sm"
-      :style="{ background: isUser ? 'var(--brand-primary)' : 'var(--bg-elevated)' }"
-    />
+  <div class="flex gap-3 py-3" :class="isUser ? 'justify-end' : 'justify-start'">
+    <div v-if="!isUser" class="flex-shrink-0 mt-0.5">
+      <div
+        class="w-7 h-7 rounded-full flex items-center justify-center border border-[var(--border)]"
+        :style="{ background: 'var(--surface-elevated)' }"
+      >
+        <AppIcon name="sparkles" size="sm" class="text-[var(--brand-500)]" />
+      </div>
+    </div>
 
-    <!-- Bubble -->
     <div
-      class="max-w-[75%] px-4 py-3 text-sm"
-      :style="{
-        background: isUser ? 'var(--brand-primary)' : 'var(--bg-surface)',
-        color: isUser ? 'white' : 'var(--text-primary)',
-        borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-        border: isUser ? 'none' : '1px solid var(--border-default)',
-      }"
+      class="max-w-[80%] text-sm leading-relaxed"
+      :class="[
+        isUser
+          ? 'px-4 py-2.5 rounded-[var(--radius-lg)] rounded-br-[var(--radius-sm)] bg-[var(--brand-600)] text-white'
+          : 'text-[var(--text-primary)]',
+      ]"
     >
-      <!-- Markdown content -->
+      <!-- eslint-disable-next-line vue/no-v-html -- conteudo e sanitizado via escapeHtml antes de aplicar markdown whitelist -->
       <div class="prose prose-sm prose-invert max-w-none whitespace-pre-wrap" v-html="renderedContent" />
 
-      <!-- Actions -->
-      <div v-if="message.actions?.length" class="mt-2 space-y-1">
-        <ActionCard
-          v-for="(action, i) in message.actions"
-          :key="i"
-          :action="action"
-        />
+      <div v-if="message.actions?.length" class="mt-2 space-y-1.5 not-prose">
+        <ActionCard v-for="(action, i) in message.actions" :key="i" :action="action" />
       </div>
 
-      <!-- Timestamp + channel -->
-      <div class="flex items-center gap-1 mt-1" style="color: var(--text-tertiary)">
-        <ChannelIcon v-if="message.channel !== 'web'" :channel="message.channel" size="xs" />
-        <span class="text-[10px]">{{ formattedTime }}</span>
+      <div
+        v-if="formattedTime"
+        class="flex items-center gap-1.5 mt-1.5"
+        :class="isUser ? 'justify-end' : 'justify-start'"
+      >
+        <ChannelIcon
+          v-if="message.channel !== 'web'"
+          :channel="message.channel"
+          size="xs"
+        />
+        <span
+          class="text-[10px] tabular-nums"
+          :style="{ color: isUser ? 'rgba(255,255,255,0.7)' : 'var(--text-tertiary)' }"
+        >
+          {{ formattedTime }}
+        </span>
       </div>
+    </div>
+
+    <div v-if="isUser" class="flex-shrink-0 mt-0.5">
+      <AppAvatar size="xs" name="Rodrigo" />
     </div>
   </div>
 </template>
@@ -44,17 +55,30 @@ import type { ChatMessage } from "~/types/chat"
 const props = defineProps<{ message: ChatMessage }>()
 const isUser = computed(() => props.message.role === "user")
 
-// Renderizar markdown simples (code blocks, bold, links)
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 const renderedContent = computed(() => {
-  let text = props.message.content
-  // Code blocks
-  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-[var(--bg-primary)] p-3 rounded-[var(--radius-md)] overflow-x-auto my-2"><code>$2</code></pre>')
-  // Inline code
-  text = text.replace(/`([^`]+)`/g, '<code class="bg-[var(--bg-primary)] px-1 rounded text-xs">$1</code>')
-  // Bold
+  let text = escapeHtml(props.message.content)
+  text = text.replace(
+    /```(\w*)\n([\s\S]*?)```/g,
+    '<pre class="bg-[var(--surface-elevated)] border border-[var(--border)] p-3 rounded-[var(--radius-md)] overflow-x-auto my-2 text-xs"><code>$2</code></pre>',
+  )
+  text = text.replace(
+    /`([^`]+)`/g,
+    '<code class="bg-[var(--surface-elevated)] border border-[var(--border)] px-1 py-0.5 rounded text-[11px]">$1</code>',
+  )
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-  // Links
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="underline" style="color: var(--brand-primary)">$1</a>')
+  text = text.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener" class="underline text-[var(--brand-500)]">$1</a>',
+  )
   return text
 })
 

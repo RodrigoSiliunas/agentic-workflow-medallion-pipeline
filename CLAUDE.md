@@ -221,7 +221,7 @@ Widget `chaos_mode` propagado via task values. Cada notebook ETL tem bloco condi
 |-----|-----------|
 | `aws-access-key-id` | IAM access key |
 | `aws-secret-access-key` | IAM secret key |
-| `aws-region` | `us-east-1` |
+| `aws-region` | `us-east-2` |
 | `s3-bucket` | `namastex-medallion-datalake` |
 | `anthropic-api-key` | Claude API key |
 | `github-token` | GitHub PAT |

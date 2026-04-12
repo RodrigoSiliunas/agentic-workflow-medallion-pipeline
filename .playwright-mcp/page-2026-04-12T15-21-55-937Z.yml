@@ -1,0 +1,42 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - img [ref=e8]
+    - generic [ref=e17]:
+      - heading "Safatechx Platform" [level=1] [ref=e18]
+      - paragraph [ref=e19]: Pipeline agent
+  - generic [ref=e20]:
+    - heading "Criar conta" [level=2] [ref=e21]
+    - paragraph [ref=e22]: Registre sua empresa e o usuário administrador em uma única etapa.
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - paragraph [ref=e25]: Empresa
+        - generic [ref=e26]:
+          - generic [ref=e27]: Nome da empresa
+          - textbox "Nome da empresa" [ref=e29]:
+            - /placeholder: Safatechx Labs
+        - generic [ref=e30]:
+          - generic [ref=e31]: Slug
+          - textbox "Slug" [ref=e33]:
+            - /placeholder: safatechx
+          - paragraph [ref=e34]: Identificador único (só letras minúsculas, números e hífen)
+      - generic [ref=e35]:
+        - paragraph [ref=e36]: Usuário administrador
+        - generic [ref=e37]:
+          - generic [ref=e38]: Nome completo
+          - textbox "Nome completo" [ref=e40]:
+            - /placeholder: Rodrigo Siliunas
+        - generic [ref=e41]:
+          - generic [ref=e42]: Email
+          - textbox "Email" [ref=e44]:
+            - /placeholder: rodrigo@safatechx.com
+          - paragraph [ref=e45]: "Domínio precisa ser válido (ex: .com, .ai, .io)"
+        - generic [ref=e46]:
+          - generic [ref=e47]: Senha
+          - textbox "Senha" [ref=e49]:
+            - /placeholder: "********"
+          - paragraph [ref=e50]: Mínimo 8 caracteres
+      - button "Criar conta" [ref=e51] [cursor=pointer]
+    - generic [ref=e52]:
+      - text: Já tem conta?
+      - link "Entrar" [ref=e53] [cursor=pointer]:
+        - /url: /login

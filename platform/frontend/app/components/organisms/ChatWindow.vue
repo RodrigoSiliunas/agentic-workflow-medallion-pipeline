@@ -1,67 +1,40 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Messages -->
-    <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
-      <!-- Loading -->
-      <div v-if="loading" class="flex justify-center py-8">
-        <UIcon name="i-heroicons-arrow-path" class="animate-spin text-2xl" style="color: var(--text-tertiary)" />
-      </div>
+    <WorkflowHeader :pipeline="activePipeline" :thread-title="thread?.title" />
 
-      <!-- Messages -->
-      <MessageBubble v-for="msg in messages" :key="msg.id" :message="msg" />
+    <MessageList :messages="messages" :is-streaming="isStreaming" />
 
-      <!-- Streaming indicator -->
-      <div v-if="isStreaming" class="flex items-center gap-2 px-4 py-2">
-        <span class="inline-block w-2 h-2 rounded-full animate-pulse" style="background: var(--brand-primary)" />
-        <span class="text-xs" style="color: var(--text-tertiary)">Agente pensando...</span>
-      </div>
-    </div>
-
-    <!-- Input -->
-    <div class="p-4 border-t" style="border-color: var(--border-default)">
-      <form class="flex gap-2" @submit.prevent="handleSend">
-        <UInput
-          v-model="input"
-          placeholder="Envie uma mensagem..."
-          class="flex-1"
-          :disabled="isStreaming"
-          @keydown.enter.exact.prevent="handleSend"
-        />
-        <UButton
-          type="submit"
-          icon="i-heroicons-paper-airplane"
-          :loading="isStreaming"
-          :disabled="!input.trim() || isStreaming"
-        />
-      </form>
-    </div>
+    <MessageInput :disabled="isStreaming" @send="handleSend" />
   </div>
 </template>
 
 <script setup lang="ts">
 const props = defineProps<{ threadId: string }>()
 
-const threadIdRef = toRef(props, "threadId")
-const { messages, isStreaming, loading, sendMessage } = useChat(threadIdRef)
-const input = ref("")
-const messagesContainer = ref<HTMLElement>()
+const threadsStore = useThreadsStore()
+const pipelinesStore = usePipelinesStore()
 
-async function handleSend() {
-  const text = input.value.trim()
-  if (!text || isStreaming.value) return
-  input.value = ""
-  await sendMessage(text)
+const thread = computed(() => threadsStore.getById(props.threadId) ?? null)
+const messages = computed(() => thread.value?.messages ?? [])
+const activePipeline = computed(() => {
+  const pid = thread.value?.pipelineId
+  if (!pid) return pipelinesStore.activePipeline
+  return pipelinesStore.getById(pid) ?? null
+})
+
+const isStreaming = ref(false)
+
+async function handleSend(content: string) {
+  if (isStreaming.value || !thread.value) return
+  isStreaming.value = true
+  try {
+    await threadsStore.streamAssistantReply(props.threadId, content)
+  } finally {
+    isStreaming.value = false
+  }
 }
 
-// Auto-scroll ao receber novas mensagens
-watch(
-  () => messages.value.length,
-  () => {
-    nextTick(() => {
-      if (messagesContainer.value) {
-        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-      }
-    })
-  },
-)
+watchEffect(() => {
+  if (props.threadId) threadsStore.setActive(props.threadId)
+})
 </script>

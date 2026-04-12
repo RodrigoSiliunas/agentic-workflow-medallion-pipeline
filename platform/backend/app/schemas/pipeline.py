@@ -1,6 +1,8 @@
 """Schemas de pipeline (request/response)."""
 
-from pydantic import BaseModel
+import uuid
+
+from pydantic import BaseModel, ConfigDict
 
 
 class CreatePipelineRequest(BaseModel):
@@ -11,14 +13,13 @@ class CreatePipelineRequest(BaseModel):
 
 
 class PipelineResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
     description: str | None
     databricks_job_id: int | None
     github_repo: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineStatusResponse(BaseModel):

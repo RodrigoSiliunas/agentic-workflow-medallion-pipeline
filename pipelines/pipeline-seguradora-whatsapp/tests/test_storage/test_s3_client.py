@@ -54,7 +54,7 @@ SECRETS = {
         "s3-bucket": "my-bucket",
         "aws-access-key-id": "AKIAFAKE",
         "aws-secret-access-key": "sekret/value",
-        "aws-region": "us-east-1",
+        "aws-region": "us-east-2",
     }
 }
 
@@ -92,7 +92,7 @@ class TestConfigureSparkS3:
 
         assert (
             spark.conf.settings["spark.hadoop.fs.s3a.endpoint"]
-            == "s3.us-east-1.amazonaws.com"
+            == "s3.us-east-2.amazonaws.com"
         )
 
     def test_is_idempotent(self):

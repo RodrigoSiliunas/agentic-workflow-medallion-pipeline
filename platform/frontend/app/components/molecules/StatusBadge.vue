@@ -1,11 +1,16 @@
 <template>
-  <div class="flex items-center gap-1.5">
+  <div class="inline-flex items-center gap-1.5">
     <span
-      class="inline-block w-2 h-2 rounded-full"
-      :class="{ 'animate-pulse': status === 'RUNNING' }"
+      class="inline-block w-1.5 h-1.5 rounded-full"
+      :class="{ 'status-pulse': status === 'RUNNING' }"
       :style="{ background: dotColor }"
     />
-    <span class="text-xs" :style="{ color: 'var(--text-secondary)' }">{{ label }}</span>
+    <span
+      class="text-[11px] font-medium tracking-tight"
+      :style="{ color: 'var(--text-secondary)' }"
+    >
+      {{ label }}
+    </span>
   </div>
 </template>
 
@@ -23,7 +28,7 @@ const colorMap: Record<PipelineStatus, string> = {
 }
 
 const labelMap: Record<PipelineStatus, string> = {
-  SUCCESS: "OK",
+  SUCCESS: "Ativo",
   FAILED: "Falhou",
   RUNNING: "Rodando",
   IDLE: "Parado",

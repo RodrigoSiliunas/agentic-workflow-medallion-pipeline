@@ -1,5 +1,9 @@
 <template>
-  <UIcon :name="iconName" :class="sizeClass" />
+  <UIcon
+    :name="iconName"
+    class="inline-block flex-shrink-0 align-middle"
+    :style="sizeStyle"
+  />
 </template>
 
 <script setup lang="ts">
@@ -15,10 +19,21 @@ const iconMap: Record<string, string> = {
   telegram: "i-simple-icons-telegram",
 }
 
+const PX: Record<string, number> = {
+  xs: 12,
+  sm: 14,
+  md: 16,
+}
+
 const iconName = computed(() => iconMap[props.channel] || "i-heroicons-chat-bubble-left")
-const sizeClass = computed(() => ({
-  xs: "text-xs",
-  sm: "text-sm",
-  md: "text-base",
-}[props.size || "sm"]))
+const sizeStyle = computed(() => {
+  const px = PX[props.size || "sm"] ?? PX.sm
+  return {
+    width: `${px}px`,
+    height: `${px}px`,
+    minWidth: `${px}px`,
+    minHeight: `${px}px`,
+    fontSize: `${px}px`,
+  }
+})
 </script>

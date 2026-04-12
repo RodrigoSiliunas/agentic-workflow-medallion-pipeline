@@ -1,0 +1,53 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - img [ref=e8]
+      - generic [ref=e17]:
+        - heading "Safatechx Platform" [level=1] [ref=e18]
+        - paragraph [ref=e19]: Pipeline agent
+    - generic [ref=e83]:
+      - heading "Criar conta" [level=2] [ref=e84]
+      - paragraph [ref=e85]: Registre sua empresa e o usuário administrador em uma única etapa.
+      - generic [ref=e86]:
+        - generic [ref=e87]:
+          - paragraph [ref=e88]: Empresa
+          - generic [ref=e89]:
+            - generic [ref=e90]: Nome da empresa
+            - textbox "Nome da empresa" [ref=e92]:
+              - /placeholder: Safatechx Labs
+          - generic [ref=e93]:
+            - generic [ref=e94]: Slug
+            - textbox "Slug" [ref=e96]:
+              - /placeholder: safatechx
+            - paragraph [ref=e97]: Identificador único (só letras minúsculas, números e hífen)
+        - generic [ref=e98]:
+          - paragraph [ref=e99]: Usuário administrador
+          - generic [ref=e100]:
+            - generic [ref=e101]: Nome completo
+            - textbox "Nome completo" [ref=e103]:
+              - /placeholder: Rodrigo Siliunas
+          - generic [ref=e104]:
+            - generic [ref=e105]: Email
+            - textbox "Email" [ref=e107]:
+              - /placeholder: rodrigo@safatechx.com
+            - paragraph [ref=e108]: "Domínio precisa ser válido (ex: .com, .ai, .io)"
+          - generic [ref=e109]:
+            - generic [ref=e110]: Senha
+            - textbox "Senha" [ref=e112]:
+              - /placeholder: "********"
+            - paragraph [ref=e113]: Mínimo 8 caracteres
+        - button "Criar conta" [ref=e114] [cursor=pointer]
+      - generic [ref=e115]:
+        - text: Já tem conta?
+        - link "Entrar" [ref=e116] [cursor=pointer]:
+          - /url: /login
+  - generic:
+    - img
+  - generic [ref=e69]:
+    - button "Toggle Nuxt DevTools" [ref=e70] [cursor=pointer]:
+      - img [ref=e71]
+    - generic "Page load time" [ref=e74]:
+      - generic [ref=e75]: "12"
+      - generic [ref=e76]: ms
+    - button "Toggle Component Inspector" [ref=e78] [cursor=pointer]:
+      - img [ref=e79]

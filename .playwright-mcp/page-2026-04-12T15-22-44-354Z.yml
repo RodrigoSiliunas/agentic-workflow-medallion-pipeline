@@ -1,0 +1,159 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e17]:
+          - heading "Safatechx" [level=1] [ref=e18]
+          - paragraph [ref=e19]: Pipeline agent platform
+      - navigation [ref=e21]:
+        - link "Chat" [ref=e22] [cursor=pointer]:
+          - /url: /chat
+          - generic [ref=e24]: Chat
+        - link "Market" [ref=e25] [cursor=pointer]:
+          - /url: /marketplace
+          - generic [ref=e27]: Market
+        - link "Deploys" [ref=e28] [cursor=pointer]:
+          - /url: /deployments
+          - generic [ref=e30]: Deploys
+        - link "Canais" [ref=e31] [cursor=pointer]:
+          - /url: /channels
+          - generic [ref=e33]: Canais
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - button "Nova conversa Ctrl N" [ref=e36]:
+            - generic [ref=e38]: Nova conversa
+            - generic [ref=e39]:
+              - generic [ref=e40]: Ctrl
+              - generic [ref=e41]: "N"
+          - textbox "Buscar conversas..." [ref=e44]
+        - generic [ref=e50]: Sem pipeline
+        - generic [ref=e52]:
+          - heading "Sem conversas ainda" [level=3] [ref=e55]
+          - paragraph [ref=e56]: Comece uma nova conversa com o agente do pipeline.
+      - generic [ref=e57]:
+        - generic [ref=e59]: RS
+        - generic [ref=e60]:
+          - paragraph [ref=e61]: Rodrigo Siliunas
+          - paragraph [ref=e62]: root
+        - link [ref=e63] [cursor=pointer]:
+          - /url: /settings
+    - main [ref=e65]:
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - heading "Configurações" [level=1] [ref=e68]
+          - paragraph [ref=e69]: Gerencie credenciais, canais e usuários
+        - generic [ref=e70]:
+          - generic [ref=e71]:
+            - heading "Provedor de IA" [level=2] [ref=e72]
+            - paragraph [ref=e73]: Chave Claude usada pelo Observer Agent pra diagnosticar falhas e abrir PRs.
+            - generic [ref=e75]:
+              - generic [ref=e76]:
+                - heading "Anthropic API Key" [level=3] [ref=e77]
+                - generic [ref=e79]: Não configurado
+              - generic [ref=e80]:
+                - textbox "Cole sua chave aqui" [ref=e82]
+                - button [ref=e83]
+                - button "Salvar" [disabled] [ref=e85]
+          - generic [ref=e86]:
+            - heading "Credenciais de infraestrutura" [level=2] [ref=e87]
+            - paragraph [ref=e88]: Defaults da empresa usados em todos os deploys. Voce pode sobrescrever credencial-por-credencial no wizard quando criar um deploy especifico.
+            - generic [ref=e89]:
+              - generic [ref=e90]:
+                - generic [ref=e91]:
+                  - heading "AWS Access Key ID" [level=3] [ref=e92]
+                  - generic [ref=e94]: Não configurado
+                - generic [ref=e95]:
+                  - textbox "Cole sua chave aqui" [ref=e97]
+                  - button [ref=e98]
+                  - button "Salvar" [disabled] [ref=e100]
+              - generic [ref=e101]:
+                - generic [ref=e102]:
+                  - heading "AWS Secret Access Key" [level=3] [ref=e103]
+                  - generic [ref=e105]: Não configurado
+                - generic [ref=e106]:
+                  - textbox "Cole sua chave aqui" [ref=e108]
+                  - button [ref=e109]
+                  - button "Salvar" [disabled] [ref=e111]
+              - generic [ref=e112]:
+                - generic [ref=e113]:
+                  - heading "AWS Region" [level=3] [ref=e114]
+                  - generic [ref=e116]: Não configurado
+                - generic [ref=e117]:
+                  - textbox "Cole sua chave aqui" [ref=e119]
+                  - button [ref=e120]
+                  - button "Salvar" [disabled] [ref=e122]
+              - generic [ref=e123]:
+                - generic [ref=e124]:
+                  - heading "Databricks Host URL" [level=3] [ref=e125]
+                  - generic [ref=e127]: Não configurado
+                - generic [ref=e128]:
+                  - textbox "Cole sua chave aqui" [ref=e130]
+                  - button [ref=e131]
+                  - button "Salvar" [disabled] [ref=e133]
+              - generic [ref=e134]:
+                - generic [ref=e135]:
+                  - heading "Databricks Token" [level=3] [ref=e136]
+                  - generic [ref=e138]: Não configurado
+                - generic [ref=e139]:
+                  - textbox "Cole sua chave aqui" [ref=e141]
+                  - button [ref=e142]
+                  - button "Salvar" [disabled] [ref=e144]
+              - generic [ref=e145]:
+                - generic [ref=e146]:
+                  - heading "GitHub Token" [level=3] [ref=e147]
+                  - generic [ref=e149]: Não configurado
+                - generic [ref=e150]:
+                  - textbox "Cole sua chave aqui" [ref=e152]
+                  - button [ref=e153]
+                  - button "Salvar" [disabled] [ref=e155]
+              - generic [ref=e156]:
+                - generic [ref=e157]:
+                  - heading "GitHub Repo (owner/repo)" [level=3] [ref=e158]
+                  - generic [ref=e160]: Não configurado
+                - generic [ref=e161]:
+                  - textbox "Cole sua chave aqui" [ref=e163]
+                  - button [ref=e164]
+                  - button "Salvar" [disabled] [ref=e166]
+          - generic [ref=e167]:
+            - heading "Modelo LLM" [level=2] [ref=e168]
+            - generic [ref=e169]:
+              - paragraph [ref=e170]: Modelo preferido para sua empresa
+              - generic [ref=e171]:
+                - button "Sonnet (rápido)" [ref=e172]
+                - button "Opus (inteligente)" [ref=e173]
+          - generic [ref=e174]:
+            - heading "Canais" [level=2] [ref=e175]
+            - generic [ref=e176]:
+              - generic [ref=e177]:
+                - generic [ref=e178]:
+                  - heading "Discord Bot Token" [level=3] [ref=e179]
+                  - generic [ref=e181]: Não configurado
+                - generic [ref=e182]:
+                  - textbox "Cole sua chave aqui" [ref=e184]
+                  - button [ref=e185]
+                  - button "Salvar" [disabled] [ref=e187]
+              - generic [ref=e188]:
+                - generic [ref=e189]:
+                  - heading "Telegram Bot Token" [level=3] [ref=e190]
+                  - generic [ref=e192]: Não configurado
+                - generic [ref=e193]:
+                  - textbox "Cole sua chave aqui" [ref=e195]
+                  - button [ref=e196]
+                  - button "Salvar" [disabled] [ref=e198]
+              - generic [ref=e199]:
+                - heading "Canais Omni" [level=3] [ref=e200]
+                - paragraph [ref=e201]: Gerencie instâncias WhatsApp, Discord e Telegram em um só lugar.
+                - link "Abrir Channels" [ref=e202] [cursor=pointer]:
+                  - /url: /channels
+                  - text: Abrir Channels
+  - generic:
+    - img
+  - generic [ref=e204]:
+    - button "Toggle Nuxt DevTools" [ref=e205] [cursor=pointer]:
+      - img [ref=e206]
+    - generic "Page load time" [ref=e209]:
+      - generic [ref=e210]: "477"
+      - generic [ref=e211]: ms
+    - button "Toggle Component Inspector" [ref=e213] [cursor=pointer]:
+      - img [ref=e214]

@@ -1,8 +1,9 @@
-"""Channel models — sessoes ativas e identidades cross-channel."""
+"""Channel models — sessoes ativas, identidades cross-channel e instancias Omni."""
 
+import datetime as dt
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,3 +39,30 @@ class ChannelIdentity(Base, UUIDMixin, TimestampMixin):
     channel: Mapped[str] = mapped_column(String(50), nullable=False)
     channel_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class OmniInstance(Base, UUIDMixin, TimestampMixin):
+    """Instancia Omni conectada (WhatsApp/Discord/Telegram) por empresa.
+
+    Persiste metadata local sobre instancias criadas via OmniService.
+    O `omni_instance_id` e o identificador retornado pelo proprio Omni
+    e usado em todas as chamadas subsequentes (connect, qr, send_message).
+    """
+
+    __tablename__ = "omni_instances"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    omni_instance_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel: Mapped[str] = mapped_column(String(50), nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="connecting", index=True
+    )
+    last_sync_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
