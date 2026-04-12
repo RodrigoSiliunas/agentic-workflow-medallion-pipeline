@@ -64,7 +64,7 @@
       @created="onCreated"
     />
 
-    <QrPairingModal :instance-id="pairingInstanceId" @close="pairingInstanceId = null" />
+    <QrPairingModal :instance-id="pairingInstanceId" @close="onPairingClosed" />
   </div>
 </template>
 
@@ -112,6 +112,11 @@ async function onDisconnect(id: string) {
   if (!instance) return
   if (!confirm(`Desconectar ${instance.name}?`)) return
   await store.disconnect(id)
+}
+
+async function onPairingClosed() {
+  pairingInstanceId.value = null
+  await store.load(true)
 }
 
 async function onResync(id: string) {

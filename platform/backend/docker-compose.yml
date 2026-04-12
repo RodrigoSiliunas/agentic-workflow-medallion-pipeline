@@ -25,6 +25,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -46,12 +47,37 @@ services:
     networks:
       - namastex-net
 
+  # Omni — gateway multi-canal (WhatsApp, Discord, Telegram)
+  # Build: omni.Dockerfile (instala @automagik/omni no Alpine Linux)
+  # Docs: https://github.com/automagik-dev/omni
+  # API: http://localhost:8882/api/v2/docs
+  omni:
+    build:
+      context: .
+      dockerfile: omni.Dockerfile
+    container_name: namastex-omni
+    ports:
+      - "8882:8882"
+    environment:
+      OMNI_PORT: "8882"
+      OMNI_API_KEY: ${OMNI_API_KEY:-omni_sk_safatechx_master_key_2026}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/omni
+    volumes:
+      - omnidata:/home/omni/.omni/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - namastex-net
+      - omni-net
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  omnidata:
 
 networks:
   namastex-net:
     driver: bridge
   omni-net:
     driver: bridge
-    # Omni se conecta nessa rede — isolado do exterior

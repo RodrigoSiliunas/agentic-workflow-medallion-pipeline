@@ -12,9 +12,12 @@ state=connected. Para Discord/Telegram, cliente chama POST /channels/{id}/connec
 com o bot token.
 """
 
+import base64
+import io
 import uuid
 from datetime import UTC, datetime
 
+import qrcode
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -76,14 +79,17 @@ async def create_channel(
             channel=data.channel,
             company_slug=company.slug,
         )
-        instance.omni_instance_id = result.get("id") or result.get("instanceId")
+        omni_id = result.get("id") or result.get("instanceId")
+        instance.omni_instance_id = omni_id
         instance.last_sync_at = datetime.now(UTC)
-        if data.channel == "whatsapp":
-            # WhatsApp precisa de QR scan — fica em connecting
-            instance.state = "connecting"
-        else:
-            # Discord/Telegram so ficam connected apos POST /connect
-            instance.state = "connecting"
+        instance.state = "connecting"
+
+        # WhatsApp: iniciar conexao para gerar QR code
+        if data.channel == "whatsapp" and omni_id:
+            try:
+                await omni.connect_instance(omni_id)
+            except Exception as connect_exc:
+                logger.warning("omni auto-connect failed", error=str(connect_exc))
     except Exception as exc:
         logger.warning("omni create_instance failed", error=str(exc), name=data.name)
         instance.state = "failed"
@@ -152,6 +158,23 @@ async def get_channel_qr(
         )
 
     omni = OmniService()
+
+    # Verificar status da instancia no Omni (pode ja estar conectada)
+    try:
+        inst_data = await omni.get_instance(instance.omni_instance_id)
+        if inst_data.get("isActive"):
+            instance.state = "connected"
+            instance.last_sync_at = datetime.now(UTC)
+            await db.commit()
+            return QRCodeResponse(
+                instance_id=str(instance_id),
+                state="connected",
+                qr_code=None,
+                expires_at=None,
+            )
+    except Exception:
+        pass  # Fallback: tentar buscar QR normalmente
+
     try:
         result = await omni.get_qr_code(instance.omni_instance_id)
     except Exception as exc:
@@ -161,18 +184,27 @@ async def get_channel_qr(
             detail=f"Nao foi possivel obter QR code do Omni: {exc}",
         ) from exc
 
-    # Omni pode retornar state=connected quando o scan foi feito
-    state_from_omni = str(result.get("state") or result.get("status") or "connecting")
-    if state_from_omni in ("connected", "open"):
+    # Se QR é null, instancia pode ja estar conectada
+    raw_qr = result.get("qr") or result.get("qrCode") or result.get("code")
+    if not raw_qr:
         instance.state = "connected"
         instance.last_sync_at = datetime.now(UTC)
         await db.commit()
+        return QRCodeResponse(
+            instance_id=str(instance_id),
+            state="connected",
+            qr_code=None,
+            expires_at=None,
+        )
+
+    # Converter texto QR (protocolo WhatsApp) em imagem PNG base64
+    qr_image_b64 = _qr_to_base64(raw_qr)
 
     return QRCodeResponse(
         instance_id=str(instance_id),
         state=instance.state,
-        qr_code=result.get("qr") or result.get("qrCode") or result.get("code"),
-        expires_at=None,
+        qr_code=qr_image_b64,
+        expires_at=result.get("expiresAt"),
     )
 
 
@@ -196,6 +228,15 @@ async def disconnect_channel(
     instance.state = "disconnected"
     instance.last_sync_at = datetime.now(UTC)
     await db.commit()
+
+
+def _qr_to_base64(text: str) -> str:
+    """Gera imagem QR code PNG em base64 a partir do texto."""
+    img = qrcode.make(text, box_size=8, border=2)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{b64}"
 
 
 async def _load_owned(

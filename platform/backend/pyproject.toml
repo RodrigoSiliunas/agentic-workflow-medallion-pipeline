@@ -25,6 +25,8 @@ dependencies = [
     # Real saga runner deps — usadas pelo RealSagaRunner para deploy programatico
     "databricks-sdk>=0.40.0",
     "boto3>=1.34.0",
+    "qrcode>=8.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

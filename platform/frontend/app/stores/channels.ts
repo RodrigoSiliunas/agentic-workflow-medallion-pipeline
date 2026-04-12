@@ -51,7 +51,13 @@ export const useChannelsStore = defineStore("channels", () => {
     const instance = getById(id)
     if (!instance) return null
     const api = useChannelsApi()
-    return api.getQrCode(id)
+    const info = await api.getQrCode(id)
+    // Atualizar estado local quando Omni reporta conexao
+    if (info.state === "connected" && instance.state !== "connected") {
+      instance.state = "connected"
+      instance.lastSyncAt = new Date().toISOString()
+    }
+    return info
   }
 
   async function disconnect(id: string): Promise<void> {
