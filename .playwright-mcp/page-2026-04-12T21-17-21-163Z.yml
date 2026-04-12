@@ -1,0 +1,92 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e35]:
+    - complementary [ref=e36]:
+      - generic [ref=e37]:
+        - img [ref=e39]
+        - generic [ref=e48]:
+          - heading "Safatechx" [level=1] [ref=e49]
+          - paragraph [ref=e50]: Pipeline agent platform
+      - navigation [ref=e52]:
+        - link "Chat" [ref=e53] [cursor=pointer]:
+          - /url: /chat
+          - generic [ref=e55]: Chat
+        - link "Market" [ref=e56] [cursor=pointer]:
+          - /url: /marketplace
+          - generic [ref=e58]: Market
+        - link "Deploys" [ref=e59] [cursor=pointer]:
+          - /url: /deployments
+          - generic [ref=e61]: Deploys
+        - link "Canais" [ref=e62] [cursor=pointer]:
+          - /url: /channels
+          - generic [ref=e64]: Canais
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - button "Nova conversa Ctrl N" [ref=e67]:
+            - generic [ref=e69]: Nova conversa
+            - generic [ref=e70]:
+              - generic [ref=e71]: Ctrl
+              - generic [ref=e72]: "N"
+          - textbox "Buscar conversas..." [ref=e75]
+        - generic [ref=e78]:
+          - generic [ref=e81]: FINAL-v5
+          - generic [ref=e84]: Ativo
+        - generic [ref=e86]:
+          - heading "Today" [level=4] [ref=e87]
+          - button "Quantas tabelas Gold existem no meu pipeline? Apagar conversa Quantas tabelas Gold existem no meu pipeline?" [ref=e88] [cursor=pointer]:
+            - generic [ref=e89]: Quantas tabelas Gold existem no meu pipeline?
+            - button "Apagar conversa Quantas tabelas Gold existem no meu pipeline?" [ref=e90]
+          - button "Qual o status atual do meu pipeline? Ele rodou com sucesso? Apagar conversa Qual o status atual do meu pipeline? Ele rodou com sucesso?" [ref=e92] [cursor=pointer]:
+            - generic [ref=e93]: Qual o status atual do meu pipeline? Ele rodou com sucesso?
+            - button "Apagar conversa Qual o status atual do meu pipeline? Ele rodou com sucesso?" [ref=e94]
+          - button "Qual foi a última vez que esse pipeline executou com sucesso? Apagar conversa Qual foi a última vez que esse pipeline executou com sucesso?" [ref=e96] [cursor=pointer]:
+            - generic [ref=e97]: Qual foi a última vez que esse pipeline executou com sucesso?
+            - button "Apagar conversa Qual foi a última vez que esse pipeline executou com sucesso?" [ref=e98]
+          - button "Qual o custo total do Observer esse mês? Apagar conversa Qual o custo total do Observer esse mês?" [ref=e100] [cursor=pointer]:
+            - generic [ref=e101]: Qual o custo total do Observer esse mês?
+            - button "Apagar conversa Qual o custo total do Observer esse mês?" [ref=e102]
+      - generic [ref=e104]:
+        - generic [ref=e106]: RS
+        - generic [ref=e107]:
+          - paragraph [ref=e108]: Rodrigo Siliunas
+          - paragraph [ref=e109]: root
+        - link [ref=e110] [cursor=pointer]:
+          - /url: /help
+        - link [ref=e112] [cursor=pointer]:
+          - /url: /settings
+    - main [ref=e114]:
+      - generic [ref=e115]:
+        - generic [ref=e116]:
+          - generic [ref=e120]:
+            - generic [ref=e121]:
+              - heading "FINAL-v5" [level=2] [ref=e122]
+              - generic [ref=e125]: Ativo
+            - paragraph [ref=e126]: Quantas tabelas Gold existem no meu pipeline?
+          - generic [ref=e127]:
+            - button [ref=e128] [cursor=pointer]
+            - button [ref=e130] [cursor=pointer]
+        - generic [ref=e133]:
+          - generic [ref=e134]:
+            - generic [ref=e135]:
+              - generic [ref=e136]: Quantas tabelas Gold existem no meu pipeline?
+              - generic [ref=e138]: 18:09
+            - generic [ref=e141]: R
+          - generic [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]: Oi, teste rapido
+              - generic [ref=e146]: 18:14
+            - generic [ref=e149]: R
+        - generic [ref=e151]:
+          - generic [ref=e152]:
+            - textbox "Envie uma mensagem para o agente..." [ref=e153]
+            - button [disabled] [ref=e154]
+          - paragraph [ref=e156]: Modo ativo. Enter envia, Shift+Enter quebra linha.
+  - generic:
+    - img
+  - generic [ref=e157]:
+    - button "Toggle Nuxt DevTools" [ref=e158] [cursor=pointer]:
+      - img [ref=e159]
+    - generic "Page load time" [ref=e162]:
+      - generic [ref=e163]: "565"
+      - generic [ref=e164]: ms
+    - button "Toggle Component Inspector" [ref=e166] [cursor=pointer]:
+      - img [ref=e167]

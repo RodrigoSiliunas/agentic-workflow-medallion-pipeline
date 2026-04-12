@@ -144,7 +144,10 @@ export const useThreadsStore = defineStore("threads", () => {
     if (thread.title === "Nova conversa" && message.role === "user") {
       thread.title = message.content.slice(0, 50)
     }
-    return fullMessage
+    // Retorna o elemento do array REATIVO (proxy Vue), nao o plain object.
+    // Sem isso, `assistantMsg.content += token` no streamAssistantReply
+    // muta o objeto original mas Vue nao detecta (bypassa proxy).
+    return thread.messages[thread.messages.length - 1]!
   }
 
   /**

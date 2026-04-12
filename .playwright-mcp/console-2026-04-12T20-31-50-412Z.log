@@ -26,3 +26,7 @@
   at <NuxtLayout > 
   at <App key=4 > 
   at <NuxtRoot> @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js?v=adf002d8:49
+[ 1679899ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3000/_nuxt/@vite/client:864
+[ 1727776ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/login?redirect=/deployments:0
+[ 1733266ms] [LOG] ✨ %cNuxt DevTools %c Press Shift + Alt + D to open DevTools color: black; border-radius: 3px 0 0 3px; padding: 2px 2px 1px 10px; background: #00DC82 border-radius: 0 3px 3px 0; padding: 2px 10px 1px 2px; background: #00DC8220  @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/@nuxt/devtools/dist/runtime/plugins/devtools.client.js?v=b7cc260d:51
+[ 1733730ms] [INFO] <Suspense> is an experimental feature and its API will likely change. @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js?v=b7cc260d:7234

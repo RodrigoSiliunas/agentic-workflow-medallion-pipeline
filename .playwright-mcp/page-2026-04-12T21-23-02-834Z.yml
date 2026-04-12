@@ -1,0 +1,109 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e35]:
+    - complementary [ref=e36]:
+      - generic [ref=e37]:
+        - img [ref=e39]
+        - generic [ref=e48]:
+          - heading "Safatechx" [level=1] [ref=e49]
+          - paragraph [ref=e50]: Pipeline agent platform
+      - navigation [ref=e52]:
+        - link "Chat" [ref=e53] [cursor=pointer]:
+          - /url: /chat
+          - generic [ref=e55]: Chat
+        - link "Market" [ref=e56] [cursor=pointer]:
+          - /url: /marketplace
+          - generic [ref=e58]: Market
+        - link "Deploys" [ref=e59] [cursor=pointer]:
+          - /url: /deployments
+          - generic [ref=e61]: Deploys
+        - link "Canais" [ref=e62] [cursor=pointer]:
+          - /url: /channels
+          - generic [ref=e64]: Canais
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - button "Nova conversa Ctrl N" [ref=e67]:
+            - generic [ref=e69]: Nova conversa
+            - generic [ref=e70]:
+              - generic [ref=e71]: Ctrl
+              - generic [ref=e72]: "N"
+          - textbox "Buscar conversas..." [ref=e75]
+        - generic [ref=e78]:
+          - generic [ref=e81]: FINAL-v5
+          - generic [ref=e84]: Ativo
+        - generic [ref=e86]:
+          - heading "Today" [level=4] [ref=e87]
+          - button "Quantas tabelas Gold existem no meu pipeline? Apagar conversa Quantas tabelas Gold existem no meu pipeline?" [ref=e88] [cursor=pointer]:
+            - generic [ref=e89]: Quantas tabelas Gold existem no meu pipeline?
+            - button "Apagar conversa Quantas tabelas Gold existem no meu pipeline?" [ref=e90]
+          - button "Qual o status atual do meu pipeline? Ele rodou com sucesso? Apagar conversa Qual o status atual do meu pipeline? Ele rodou com sucesso?" [ref=e92] [cursor=pointer]:
+            - generic [ref=e93]: Qual o status atual do meu pipeline? Ele rodou com sucesso?
+            - button "Apagar conversa Qual o status atual do meu pipeline? Ele rodou com sucesso?" [ref=e94]
+          - button "Qual foi a última vez que esse pipeline executou com sucesso? Apagar conversa Qual foi a última vez que esse pipeline executou com sucesso?" [ref=e96] [cursor=pointer]:
+            - generic [ref=e97]: Qual foi a última vez que esse pipeline executou com sucesso?
+            - button "Apagar conversa Qual foi a última vez que esse pipeline executou com sucesso?" [ref=e98]
+          - button "Qual o custo total do Observer esse mês? Apagar conversa Qual o custo total do Observer esse mês?" [ref=e100] [cursor=pointer]:
+            - generic [ref=e101]: Qual o custo total do Observer esse mês?
+            - button "Apagar conversa Qual o custo total do Observer esse mês?" [ref=e102]
+      - generic [ref=e104]:
+        - generic [ref=e106]: RS
+        - generic [ref=e107]:
+          - paragraph [ref=e108]: Rodrigo Siliunas
+          - paragraph [ref=e109]: root
+        - link [ref=e110] [cursor=pointer]:
+          - /url: /help
+        - link [ref=e112] [cursor=pointer]:
+          - /url: /settings
+    - main [ref=e114]:
+      - generic [ref=e117]:
+        - generic [ref=e118]:
+          - heading "Converse com o agente" [level=1] [ref=e121]
+          - paragraph [ref=e122]: Investigue runs, descubra falhas, revise custos e deixe o Observer Agent corrigir bugs do pipeline automaticamente.
+        - generic [ref=e123]:
+          - generic [ref=e124]:
+            - heading "Sua plataforma em números" [level=2] [ref=e125]
+            - paragraph [ref=e126]: Últimos 30 dias
+          - generic [ref=e127]:
+            - generic [ref=e128]:
+              - paragraph [ref=e131]: Pipelines
+              - paragraph [ref=e132]: "2"
+              - paragraph [ref=e133]: 1 com job Databricks
+            - generic [ref=e134]:
+              - paragraph [ref=e137]: Deploys
+              - paragraph [ref=e138]: "1"
+              - paragraph [ref=e139]: 1 sucesso · 0 falha · 26s avg
+            - generic [ref=e140]:
+              - paragraph [ref=e143]: Canais ativos
+              - paragraph [ref=e144]: 0/0
+              - paragraph [ref=e145]: Nenhum canal
+            - generic [ref=e146]:
+              - paragraph [ref=e149]: Observer
+              - paragraph [ref=e150]: $0.25
+              - paragraph [ref=e151]: 9 PRs automáticos
+        - generic [ref=e152]:
+          - button "Por que o bronze falhou? Investigar último run com status FAILED" [ref=e153]:
+            - heading "Por que o bronze falhou?" [level=3] [ref=e156]
+            - paragraph [ref=e157]: Investigar último run com status FAILED
+          - button "Quanto o Observer gastou? Breakdown de custos Claude Opus nos últimos 30 dias" [ref=e158]:
+            - heading "Quanto o Observer gastou?" [level=3] [ref=e161]
+            - paragraph [ref=e162]: Breakdown de custos Claude Opus nos últimos 30 dias
+          - button "Status do pipeline Ver último run, tasks, durações" [ref=e163]:
+            - heading "Status do pipeline" [level=3] [ref=e166]
+            - paragraph [ref=e167]: Ver último run, tasks, durações
+          - button "PRs abertos pelo agente Listar PRs criados automaticamente no GitHub" [ref=e168]:
+            - heading "PRs abertos pelo agente" [level=3] [ref=e171]
+            - paragraph [ref=e172]: Listar PRs criados automaticamente no GitHub
+        - generic [ref=e175]:
+          - generic [ref=e176]:
+            - textbox "Envie uma mensagem para o agente..." [ref=e177]
+            - button [disabled] [ref=e178]
+          - paragraph [ref=e180]: Modo ativo. Enter envia, Shift+Enter quebra linha.
+  - generic:
+    - img
+  - generic [ref=e181]:
+    - button "Toggle Nuxt DevTools" [ref=e182] [cursor=pointer]:
+      - img [ref=e183]
+    - generic "Page load time" [ref=e186]:
+      - generic [ref=e187]: "147"
+      - generic [ref=e188]: ms
+    - button "Toggle Component Inspector" [ref=e190] [cursor=pointer]:
+      - img [ref=e191]
