@@ -42,8 +42,14 @@
         </div>
 
         <div class="px-3 pb-2">
-          <div
-            class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-elevated)]/50 px-3 py-2"
+          <button
+            v-for="p in pipelinesStore.pipelines"
+            :key="p.id"
+            class="w-full rounded-[var(--radius-md)] border px-3 py-2 mb-1 transition-colors text-left"
+            :class="pipelinesStore.activePipelineId === p.id
+              ? 'border-[var(--brand-500)]/40 bg-[var(--surface-elevated)]/80'
+              : 'border-[var(--border)] bg-[var(--surface-elevated)]/30 hover:bg-[var(--surface-elevated)]/60'"
+            @click="switchPipeline(p.id)"
           >
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0">
@@ -52,12 +58,12 @@
                   class="text-[11px] font-medium truncate"
                   :style="{ color: 'var(--text-secondary)' }"
                 >
-                  {{ activePipeline?.name ?? "Sem pipeline" }}
+                  {{ p.name }}
                 </span>
               </div>
-              <StatusBadge v-if="activePipeline" :status="activePipeline.status" />
+              <StatusBadge :status="p.status" />
             </div>
-          </div>
+          </button>
         </div>
 
         <ThreadList
@@ -239,6 +245,53 @@
       <AppButton variant="ghost" size="sm" icon="i-heroicons-question-mark-circle" square to="/help" />
       <AppButton variant="ghost" size="sm" icon="i-heroicons-cog-6-tooth" square to="/settings" />
     </div>
+
+    <!-- Modal: selecionar pipeline pra nova conversa -->
+    <div
+      v-if="showPipelinePicker"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      :style="{ background: 'rgba(0,0,0,0.6)' }"
+      @click.self="showPipelinePicker = false"
+    >
+      <div
+        class="max-w-sm w-full mx-4 p-5 rounded-[var(--radius-lg)] border"
+        :style="{ background: 'var(--surface)', borderColor: 'var(--border)' }"
+      >
+        <h3 class="text-sm font-semibold mb-1" :style="{ color: 'var(--text-primary)' }">
+          Selecionar pipeline
+        </h3>
+        <p class="text-xs mb-4" :style="{ color: 'var(--text-tertiary)' }">
+          Cada conversa e vinculada a um pipeline pra dar contexto ao agente.
+        </p>
+        <div class="space-y-2">
+          <button
+            v-for="p in pipelinesStore.pipelines"
+            :key="p.id"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-md)] border text-left transition-colors hover:border-[var(--brand-500)]/50 hover:bg-[var(--surface-elevated)]"
+            :style="{ borderColor: 'var(--border)' }"
+            @click="createThreadForPipeline(p.id)"
+          >
+            <AppIcon name="cpu-chip" size="sm" class="text-[var(--brand-500)] flex-shrink-0" />
+            <div class="flex-1 min-w-0">
+              <p class="text-xs font-medium truncate" :style="{ color: 'var(--text-primary)' }">
+                {{ p.name }}
+              </p>
+              <p class="text-[10px]" :style="{ color: 'var(--text-tertiary)' }">
+                {{ p.status === 'SUCCESS' ? 'Ativo' : 'Parado' }}
+              </p>
+            </div>
+            <AppIcon name="chevron-right" size="xs" :style="{ color: 'var(--text-tertiary)' }" />
+          </button>
+        </div>
+        <button
+          class="w-full mt-3 text-xs text-center py-1.5"
+          :style="{ color: 'var(--text-tertiary)' }"
+          @click="showPipelinePicker = false"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
   </aside>
 </template>
 
@@ -307,13 +360,34 @@ const filteredGroups = computed(() => {
   return result
 })
 
+const showPipelinePicker = ref(false)
+
 async function onNewThread() {
-  const pipelineId = activePipeline.value?.id
-  if (!pipelineId) {
+  const pipelines = pipelinesStore.pipelines
+  if (pipelines.length === 0) {
     navigateTo("/chat")
     return
   }
+  if (pipelines.length === 1) {
+    // So 1 pipeline — cria direto sem modal
+    await createThreadForPipeline(pipelines[0].id)
+    return
+  }
+  // Multiplos pipelines — mostra modal pra usuario escolher
+  showPipelinePicker.value = true
+}
+
+function switchPipeline(pipelineId: string) {
+  pipelinesStore.setActive(pipelineId)
+  threadsStore.loadForPipeline(pipelineId)
+  navigateTo("/chat")
+}
+
+async function createThreadForPipeline(pipelineId: string) {
+  showPipelinePicker.value = false
+  pipelinesStore.setActive(pipelineId)
   const thread = await threadsStore.create("Nova conversa", pipelineId)
+  await threadsStore.loadForPipeline(pipelineId)
   navigateTo(`/chat/${thread.id}`)
 }
 
