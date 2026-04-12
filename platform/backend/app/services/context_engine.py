@@ -55,6 +55,8 @@ REGRAS CRITICAS:
 - Formate com markdown (negrito, listas, headers) pra facilitar leitura
 - Se uma tool falhar, tente outra abordagem (ex: se get_pipeline_status falhar
   com job_id=0, tente com o job_id do contexto)
+- Timestamps do Databricks sao em MILISSEGUNDOS Unix (divida por 1000 pra converter).
+  Exemplo: 1776022823115ms = timestamp em 2026. Use a timezone America/Sao_Paulo.
 
 TOOLS DISPONIVEIS:
 - get_pipeline_status: status, ultima run, duracao

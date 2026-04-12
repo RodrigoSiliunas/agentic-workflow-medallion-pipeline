@@ -65,19 +65,44 @@ function escapeHtml(str: string): string {
 }
 
 const renderedContent = computed(() => {
+  if (isUser.value) return escapeHtml(props.message.content)
+
   let text = escapeHtml(props.message.content)
+  // Code blocks (antes de inline pra nao conflitar)
   text = text.replace(
     /```(\w*)\n([\s\S]*?)```/g,
     '<pre class="bg-[var(--surface-elevated)] border border-[var(--border)] p-3 rounded-[var(--radius-md)] overflow-x-auto my-2 text-xs"><code>$2</code></pre>',
   )
+  // Inline code
   text = text.replace(
     /`([^`]+)`/g,
     '<code class="bg-[var(--surface-elevated)] border border-[var(--border)] px-1 py-0.5 rounded text-[11px]">$1</code>',
   )
+  // Headers (## Titulo → <h3>)
+  text = text.replace(
+    /^### (.+)$/gm,
+    '<h4 class="text-sm font-semibold mt-3 mb-1" style="color: var(--text-primary)">$1</h4>',
+  )
+  text = text.replace(
+    /^## (.+)$/gm,
+    '<h3 class="text-base font-semibold mt-3 mb-1" style="color: var(--text-primary)">$1</h3>',
+  )
+  // Bold
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+  // Links
   text = text.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener" class="underline text-[var(--brand-500)]">$1</a>',
+  )
+  // Lists (- item)
+  text = text.replace(
+    /^- (.+)$/gm,
+    '<li class="ml-4 list-disc">$1</li>',
+  )
+  // Numbered lists (1. item)
+  text = text.replace(
+    /^\d+\. (.+)$/gm,
+    '<li class="ml-4 list-decimal">$1</li>',
   )
   return text
 })

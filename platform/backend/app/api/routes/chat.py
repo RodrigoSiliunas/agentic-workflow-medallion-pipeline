@@ -276,6 +276,9 @@ _PIPELINE_KEYWORDS = {
     "sentiment", "funnel", "nps", "churn", "lead", "persona",
     "schedule", "cron", "trigger", "chaos", "rollback", "overwrite",
     "metric", "metrica", "dashboard", "observability", "monitor",
+    # Temporal / follow-up (usuario perguntando sobre resultado anterior)
+    "data", "quando", "hora", "ultimo", "ultima", "executou", "rodou",
+    "sucesso", "success", "resultado", "duracao", "correcao", "correção",
 }
 
 _OFF_TOPIC_RESPONSE = (
