@@ -193,6 +193,23 @@ async def cancel_deployment(
     request_cancel(str(deployment_id))
 
 
+@router.patch("/{deployment_id}")
+async def update_deployment(
+    deployment_id: uuid.UUID,
+    data: dict,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atualiza nome do deployment."""
+    deployment = await _load_owned(db, deployment_id, auth.company_id)
+    if "name" in data:
+        deployment.name = data["name"]
+        if deployment.config:
+            deployment.config = {**deployment.config, "name": data["name"]}
+    await db.commit()
+    return {"status": "updated"}
+
+
 @router.delete("/{deployment_id}", status_code=204)
 async def delete_deployment(
     deployment_id: uuid.UUID,

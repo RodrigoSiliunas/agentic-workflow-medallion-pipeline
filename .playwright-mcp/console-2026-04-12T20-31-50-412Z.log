@@ -6,3 +6,23 @@
 [    1439ms] [LOG] 🍍 "templates" store installed 🆕 @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/pinia/dist/pinia.mjs?v=adf002d8:185
 [    1439ms] [LOG] 🍍 "deployments" store installed 🆕 @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/pinia/dist/pinia.mjs?v=adf002d8:185
 [    1439ms] [LOG] 🍍 "channels" store installed 🆕 @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/pinia/dist/pinia.mjs?v=adf002d8:185
+[  647948ms] [WARNING] [Vue warn]: Property "renamingId" was accessed during render but is not defined on instance. 
+  at <SidebarNav > 
+  at <AppShell > 
+  at <Default ref=Ref< Proxy(Object) > > 
+  at <AsyncComponentWrapper ref=Ref< Proxy(Object) > > 
+  at <LayoutLoader key="default" layoutProps= {ref: RefImpl} name="default" > 
+  at <NuxtLayoutProvider layoutProps= {ref: RefImpl} key="default" name="default"  ... > 
+  at <NuxtLayout > 
+  at <App key=4 > 
+  at <NuxtRoot> @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js?v=adf002d8:49
+[  647948ms] [WARNING] [Vue warn]: Property "renamingId" was accessed during render but is not defined on instance. 
+  at <SidebarNav > 
+  at <AppShell > 
+  at <Default ref=Ref< Proxy(Object) > > 
+  at <AsyncComponentWrapper ref=Ref< Proxy(Object) > > 
+  at <LayoutLoader key="default" layoutProps= {ref: RefImpl} name="default" > 
+  at <NuxtLayoutProvider layoutProps= {ref: RefImpl} key="default" name="default"  ... > 
+  at <NuxtLayout > 
+  at <App key=4 > 
+  at <NuxtRoot> @ http://localhost:3000/_nuxt/@fs/C:/Users/Rodrigo/Documents/Teste%20T%C3%A9cnico/platform/frontend/node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js?v=adf002d8:49

@@ -42,6 +42,23 @@
         />
       </template>
     </DeployProgress>
+
+    <!-- Databricks Info (show when deployment has pipeline info) -->
+    <section
+      v-if="deployment.status === 'success'"
+      class="px-8 py-4 border-t"
+      :style="{ borderColor: 'var(--border)' }"
+    >
+      <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" :style="{ color: 'var(--text-tertiary)' }">
+        Informacoes do Databricks
+      </h3>
+      <dl class="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+        <div v-for="item in databricksInfo" :key="item.label">
+          <dt :style="{ color: 'var(--text-tertiary)' }">{{ item.label }}</dt>
+          <dd class="font-mono" :style="{ color: 'var(--text-primary)' }">{{ item.value }}</dd>
+        </div>
+      </dl>
+    </section>
   </div>
   <EmptyState
     v-else
@@ -64,6 +81,20 @@ const id = computed(() => String(route.params.id))
 const deployment = computed(() => store.getById(id.value))
 
 const showDeleteConfirm = ref(false)
+
+const databricksInfo = computed(() => {
+  const d = deployment.value
+  if (!d) return []
+  const cfg = d.config || {}
+  return [
+    { label: "Template", value: d.templateSlug },
+    { label: "Environment", value: cfg.environment || d.config?.environment || "?" },
+    { label: "Deployment ID", value: d.id },
+    { label: "Pipeline ID", value: d.pipelineId || "—" },
+    { label: "Duracao", value: d.durationMs ? `${Math.round(d.durationMs / 1000)}s` : "—" },
+    { label: "Criado em", value: d.createdAt ? new Date(d.createdAt).toLocaleString("pt-BR") : "—" },
+  ].filter(i => i.value && i.value !== "—")
+})
 
 async function confirmDelete() {
   showDeleteConfirm.value = false

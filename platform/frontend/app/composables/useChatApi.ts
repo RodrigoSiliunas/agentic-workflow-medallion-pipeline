@@ -158,7 +158,9 @@ export function useChatApi() {
         })
 
         if (!response.ok || !response.body) {
-          handlers.onError?.(`HTTP ${response.status}`)
+          const errorText = await response.text().catch(() => "")
+          console.error("[chat] SSE failed:", response.status, errorText)
+          handlers.onError?.(`HTTP ${response.status}: ${errorText}`)
           return
         }
 
@@ -197,6 +199,7 @@ export function useChatApi() {
         handlers.onDone?.()
       } catch (e) {
         if (!controller.signal.aborted) {
+          console.error("[chat] SSE exception:", e)
           handlers.onError?.(e instanceof Error ? e.message : "chat stream failed")
         }
       }

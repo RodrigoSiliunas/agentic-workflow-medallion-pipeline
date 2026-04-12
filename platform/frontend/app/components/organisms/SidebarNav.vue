@@ -183,24 +183,34 @@
           >
             Recentes
           </h4>
-          <NuxtLink
+          <div
             v-for="d in deploymentsStore.list.slice(0, 10)"
             :key="d.id"
-            :to="`/deployments/${d.id}`"
-            class="w-full flex items-center gap-2 px-3 py-2 rounded-[var(--radius-md)] text-xs transition-colors"
-            :class="
-              isActiveDeployment(d.id)
-                ? 'bg-[var(--surface-elevated)] text-[var(--text-primary)]'
-                : 'text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]/60'
-            "
+            class="group w-full flex items-center gap-2 px-3 py-2 rounded-[var(--radius-md)] text-xs transition-colors cursor-pointer"
+            :class="isActiveDeployment(d.id) ? 'bg-[var(--surface-elevated)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]/60'"
+            @click="navigateTo(`/deployments/${d.id}`)"
+            @dblclick.stop="startRename(d)"
           >
-            <span
-              class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-              :class="{ 'status-pulse': d.status === 'running' }"
-              :style="{ background: dotForStatus(d.status) }"
-            />
-            <span class="flex-1 truncate">{{ d.config.name }}</span>
-          </NuxtLink>
+            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="{ 'status-pulse': d.status === 'running' }" :style="{ background: dotForStatus(d.status) }" />
+            <input
+              v-if="renamingId === d.id"
+              v-model="renameValue"
+              class="flex-1 bg-transparent border-b border-[var(--brand-500)] outline-none text-xs"
+              :style="{ color: 'var(--text-primary)' }"
+              @keydown.enter="confirmRename(d.id)"
+              @keydown.escape="renamingId = null"
+              @blur="confirmRename(d.id)"
+            >
+            <span v-else class="flex-1 truncate">{{ d.config.name }}</span>
+            <button
+              v-if="renamingId !== d.id"
+              class="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-elevated)]"
+              :style="{ color: 'var(--status-error)' }"
+              @click.stop="handleDeleteDeploy(d.id, d.config.name)"
+            >
+              <AppIcon name="trash" size="xs" />
+            </button>
+          </div>
 
           <EmptyState
             v-if="deploymentsStore.list.length === 0"
@@ -357,6 +367,40 @@ function countByCategory(cat: string): number {
 }
 
 // --- DEPLOYMENTS ---
+const renamingId = ref<string | null>(null)
+const renameValue = ref("")
+
+function startRename(d: { id: string; config: { name: string } }) {
+  renamingId.value = d.id
+  renameValue.value = d.config.name
+  nextTick(() => {
+    const input = document.querySelector('input[class*="bg-transparent"]') as HTMLInputElement
+    input?.focus()
+    input?.select()
+  })
+}
+
+async function confirmRename(id: string) {
+  if (!renameValue.value.trim() || !renamingId.value) {
+    renamingId.value = null
+    return
+  }
+  // Update deployment name via API
+  try {
+    const api = useApiClient()
+    await api.put(`/deployments/${id}`, { name: renameValue.value.trim() })
+    await deploymentsStore.load(true)
+  } catch {
+    // silently fail
+  }
+  renamingId.value = null
+}
+
+async function handleDeleteDeploy(id: string, name: string) {
+  if (!confirm(`Excluir deployment "${name}"?`)) return
+  await deploymentsStore.deleteDeployment(id)
+}
+
 function isActiveDeployment(id: string): boolean {
   return route.path === `/deployments/${id}`
 }
