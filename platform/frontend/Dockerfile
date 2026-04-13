@@ -18,10 +18,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Non-root user
-RUN adduser --system --group app
+RUN addgroup -S app && adduser -S app -G app
 
-# Copiar output do Nuxt build (SSR mode)
 COPY --from=builder --chown=app:app /app/.output .output/
 
 USER app
