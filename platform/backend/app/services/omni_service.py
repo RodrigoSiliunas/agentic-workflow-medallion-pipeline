@@ -80,9 +80,9 @@ class OmniService:
         self, instance_id: str, token: str | None = None
     ) -> dict:
         """Conecta instancia (passa token para Discord/Telegram)."""
-        payload = {}
+        payload: dict = {}
         if token:
-            payload["token"] = token
+            payload["options"] = {"token": token}
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
