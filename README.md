@@ -2,6 +2,33 @@
 
 Plataforma conversacional para pipelines de dados Medallion com deploy one-click, chat AI com tools em tempo real, e integração multi-canal (WhatsApp, Telegram, Discord).
 
+## TL;DR
+
+```bash
+git clone https://github.com/RodrigoSiliunas/agentic-workflow-medallion-pipeline.git
+cd agentic-workflow-medallion-pipeline/platform/backend
+
+# Configurar variáveis de ambiente
+cp .env.example .env   # editar: SECRET_KEY, ENCRYPTION_KEY, OMNI_API_KEY
+
+# Subir tudo (frontend + backend + postgres + redis + omni gateway)
+docker compose up -d --build
+
+# Migrations (primeira vez)
+docker compose exec backend uv run alembic upgrade head
+
+# Resetar tudo do zero (apaga dados)
+docker compose down -v && docker compose up -d --build
+```
+
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| Frontend | http://localhost:3000 | Interface web (Nuxt 4) |
+| Backend API | http://localhost:8000/api/v1/docs | FastAPI + Swagger |
+| Omni Gateway | http://localhost:8882/api/v2/docs | WhatsApp/Telegram/Discord |
+| PostgreSQL | localhost:5432 | Banco principal |
+| Redis | localhost:6379 | Cache + token revocation |
+
 ## Visão Geral
 
 ```
@@ -102,28 +129,47 @@ echo "omni_sk_$(openssl rand -base64 24 | tr -d '/+=')"
 
 ### 3. Subir os serviços
 
+**Opção A — Docker Compose (recomendado):**
+
 ```bash
 cd platform/backend
 
-# Subir PostgreSQL + Redis + Omni Gateway
-docker compose up -d postgres redis omni
+# Subir TUDO com um comando (frontend + backend + postgres + redis + omni)
+docker compose up -d --build
 
-# Aguardar health checks
-docker compose ps  # todos devem estar "healthy"
+# Aguardar health checks (omni demora ~90s)
+docker compose ps
 
-# Rodar migrations do backend
-uv sync
-uv run alembic upgrade head
-
-# Iniciar backend (dev)
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Rodar migrations (primeira vez)
+docker compose exec backend uv run alembic upgrade head
 ```
 
+**Opção B — Dev local (sem Docker para backend/frontend):**
+
 ```bash
-# Em outro terminal — Frontend
+# Terminal 1: infra
+cd platform/backend
+docker compose up -d postgres redis omni
+
+# Terminal 2: backend
+cd platform/backend
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 3: frontend
 cd platform/frontend
 bun install
-bun run dev  # http://localhost:3000
+bun run dev
+```
+
+**Resetar tudo do zero:**
+
+```bash
+cd platform/backend
+docker compose down -v      # para containers + deleta volumes (dados)
+docker compose up -d --build
+docker compose exec backend uv run alembic upgrade head
 ```
 
 ### 4. Primeiro acesso
