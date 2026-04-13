@@ -83,7 +83,7 @@ class OmniService:
     async def connect_instance(self, instance_id: str, token: str | None = None) -> dict:
         payload: dict = {}
         if token:
-            payload["options"] = {"token": token}
+            payload["token"] = token
         resp = await self._client().post(
             f"{self.base_url}/instances/{instance_id}/connect",
             json=payload, headers=self._headers(),
