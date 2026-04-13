@@ -13,6 +13,7 @@ com o bot token.
 """
 
 import base64
+import contextlib
 import io
 import uuid
 from datetime import UTC, datetime
@@ -155,13 +156,24 @@ async def get_channel_qr(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="QR code so esta disponivel para WhatsApp",
         )
-    if not instance.omni_instance_id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Instancia ainda nao foi criada no Omni",
-        )
-
     omni = OmniService()
+
+    # Se nao tem omni_instance_id, recriar no Omni (ex: apos desconectar)
+    if not instance.omni_instance_id:
+        company = await _get_company(db, auth.company_id)
+        omni_id = await _create_or_find_omni_instance(
+            omni, CreateChannelRequest(name=instance.name, channel=instance.channel), company,
+        )
+        if not omni_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Falha ao recriar instancia no Omni",
+            )
+        instance.omni_instance_id = omni_id
+        # Iniciar conexao para gerar QR
+        with contextlib.suppress(Exception):
+            await omni.connect_instance(omni_id)
+        await db.commit()
 
     # Verificar status da instancia no Omni (pode ja estar conectada)
     try:
