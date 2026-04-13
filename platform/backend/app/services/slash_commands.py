@@ -259,6 +259,6 @@ class SlashCommandHandler:
             "  /status — status do pipeline ativo\n"
             "  /threads [pipeline] — listar conversas\n"
             "  /model [opus|sonnet|haiku] — trocar modelo\n"
-            "  /whoami — info da sessao\n"
+            "  /whoami — canal, pipeline, thread UUID da sessao atual\n"
             "  /help — esta mensagem"
         )
