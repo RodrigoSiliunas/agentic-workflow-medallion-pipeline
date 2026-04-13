@@ -240,13 +240,11 @@ class ChannelMessageHandler:
         )
         session = result.scalar_one_or_none()
 
-        if session and session.active_thread_id and session.active_pipeline_id:
-            return session
-
-        # Herdar sessao de OUTRO canal do mesmo usuario (cross-channel sync)
+        # SEMPRE sincronizar com o canal mais recentemente atualizado
         sibling_result = await self.db.execute(
             select(ActiveSession).where(
                 ActiveSession.user_id == user.id,
+                ActiveSession.channel != channel,
                 ActiveSession.active_thread_id.isnot(None),
                 ActiveSession.active_pipeline_id.isnot(None),
             ).order_by(ActiveSession.updated_at.desc()).limit(1)
@@ -255,9 +253,13 @@ class ChannelMessageHandler:
 
         if sibling:
             if session:
-                session.active_thread_id = sibling.active_thread_id
-                session.active_pipeline_id = sibling.active_pipeline_id
-                session.channel_user_id = channel_user_id
+                if session.active_thread_id != sibling.active_thread_id:
+                    session.active_thread_id = sibling.active_thread_id
+                    session.active_pipeline_id = sibling.active_pipeline_id
+                    session.channel_user_id = channel_user_id
+                    await self.db.commit()
+                    logger.info("Canal: sessao sincronizada", channel=channel, thread=str(sibling.active_thread_id))
+                return session
             else:
                 session = ActiveSession(
                     user_id=user.id,
@@ -267,12 +269,10 @@ class ChannelMessageHandler:
                     active_pipeline_id=sibling.active_pipeline_id,
                 )
                 self.db.add(session)
-            await self.db.commit()
-            logger.info(
-                "Canal: sessao herdada de outro canal",
-                channel=channel, from_channel=sibling.channel,
-                thread=str(sibling.active_thread_id),
-            )
+                await self.db.commit()
+                return session
+
+        if session and session.active_thread_id and session.active_pipeline_id:
             return session
 
         # Nenhuma sessao em nenhum canal — buscar pipeline
