@@ -515,6 +515,6 @@ function onNewChannelClick() {
 
 async function handleLogout() {
   await authStore.logout()
-  navigateTo("/login")
+  navigateTo("/")
 }
 </script>

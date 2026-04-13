@@ -236,7 +236,6 @@ export const useAuthStore = defineStore("auth", {
         sessionStorage.removeItem("access_token")
         sessionStorage.removeItem("mock_user")
       }
-      navigateTo("/login")
     },
 
     async initFromStorage() {
