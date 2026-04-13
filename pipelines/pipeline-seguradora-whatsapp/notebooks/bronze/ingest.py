@@ -122,7 +122,6 @@ def ingest_to_bronze():
             logger.error(f"CHAOS MODE ({chaos_mode}): {e}")
         raise
 
-# Execução principal
-if __name__ == "__main__":
-    ingest_to_bronze()
-    print("Bronze ingestion completed successfully")
+# COMMAND ----------
+# DBTITLE 1,Execucao
+ingest_to_bronze()
