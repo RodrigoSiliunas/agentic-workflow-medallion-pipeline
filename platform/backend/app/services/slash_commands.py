@@ -19,6 +19,7 @@ COMMANDS = {
     "/status": "quick_status",
     "/threads": "list_threads",
     "/new": "new_thread",
+    "/model": "change_model",
     "/whoami": "who_am_i",
     "/help": "show_help",
 }
@@ -244,15 +245,20 @@ class SlashCommandHandler:
             f"Thread: {thread_id}"
         )
 
+    async def change_model(self, args: str) -> str:
+        """Tratado pelo ChannelMessageHandler — aqui e fallback pro web."""
+        return "Use /model [opus|sonnet|haiku] para trocar o modelo."
+
     async def show_help(self, _args: str) -> str:
         return (
             "Comandos disponiveis:\n"
             "  /resume [pipeline] — conectar a um pipeline\n"
             "  /resume [pipeline] [uuid] — retomar conversa\n"
+            "  /new [pipeline] — nova conversa\n"
             "  /pipelines — listar pipelines\n"
             "  /status — status do pipeline ativo\n"
             "  /threads [pipeline] — listar conversas\n"
-            "  /new [pipeline] — nova conversa\n"
+            "  /model [opus|sonnet|haiku] — trocar modelo\n"
             "  /whoami — info da sessao\n"
             "  /help — esta mensagem"
         )
