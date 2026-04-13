@@ -281,28 +281,6 @@ class LLMOrchestrator:
             # Executar tools
             tool_results = []
             for call in tool_calls:
-                # Verificar se precisa confirmacao
-                if call.name in CONFIRMATION_REQUIRED:
-                    yield {
-                        "type": "action",
-                        "action": "confirmation_required",
-                        "tool": call.name,
-                        "input": call.input,
-                        "details": {"tool_id": call.id},
-                    }
-                    # Nao executar — retornar pedido de confirmacao ao LLM
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": call.id,
-                        "content": json.dumps({
-                            "status": "awaiting_confirmation",
-                            "message": "O usuario precisa confirmar esta acao. "
-                                       "Pergunte ao usuario se deseja prosseguir e "
-                                       "descreva exatamente o que sera feito.",
-                        }),
-                    })
-                    continue
-
                 result = await self._execute_tool(call.name, call.input)
 
                 yield {
