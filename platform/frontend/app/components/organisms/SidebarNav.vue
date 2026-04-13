@@ -244,6 +244,7 @@
       </div>
       <AppButton variant="ghost" size="sm" icon="i-heroicons-question-mark-circle" square to="/help" />
       <AppButton variant="ghost" size="sm" icon="i-heroicons-cog-6-tooth" square to="/settings" />
+      <AppButton variant="ghost" size="sm" icon="i-heroicons-arrow-right-on-rectangle" square @click="handleLogout" />
     </div>
 
     <!-- Modal: selecionar pipeline pra nova conversa -->
@@ -509,7 +510,11 @@ function channelDotColor(state: OmniInstanceState): string {
 }
 
 function onNewChannelClick() {
-  // Navega para /channels e abre o modal via query param
   navigateTo({ path: "/channels", query: { new: "1" } })
+}
+
+async function handleLogout() {
+  await authStore.logout()
+  navigateTo("/login")
 }
 </script>
