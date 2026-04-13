@@ -112,18 +112,17 @@ class SlashCommandHandler:
                 self.db.add(thread)
                 await self.db.flush()
 
-        # Atualizar sessao ativa
-        session_result = await self.db.execute(
-            select(ActiveSession).where(
-                ActiveSession.user_id == self.user_id,
-                ActiveSession.channel == self.channel,
-            )
+        # Atualizar sessao ativa — sincronizar TODOS os canais do usuario
+        all_sessions = await self.db.execute(
+            select(ActiveSession).where(ActiveSession.user_id == self.user_id)
         )
-        session = session_result.scalar_one_or_none()
-        if session:
-            session.active_thread_id = thread.id
-            session.active_pipeline_id = pipeline.id
-        else:
+        existing_channels = set()
+        for s in all_sessions.scalars().all():
+            s.active_thread_id = thread.id
+            s.active_pipeline_id = pipeline.id
+            existing_channels.add(s.channel)
+
+        if self.channel not in existing_channels:
             self.db.add(ActiveSession(
                 user_id=self.user_id,
                 channel=self.channel,

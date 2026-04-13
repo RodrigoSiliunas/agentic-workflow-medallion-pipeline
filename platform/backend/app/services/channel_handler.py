@@ -231,7 +231,7 @@ class ChannelMessageHandler:
     async def _ensure_session(
         self, user: User, channel: str, channel_user_id: str,
     ) -> ActiveSession:
-        """Garante que existe uma sessao ativa para o user+channel."""
+        """Garante sessao ativa. Herda thread/pipeline de outro canal se existir."""
         result = await self.db.execute(
             select(ActiveSession).where(
                 ActiveSession.user_id == user.id,
@@ -243,7 +243,39 @@ class ChannelMessageHandler:
         if session and session.active_thread_id and session.active_pipeline_id:
             return session
 
-        # Buscar primeiro pipeline da empresa
+        # Herdar sessao de OUTRO canal do mesmo usuario (cross-channel sync)
+        sibling_result = await self.db.execute(
+            select(ActiveSession).where(
+                ActiveSession.user_id == user.id,
+                ActiveSession.active_thread_id.isnot(None),
+                ActiveSession.active_pipeline_id.isnot(None),
+            ).order_by(ActiveSession.updated_at.desc()).limit(1)
+        )
+        sibling = sibling_result.scalar_one_or_none()
+
+        if sibling:
+            if session:
+                session.active_thread_id = sibling.active_thread_id
+                session.active_pipeline_id = sibling.active_pipeline_id
+                session.channel_user_id = channel_user_id
+            else:
+                session = ActiveSession(
+                    user_id=user.id,
+                    channel=channel,
+                    channel_user_id=channel_user_id,
+                    active_thread_id=sibling.active_thread_id,
+                    active_pipeline_id=sibling.active_pipeline_id,
+                )
+                self.db.add(session)
+            await self.db.commit()
+            logger.info(
+                "Canal: sessao herdada de outro canal",
+                channel=channel, from_channel=sibling.channel,
+                thread=str(sibling.active_thread_id),
+            )
+            return session
+
+        # Nenhuma sessao em nenhum canal — buscar pipeline
         pipeline_result = await self.db.execute(
             select(Pipeline)
             .where(Pipeline.company_id == user.company_id)
@@ -263,7 +295,7 @@ class ChannelMessageHandler:
                 await self.db.flush()
             return session
 
-        # Reutilizar thread mais recente do usuario neste pipeline (cross-channel)
+        # Reutilizar thread mais recente do usuario neste pipeline
         thread_result = await self.db.execute(
             select(Thread).where(
                 Thread.user_id == user.id,
