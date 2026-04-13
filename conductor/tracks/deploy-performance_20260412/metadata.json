@@ -1,9 +1,0 @@
-{
-  "id": "deploy-performance_20260412",
-  "title": "Deploy — Performance Optimization",
-  "status": "pending",
-  "priority": 5,
-  "created": "2026-04-12",
-  "updated": "2026-04-12",
-  "review_findings": ["#13", "#14", "#15", "#16", "#17", "#18", "#19"]
-}

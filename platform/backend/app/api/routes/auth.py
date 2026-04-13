@@ -23,6 +23,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    revoke_token,
     verify_password,
 )
 from app.database.session import get_db
@@ -30,7 +31,6 @@ from app.middleware.rate_limiter import rate_limit_auth
 from app.models.company import Company
 from app.models.pipeline import Pipeline
 from app.models.user import User
-from app.core.security import revoke_token
 from app.schemas.auth import (
     LoginRequest,
     RegisterCompanyRequest,

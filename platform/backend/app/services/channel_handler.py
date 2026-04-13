@@ -11,6 +11,7 @@ Fluxo:
 8. Enviar resposta via Omni
 """
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -30,6 +31,7 @@ logger = structlog.get_logger()
 
 # Modelo padrao para canais externos (fallback quando session.preferred_model e null)
 _DEFAULT_MODEL = "sonnet"
+_email_re = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 # Mensagens padrao
 MSG_ONBOARDING = (
@@ -98,10 +100,8 @@ class ChannelMessageHandler:
         identity = await self._get_identity(channel, channel_user_id)
 
         if not identity:
-            # Checar se e resposta de onboarding (email) — validacao basica
-            import re
-            _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-            if _EMAIL_RE.match(text.strip()):
+            # Checar se e resposta de onboarding (email)
+            if _email_re.match(text.strip()):
                 await self._try_link_account(
                     channel, channel_user_id, text.strip().lower(),
                     instance_id, sender_jid,

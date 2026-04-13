@@ -1,9 +1,0 @@
-{
-  "id": "security-deploy-hardening_20260412",
-  "title": "Security — Deploy Hardening (Secrets Exposure)",
-  "status": "pending",
-  "priority": 2,
-  "created": "2026-04-12",
-  "updated": "2026-04-12",
-  "review_findings": ["#4", "#5", "#9", "#25"]
-}

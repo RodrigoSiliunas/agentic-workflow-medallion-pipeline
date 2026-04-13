@@ -1,6 +1,7 @@
 """FastAPI application — Namastex Platform Backend."""
 
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 import structlog
@@ -62,10 +63,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down")
     if poller_task:
         poller_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await poller_task
-        except asyncio.CancelledError:
-            pass
     await OmniService.close()
 
 

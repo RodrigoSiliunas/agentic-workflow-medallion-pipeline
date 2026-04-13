@@ -1,9 +1,0 @@
-{
-  "id": "security-critical-config_20260412",
-  "title": "Security — Critical Config Hardening",
-  "status": "pending",
-  "priority": 1,
-  "created": "2026-04-12",
-  "updated": "2026-04-12",
-  "review_findings": ["#2", "#3", "#6"]
-}

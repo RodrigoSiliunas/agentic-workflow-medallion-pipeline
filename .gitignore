@@ -53,6 +53,10 @@ platform/backend/venv/
 # E2E screenshots (testes locais, nao precisam estar no repo)
 e2e-*.png
 
+# Docs internos / teste tecnico
+docs/
+conductor/
+
 # Design system repo (submodule/reference)
 platform/design/
 

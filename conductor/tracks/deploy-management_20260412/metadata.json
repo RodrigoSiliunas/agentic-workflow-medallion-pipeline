@@ -1,9 +1,0 @@
-{
-  "id": "deploy-management_20260412",
-  "title": "Feature — Delete Deployment",
-  "status": "pending",
-  "priority": 7,
-  "created": "2026-04-12",
-  "updated": "2026-04-12",
-  "review_findings": ["user-request"]
-}

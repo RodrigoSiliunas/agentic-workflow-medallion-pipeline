@@ -67,7 +67,10 @@ class OmniService:
         )
         resp.raise_for_status()
         data = self._unwrap(resp.json())
-        logger.info("Omni instance created", name=instance_name, channel=omni_channel, id=data.get("id"))
+        logger.info(
+            "Omni instance created",
+            name=instance_name, channel=omni_channel, id=data.get("id"),
+        )
         return data
 
     async def get_instance(self, instance_id: str) -> dict:

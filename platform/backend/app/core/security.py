@@ -68,9 +68,8 @@ def decode_token(token: str) -> dict | None:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         # Verificar revocation
         jti = payload.get("jti")
-        if jti and _revocation_redis:
-            if _revocation_redis.exists(f"{_REVOKE_PREFIX}{jti}"):
-                return None
+        if jti and _revocation_redis and _revocation_redis.exists(f"{_REVOKE_PREFIX}{jti}"):
+            return None
         return payload
     except JWTError:
         return None

@@ -122,7 +122,8 @@ class DatabricksService:
                 headers=self._headers(),
             )
             resp.raise_for_status()
-            return {"status": "updated", "job_id": job_id, "settings_changed": list(settings.keys())}
+            changed = list(settings.keys())
+            return {"status": "updated", "job_id": job_id, "settings_changed": changed}
 
     async def get_job_status(self, job_id: int) -> dict:
         """Retorna status do job Databricks."""

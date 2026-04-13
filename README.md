@@ -46,11 +46,18 @@ Plataforma conversacional para pipelines de dados Medallion com deploy one-click
                                  │ Discord     │
                                  └─────────────┘
 
-       ┌─────────────────────────────────────────┐
-       │            Databricks (AWS)              │
-       │  Pipeline ETL  │  Observer Agent         │
-       │  Bronze→Silver→Gold  │  Claude→GitHub PR │
-       └─────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────┐
+  │                        AWS                                │
+  │  ┌──────────────────────────────────────────────┐        │
+  │  │              Databricks                      │        │
+  │  │  Pipeline ETL      │   Observer Agent        │        │
+  │  │  Bronze→Silver→Gold│   Claude → GitHub PR    │        │
+  │  └──────────────────────────────────────────────┘        │
+  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐       │
+  │  │  S3      │  │  IAM     │  │ Secrets Manager  │       │
+  │  │ Datalake │  │ Roles    │  │ Credentials      │       │
+  │  └──────────┘  └──────────┘  └──────────────────┘       │
+  └──────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start (Docker)
@@ -176,7 +183,10 @@ bun run dev  # http://localhost:3000
 │   │
 │   └── design/                  # Design system references
 │
-├── infra/aws/                   # Terraform (foundation + datalake)
+├── infra/aws/                   # Terraform (IAM, S3, Security Groups)
+│   ├── 01-foundation/           # IAM users/roles, SGs, Secrets Manager, S3 root
+│   └── 02-datalake/             # S3 datalake com lifecycle rules
+│
 ├── .github/workflows/           # CI (ruff + pytest) + CD (Databricks sync)
 └── CLAUDE.md                    # Instruções para AI assistants
 ```

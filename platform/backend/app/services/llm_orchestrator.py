@@ -29,7 +29,7 @@ TOOLS = [
     },
     {
         "name": "get_job_details",
-        "description": "Retorna configuracao completa de um job: schedule (cron), tasks, timeout, tags.",
+        "description": "Config completa de um job: schedule, tasks, timeout, tags.",
         "input_schema": {
             "type": "object",
             "properties": {"job_id": {"type": "integer"}},
@@ -38,12 +38,18 @@ TOOLS = [
     },
     {
         "name": "update_job_schedule",
-        "description": "Altera o agendamento (cron) de um job. REQUER CONFIRMACAO. Formato Quartz: '0 0 6 * * ?' = diario 6h.",
+        "description": (
+            "Altera cron de um job. REQUER CONFIRMACAO. "
+            "Quartz: '0 0 6 * * ?' = diario 6h."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "job_id": {"type": "integer"},
-                "cron": {"type": "string", "description": "Expressao Quartz cron (ex: '0 0 6 * * ?' para diario 6AM)"},
+                "cron": {
+                    "type": "string",
+                    "description": "Quartz cron (ex: '0 0 6 * * ?')",
+                },
                 "timezone": {"type": "string", "default": "America/Sao_Paulo"},
                 "paused": {"type": "boolean", "default": False},
             },
@@ -52,14 +58,17 @@ TOOLS = [
     },
     {
         "name": "update_job_settings",
-        "description": "Atualiza configuracoes de um job (timeout, tags, max_concurrent_runs). REQUER CONFIRMACAO.",
+        "description": (
+            "Atualiza config de um job (timeout, tags). "
+            "REQUER CONFIRMACAO."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "job_id": {"type": "integer"},
                 "settings": {
                     "type": "object",
-                    "description": "Dict com as settings a alterar (ex: {\"timeout_seconds\": 3600, \"tags\": {\"env\": \"prod\"}})",
+                    "description": "Settings a alterar",
                 },
             },
             "required": ["job_id", "settings"],
@@ -354,14 +363,17 @@ class LLMOrchestrator:
                 sql = input_data["sql"].strip()
                 sql_upper = sql.upper()
                 # Guard: somente SELECT puro, sem multi-statement ou DDL
-                _FORBIDDEN = {"INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE", "EXEC", "GRANT", "REVOKE"}
+                forbidden = {
+                    "INSERT", "UPDATE", "DELETE", "DROP", "CREATE",
+                    "ALTER", "TRUNCATE", "EXEC", "GRANT", "REVOKE",
+                }
                 if not sql_upper.startswith("SELECT"):
                     return {"error": "Apenas queries SELECT sao permitidas"}
                 if ";" in sql:
                     return {"error": "Multi-statement nao permitido"}
                 tokens = set(sql_upper.split())
-                if tokens & _FORBIDDEN:
-                    return {"error": f"Palavras proibidas detectadas: {tokens & _FORBIDDEN}"}
+                if tokens & forbidden:
+                    return {"error": f"Palavras proibidas detectadas: {tokens & forbidden}"}
                 return await self.databricks.query_table(
                     sql, input_data.get("max_rows", 50)
                 )
