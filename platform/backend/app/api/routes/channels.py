@@ -109,14 +109,27 @@ async def connect_channel(
 ):
     """Conecta instancia (passa token para Discord/Telegram)."""
     instance = await _load_owned(db, instance_id, auth.company_id)
-
-    if not instance.omni_instance_id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Instancia ainda nao foi criada no Omni",
-        )
-
     omni = OmniService()
+
+    # Se nao tem omni_instance_id, tentar criar no Omni primeiro
+    if not instance.omni_instance_id:
+        company = await _get_company(db, auth.company_id)
+        try:
+            result = await omni.create_instance(
+                name=instance.name, channel=instance.channel,
+                company_slug=company.slug,
+            )
+            instance.omni_instance_id = result.get("id") or result.get("instanceId")
+        except Exception as exc:
+            logger.warning("omni create on connect failed", error=str(exc))
+            instance.state = "failed"
+            instance.last_error = str(exc)[:500]
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Falha ao criar instancia no Omni: {exc}",
+            ) from exc
+
     try:
         await omni.connect_instance(instance.omni_instance_id, token=data.token)
         instance.state = "connected"
