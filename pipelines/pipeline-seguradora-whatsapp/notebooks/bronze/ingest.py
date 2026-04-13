@@ -14,9 +14,17 @@ spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
 logger = logging.getLogger(__name__)
 
 # Configuration
-CHAOS_MODE_ENABLED = False  # Desabilitar chaos mode em produção
 SOURCE_PATH = "/mnt/landing/whatsapp/conversations"
 TARGET_TABLE = "medallion.bronze.conversations"
+
+# Chaos mode — lido via task value propagado pelo pre_check
+chaos_mode = "off"
+try:
+    chaos_mode = dbutils.jobs.taskValues.get(  # noqa: F821
+        taskKey="pre_check", key="chaos_mode", default="off"
+    )
+except Exception:
+    chaos_mode = "off"
 
 # Schema esperado - definição explícita
 EXPECTED_SCHEMA = StructType([
@@ -52,8 +60,7 @@ def validate_and_conform_schema(df, expected_schema):
         for col_name in extra_cols:
             if col_name.startswith("_chaos_"):
                 logger.error(f"CHAOS MODE: Coluna de teste detectada: {col_name}")
-                if not CHAOS_MODE_ENABLED:
-                    df = df.drop(col_name)
+                df = df.drop(col_name)
     
     # Adiciona colunas faltantes
     missing_cols = set(expected_cols) - set(actual_cols)
@@ -68,6 +75,14 @@ def validate_and_conform_schema(df, expected_schema):
 
 def ingest_to_bronze():
     try:
+        # Chaos mode: injetar falha controlada para testar Observer Agent
+        if chaos_mode == "bronze_schema":
+            logger.warning("CHAOS MODE: Injetando bug de schema no Bronze")
+            raise ValueError(
+                "CHAOS: Schema invalido - coluna _chaos_invalid_col com tipo "
+                "incompativel (injetado por chaos_mode=bronze_schema)"
+            )
+
         logger.info(f"Iniciando ingestão Bronze de {SOURCE_PATH}")
         
         # Leitura dos dados
@@ -102,9 +117,9 @@ def ingest_to_bronze():
         
     except Exception as e:
         logger.error(f"Erro durante ingestão Bronze: {str(e)}")
-        # Se for erro de chaos mode em produção, falha com mensagem clara
-        if "_chaos_" in str(e) and not CHAOS_MODE_ENABLED:
-            raise ValueError("Chaos mode detectado em produção. Desabilite o chaos engineering ou ative CHAOS_MODE_ENABLED")
+        # Propagar erro
+        if chaos_mode != "off":
+            logger.error(f"CHAOS MODE ({chaos_mode}): {e}")
         raise
 
 # Execução principal
