@@ -50,6 +50,9 @@ platform/backend/venv/
 # Playwright MCP logs/screenshots
 .playwright-mcp/
 
+# E2E screenshots (testes locais, nao precisam estar no repo)
+e2e-*.png
+
 # Design system repo (submodule/reference)
 platform/design/
 
