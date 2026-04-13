@@ -77,6 +77,11 @@ class ChannelMessageHandler:
         sender_jid = key.get("remoteJidAlt") or key.get("remoteJid") or chat_id
         sender_name = raw.get("pushName", "")
 
+        # Ignorar mensagens do proprio bot
+        is_from_me = key.get("fromMe", False) or raw.get("isFromMe", False)
+        if is_from_me:
+            return
+
         # Ignorar grupos
         if "@g.us" in sender_jid or "@g.us" in chat_id:
             return
