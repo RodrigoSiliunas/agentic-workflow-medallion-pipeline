@@ -1,127 +1,181 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Bronze Layer - Raw Data Ingestion
-# MAGIC Ingestão de dados brutos do WhatsApp para camada Bronze
+# MAGIC 
+# MAGIC Este notebook ingere dados raw de conversas WhatsApp para a camada Bronze
 
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType
-from pyspark.sql.functions import col, current_timestamp, lit
-from delta import DeltaTable
+# COMMAND ----------
+
+# MAGIC %pip install delta-spark
+
+# COMMAND ----------
+
+import json
 import logging
+from datetime import datetime
+from typing import Dict, Any, Optional
 
-# Setup
-spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
+from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.functions import (
+    col, current_timestamp, lit, input_file_name,
+    from_json, schema_of_json
+)
+from pyspark.sql.types import StructType, StructField, StringType
+from delta.tables import DeltaTable
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# COMMAND ----------
+
 # Configuration
-SOURCE_PATH = "/mnt/landing/whatsapp/conversations"
-TARGET_TABLE = "medallion.bronze.conversations"
+BRONZE_TABLE = "medallion.bronze.conversations"
+SOURCE_PATH = "/mnt/landing/whatsapp/conversations/"  # Adjust based on your source
+CHECKPOINT_PATH = "/mnt/checkpoints/bronze/conversations/"
 
-# Chaos mode — lido via task value propagado pelo pre_check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(  # noqa: F821
-        taskKey="pre_check", key="chaos_mode", default="off"
-    )
-except Exception:
-    chaos_mode = "off"
+# COMMAND ----------
 
-# Schema esperado - definição explícita
-EXPECTED_SCHEMA = StructType([
-    StructField("message_id", StringType(), True),
-    StructField("conversation_id", StringType(), True),
-    StructField("timestamp", StringType(), True),
-    StructField("direction", StringType(), True),
-    StructField("sender_phone", StringType(), True),
-    StructField("sender_name", StringType(), True),
-    StructField("message_type", StringType(), True),
-    StructField("message_body", StringType(), True),
-    StructField("status", StringType(), True),
-    StructField("channel", StringType(), True),
-    StructField("campaign_id", StringType(), True),
-    StructField("agent_id", StringType(), True),
-    StructField("conversation_outcome", StringType(), True),
-    StructField("metadata", StringType(), True)
-])
-
-def validate_and_conform_schema(df, expected_schema):
+def create_bronze_schema() -> StructType:
     """
-    Valida e conforma o DataFrame ao schema esperado.
-    Remove colunas extras e adiciona colunas faltantes com null.
+    Define the schema for the bronze conversations table.
     """
-    expected_cols = [field.name for field in expected_schema.fields]
-    actual_cols = df.columns
-    
-    # Log colunas extras detectadas
-    extra_cols = set(actual_cols) - set(expected_cols)
-    if extra_cols:
-        logger.warning(f"Colunas extras detectadas e serão removidas: {extra_cols}")
-        # Remove chaos columns ou qualquer coluna não esperada
-        for col_name in extra_cols:
-            if col_name.startswith("_chaos_"):
-                logger.error(f"CHAOS MODE: Coluna de teste detectada: {col_name}")
-                df = df.drop(col_name)
-    
-    # Adiciona colunas faltantes
-    missing_cols = set(expected_cols) - set(actual_cols)
-    for col_name in missing_cols:
-        logger.warning(f"Coluna faltante será adicionada com NULL: {col_name}")
-        df = df.withColumn(col_name, lit(None).cast(StringType()))
-    
-    # Reordena e seleciona apenas colunas esperadas
-    df = df.select(*expected_cols)
-    
-    return df
+    return StructType([
+        StructField("message_id", StringType(), True),
+        StructField("conversation_id", StringType(), True),
+        StructField("timestamp", StringType(), True),
+        StructField("direction", StringType(), True),
+        StructField("sender_phone", StringType(), True),
+        StructField("sender_name", StringType(), True),
+        StructField("message_type", StringType(), True),
+        StructField("message_body", StringType(), True),
+        StructField("status", StringType(), True),
+        StructField("channel", StringType(), True),
+        StructField("campaign_id", StringType(), True),
+        StructField("agent_id", StringType(), True),
+        StructField("conversation_outcome", StringType(), True),
+        StructField("metadata", StringType(), True)
+    ])
 
-def ingest_to_bronze():
+# COMMAND ----------
+
+def ingest_to_bronze(
+    spark: SparkSession,
+    source_path: str = SOURCE_PATH,
+    target_table: str = BRONZE_TABLE,
+    checkpoint_path: str = CHECKPOINT_PATH,
+    batch_mode: bool = False
+) -> None:
+    """
+    Ingest raw data from source to Bronze layer.
+    
+    Args:
+        spark: SparkSession
+        source_path: Path to source data
+        target_table: Target Delta table name
+        checkpoint_path: Checkpoint location for streaming
+        batch_mode: If True, run as batch; if False, run as streaming
+    """
+    logger.info(f"Starting ingestion to {target_table}")
+    
     try:
-        # Chaos mode: injetar falha controlada para testar Observer Agent
-        if chaos_mode == "bronze_schema":
-            logger.warning("CHAOS MODE: Injetando bug de schema no Bronze")
-            raise ValueError(
-                "CHAOS: Schema invalido - coluna _chaos_invalid_col com tipo "
-                "incompativel (injetado por chaos_mode=bronze_schema)"
-            )
-
-        logger.info(f"Iniciando ingestão Bronze de {SOURCE_PATH}")
+        # Create schema
+        schema = create_bronze_schema()
         
-        # Leitura dos dados
-        df_raw = spark.read \
-            .option("multiline", "true") \
-            .option("inferSchema", "false") \
-            .json(SOURCE_PATH)
-        
-        # Validação e conformação de schema
-        df_conformed = validate_and_conform_schema(df_raw, EXPECTED_SCHEMA)
-        
-        # Adiciona metadados de ingestão
-        df_bronze = df_conformed \
-            .withColumn("_ingestion_timestamp", current_timestamp()) \
-            .withColumn("_source_file", lit(SOURCE_PATH))
-        
-        # Log estatísticas
-        total_records = df_bronze.count()
-        logger.info(f"Total de registros a ingerir: {total_records}")
-        
-        # Escreve na tabela Bronze
-        df_bronze.write \
-            .mode("append") \
-            .option("mergeSchema", "false") \
-            .saveAsTable(TARGET_TABLE)
-        
-        logger.info(f"Ingestão concluída com sucesso. {total_records} registros gravados em {TARGET_TABLE}")
-        
-        # Validação final
-        final_count = spark.table(TARGET_TABLE).count()
-        logger.info(f"Total de registros na tabela após ingestão: {final_count}")
-        
+        # Read source data
+        if batch_mode:
+            # Batch mode - read all files at once
+            df = (spark.read
+                  .format("json")
+                  .schema(schema)
+                  .option("multiLine", "true")
+                  .load(source_path))
+            
+            # Add metadata columns
+            df = df.withColumn("_ingested_at", current_timestamp()) \
+                   .withColumn("_source_file", input_file_name())
+            
+            # Write to Bronze table
+            df.write \
+              .mode("append") \
+              .format("delta") \
+              .saveAsTable(target_table)
+            
+            logger.info(f"Batch ingestion completed. Rows written: {df.count()}")
+            
+        else:
+            # Streaming mode - continuous ingestion
+            stream_df = (spark.readStream
+                        .format("json")
+                        .schema(schema)
+                        .option("multiLine", "true")
+                        .option("maxFilesPerTrigger", 100)
+                        .load(source_path))
+            
+            # Add metadata columns
+            stream_df = stream_df.withColumn("_ingested_at", current_timestamp()) \
+                                 .withColumn("_source_file", input_file_name())
+            
+            # Write stream to Bronze table
+            query = (stream_df.writeStream
+                    .format("delta")
+                    .outputMode("append")
+                    .option("checkpointLocation", checkpoint_path)
+                    .trigger(processingTime="10 seconds")
+                    .table(target_table))
+            
+            # For batch jobs, wait for one micro-batch and stop
+            if batch_mode:
+                query.processAllAvailable()
+                query.stop()
+            
+            logger.info("Streaming ingestion started successfully")
+    
     except Exception as e:
-        logger.error(f"Erro durante ingestão Bronze: {str(e)}")
-        # Propagar erro
-        if chaos_mode != "off":
-            logger.error(f"CHAOS MODE ({chaos_mode}): {e}")
+        logger.error(f"Error during ingestion: {str(e)}")
         raise
 
 # COMMAND ----------
-# DBTITLE 1,Execucao
-ingest_to_bronze()
+
+def validate_bronze_data(spark: SparkSession, table_name: str = BRONZE_TABLE) -> Dict[str, Any]:
+    """
+    Validate the bronze table data quality.
+    """
+    df = spark.table(table_name)
+    
+    validation_results = {
+        "total_rows": df.count(),
+        "null_message_ids": df.filter(col("message_id").isNull()).count(),
+        "null_conversation_ids": df.filter(col("conversation_id").isNull()).count(),
+        "unique_conversations": df.select("conversation_id").distinct().count(),
+        "unique_agents": df.select("agent_id").distinct().count(),
+        "unique_campaigns": df.select("campaign_id").distinct().count()
+    }
+    
+    logger.info(f"Validation results: {validation_results}")
+    return validation_results
+
+# COMMAND ----------
+
+# Main execution
+if __name__ == "__main__":
+    # Initialize Spark session
+    spark = SparkSession.builder \
+        .appName("Bronze_Ingestion") \
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+        .getOrCreate()
+    
+    # Set up database
+    spark.sql("CREATE DATABASE IF NOT EXISTS medallion")
+    spark.sql("CREATE SCHEMA IF NOT EXISTS medallion.bronze")
+    
+    # Run ingestion in batch mode
+    ingest_to_bronze(spark, batch_mode=True)
+    
+    # Validate data
+    validation_results = validate_bronze_data(spark)
+    
+    # Display results
+    display(spark.table(BRONZE_TABLE).limit(10))
+    print(f"\nValidation Results: {json.dumps(validation_results, indent=2)}")
