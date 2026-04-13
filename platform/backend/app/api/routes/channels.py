@@ -218,16 +218,17 @@ async def disconnect_channel(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Desconecta instancia no Omni e reseta estado para reconexao."""
+    """Deleta instancia no Omni (limpa sessao) e reseta para reconexao."""
     instance = await _load_owned(db, instance_id, auth.company_id)
 
     if instance.omni_instance_id:
         omni = OmniService()
         try:
-            await omni.disconnect_instance(instance.omni_instance_id)
+            await omni.delete_instance(instance.omni_instance_id)
         except Exception as exc:
-            logger.warning("omni disconnect failed", error=str(exc))
+            logger.warning("omni delete failed", error=str(exc))
 
+    instance.omni_instance_id = None
     instance.state = "connecting"
     instance.last_error = None
     instance.last_sync_at = datetime.now(UTC)

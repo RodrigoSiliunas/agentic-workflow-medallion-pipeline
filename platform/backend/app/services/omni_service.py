@@ -98,6 +98,14 @@ class OmniService:
         resp.raise_for_status()
         return self._unwrap(resp.json())
 
+    async def delete_instance(self, instance_id: str) -> None:
+        """Deleta instancia no Omni (limpa sessao Baileys/bot persistida)."""
+        resp = await self._client().delete(
+            f"{self.base_url}/instances/{instance_id}", headers=self._headers()
+        )
+        if resp.status_code >= 400:
+            logger.warning("omni delete failed", instance_id=instance_id)
+
     async def get_qr_code(self, instance_id: str) -> dict:
         resp = await self._client().get(
             f"{self.base_url}/instances/{instance_id}/qr", headers=self._headers()
