@@ -8,6 +8,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/namastex
       REDIS_URL: redis://redis:6379/0
+      OMNI_API_URL: http://omni:8882/api/v2
     depends_on:
       postgres:
         condition: service_healthy
@@ -22,6 +23,27 @@ services:
     networks:
       - namastex-net
       - omni-net
+
+  frontend:
+    build: ../frontend
+    container_name: namastex-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Browser acessa localhost:8000, nao o hostname interno Docker
+      NUXT_PUBLIC_API_BASE: http://localhost:8000/api/v1
+      NUXT_PUBLIC_MOCK_MODE: "false"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - namastex-net
 
   postgres:
     image: postgres:17-alpine
@@ -56,10 +78,6 @@ services:
     networks:
       - namastex-net
 
-  # Omni — gateway multi-canal (WhatsApp, Discord, Telegram)
-  # Build: omni.Dockerfile (instala @automagik/omni no Alpine Linux)
-  # Docs: https://github.com/automagik-dev/omni
-  # API: http://localhost:8882/api/v2/docs
   omni:
     build:
       context: .
