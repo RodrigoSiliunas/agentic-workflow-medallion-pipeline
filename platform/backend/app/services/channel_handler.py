@@ -253,7 +253,6 @@ class ChannelMessageHandler:
         pipeline = pipeline_result.scalar_one_or_none()
 
         if not pipeline:
-            # Criar sessao sem pipeline
             if not session:
                 session = ActiveSession(
                     user_id=user.id,
@@ -264,14 +263,24 @@ class ChannelMessageHandler:
                 await self.db.flush()
             return session
 
-        # Criar thread
-        thread = Thread(
-            pipeline_id=pipeline.id,
-            user_id=user.id,
-            title=f"WhatsApp — {datetime.now(UTC).strftime('%d/%m %H:%M')}",
+        # Reutilizar thread mais recente do usuario neste pipeline (cross-channel)
+        thread_result = await self.db.execute(
+            select(Thread).where(
+                Thread.user_id == user.id,
+                Thread.pipeline_id == pipeline.id,
+                Thread.is_active.is_(True),
+            ).order_by(Thread.updated_at.desc()).limit(1)
         )
-        self.db.add(thread)
-        await self.db.flush()
+        thread = thread_result.scalar_one_or_none()
+
+        if not thread:
+            thread = Thread(
+                pipeline_id=pipeline.id,
+                user_id=user.id,
+                title=f"Canal — {datetime.now(UTC).strftime('%d/%m %H:%M')}",
+            )
+            self.db.add(thread)
+            await self.db.flush()
 
         if session:
             session.active_thread_id = thread.id
