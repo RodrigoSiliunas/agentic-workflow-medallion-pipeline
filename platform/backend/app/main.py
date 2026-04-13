@@ -1,5 +1,6 @@
 """FastAPI application — Namastex Platform Backend."""
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
@@ -46,17 +47,25 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("template seed skipped", error=str(e))
 
-    # Check Omni health
+    # Check Omni health e iniciar poller
     omni = OmniService()
+    poller_task = None
     if await omni.health_check():
         logger.info("Omni gateway: healthy")
+        from app.services.omni_poller import poll_loop
+        poller_task = asyncio.create_task(poll_loop())
     else:
         logger.warning("Omni gateway: unreachable (canais externos indisponiveis)")
 
     yield
 
     logger.info("Shutting down")
-    # TODO: Close Redis, dispose DB engines, cancel background tasks
+    if poller_task:
+        poller_task.cancel()
+        try:
+            await poller_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(

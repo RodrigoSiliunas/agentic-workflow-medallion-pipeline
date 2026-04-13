@@ -156,3 +156,36 @@ class OmniService:
             resp.raise_for_status()
             body = resp.json()
             return body.get("items", body.get("data", []))
+
+    async def get_new_events(
+        self, since: str | None = None, limit: int = 20
+    ) -> list[dict]:
+        """Busca eventos de mensagem recebida nao processados."""
+        params: dict = {
+            "eventType": "message.received",
+            "direction": "inbound",
+            "limit": limit,
+        }
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{self.base_url}/events",
+                params=params,
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            events = body.get("items", [])
+            # Filtrar apenas nao processados
+            return [e for e in events if not e.get("processedAt")]
+
+    async def mark_event_processed(self, event_id: str) -> None:
+        """Marca evento como processado no Omni."""
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.patch(
+                f"{self.base_url}/events/{event_id}",
+                json={"status": "processed"},
+                headers=self._headers(),
+            )
+            # Ignora erros — nao e critico
+            if resp.status_code >= 400:
+                logger.warning("Failed to mark event processed", event_id=event_id)
