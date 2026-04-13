@@ -8,8 +8,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
-# Codigo
+# Codigo + alembic + entrypoint
 COPY app/ app/
+COPY alembic.ini ./
+COPY entrypoint.sh ./
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Non-root user com home directory (uv precisa de ~/.cache)
 RUN addgroup --system app && adduser --system --ingroup app --home /home/app app \
@@ -23,4 +26,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./entrypoint.sh"]
