@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,9 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 class Thread(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "threads"
+    __table_args__ = (
+        Index("ix_threads_user_pipeline_active", "user_id", "pipeline_id", "is_active"),
+    )
 
     pipeline_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("pipelines.id", ondelete="CASCADE"), nullable=False
@@ -24,6 +27,9 @@ class Thread(Base, UUIDMixin, TimestampMixin):
 
 class Message(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_thread_created", "thread_id", "created_at"),
+    )
 
     thread_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), nullable=False

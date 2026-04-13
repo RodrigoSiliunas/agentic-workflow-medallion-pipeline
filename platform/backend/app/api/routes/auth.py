@@ -83,7 +83,7 @@ async def login(
     access = create_access_token(token_data)
     refresh = create_refresh_token(token_data)
     _set_refresh_cookie(response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return TokenResponse(access_token=access)
 
 
 @router.post(
@@ -133,7 +133,7 @@ async def register_company(
     access = create_access_token(token_data)
     refresh = create_refresh_token(token_data)
     _set_refresh_cookie(response, refresh)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return TokenResponse(access_token=access)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -187,7 +187,7 @@ async def refresh_token(
     access = create_access_token(token_data)
     new_refresh = create_refresh_token(token_data)
     _set_refresh_cookie(response, new_refresh)
-    return TokenResponse(access_token=access, refresh_token=new_refresh)
+    return TokenResponse(access_token=access)
 
 
 @router.post("/logout", status_code=204)

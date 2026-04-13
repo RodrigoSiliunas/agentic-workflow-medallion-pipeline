@@ -73,8 +73,8 @@ app = FastAPI(
     version="0.1.0",
     description="Plataforma conversacional para pipelines Medallion",
     lifespan=lifespan,
-    docs_url="/api/v1/docs",
-    openapi_url="/api/v1/openapi.json",
+    docs_url="/api/v1/docs" if app_settings.DEBUG else None,
+    openapi_url="/api/v1/openapi.json" if app_settings.DEBUG else None,
 )
 
 # Exception handler for domain exceptions
@@ -92,9 +92,20 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
+
+
+# Security headers
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
 
 # Routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])

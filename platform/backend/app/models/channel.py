@@ -3,7 +3,7 @@
 import datetime as dt
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +14,9 @@ class ActiveSession(Base, UUIDMixin, TimestampMixin):
     """Mapeia usuario+canal para thread ativo naquele canal."""
 
     __tablename__ = "active_sessions"
+    __table_args__ = (
+        Index("ix_active_sessions_user_channel", "user_id", "channel"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
@@ -26,12 +29,16 @@ class ActiveSession(Base, UUIDMixin, TimestampMixin):
     active_pipeline_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("pipelines.id", ondelete="SET NULL"), nullable=True
     )
+    preferred_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class ChannelIdentity(Base, UUIDMixin, TimestampMixin):
     """Vincula identidade externa (phone, discord_id) ao usuario."""
 
     __tablename__ = "channel_identities"
+    __table_args__ = (
+        Index("ix_channel_identities_lookup", "channel", "channel_user_id", unique=True),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False

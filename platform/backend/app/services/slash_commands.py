@@ -66,11 +66,12 @@ class SlashCommandHandler:
         if not pipeline_name:
             return "Uso: /resume [pipeline] ou /resume [pipeline] [uuid-conversa]"
 
-        # Busca por nome (case-insensitive)
+        # Busca por nome (case-insensitive, escapar wildcards LIKE)
+        safe_name = pipeline_name.replace("%", "").replace("_", "")
         result = await self.db.execute(
             select(Pipeline).where(
                 Pipeline.company_id == self.company_id,
-                Pipeline.name.ilike(f"%{pipeline_name}%"),
+                Pipeline.name.ilike(f"%{safe_name}%"),
             )
         )
         pipeline = result.scalar_one_or_none()
@@ -172,7 +173,9 @@ class SlashCommandHandler:
         p_result = await self.db.execute(
             select(Pipeline).where(Pipeline.id == session.active_pipeline_id)
         )
-        pipeline = p_result.scalar_one()
+        pipeline = p_result.scalar_one_or_none()
+        if not pipeline:
+            return "Pipeline nao encontrado. Use /resume [nome]."
 
         if not pipeline.databricks_job_id:
             return f"*{pipeline.name}*\nStatus: NOT_CONFIGURED"
@@ -191,10 +194,11 @@ class SlashCommandHandler:
             Thread.user_id == self.user_id, Thread.is_active.is_(True)
         )
         if pipeline_name:
+            safe_name = pipeline_name.replace("%", "").replace("_", "")
             p_result = await self.db.execute(
                 select(Pipeline.id).where(
                     Pipeline.company_id == self.company_id,
-                    Pipeline.name.ilike(f"%{pipeline_name}%"),
+                    Pipeline.name.ilike(f"%{safe_name}%"),
                 )
             )
             pid = p_result.scalar_one_or_none()

@@ -28,8 +28,8 @@ from app.services.slash_commands import SlashCommandHandler, is_slash_command
 
 logger = structlog.get_logger()
 
-# Modelo padrao para canais externos
-DEFAULT_MODEL = "sonnet"
+# Modelo padrao para canais externos (fallback quando session.preferred_model e null)
+_DEFAULT_MODEL = "sonnet"
 
 # Mensagens padrao
 MSG_ONBOARDING = (
@@ -98,8 +98,10 @@ class ChannelMessageHandler:
         identity = await self._get_identity(channel, channel_user_id)
 
         if not identity:
-            # Checar se e resposta de onboarding (email)
-            if "@" in text and "." in text:
+            # Checar se e resposta de onboarding (email) — validacao basica
+            import re
+            _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+            if _EMAIL_RE.match(text.strip()):
                 await self._try_link_account(
                     channel, channel_user_id, text.strip().lower(),
                     instance_id, sender_jid,
@@ -126,7 +128,7 @@ class ChannelMessageHandler:
 
             # Comando especial: /model
             if text.lower().startswith("/model"):
-                reply = await self._handle_model_command(text, user)
+                reply = await self._handle_model_command(text, user, channel, channel_user_id)
             else:
                 reply = await handler.handle(text)
 
@@ -156,11 +158,13 @@ class ChannelMessageHandler:
             await self._send(instance_id, sender_jid, MSG_NO_PIPELINE)
             return
 
+        model = session.preferred_model or _DEFAULT_MODEL
         reply = await self._process_with_llm(
             user=user,
             pipeline=pipeline,
             thread_id=session.active_thread_id,
             text=text,
+            model_override=model,
         )
 
         # 6. Salvar resposta
@@ -170,7 +174,7 @@ class ChannelMessageHandler:
                 role="assistant",
                 content=reply,
                 channel=channel,
-                model=DEFAULT_MODEL,
+                model=model,
             )
             self.db.add(assistant_msg)
             await self.db.commit()
@@ -337,6 +341,7 @@ class ChannelMessageHandler:
     async def _process_with_llm(
         self, user: User, pipeline: Pipeline,
         thread_id: uuid.UUID, text: str,
+        model_override: str = "sonnet",
     ) -> str:
         """Processa mensagem com LLMOrchestrator e retorna resposta completa."""
         orchestrator = LLMOrchestrator(self.db, user.company_id, user.name or "usuario")
@@ -354,14 +359,13 @@ class ChannelMessageHandler:
             if m.role in ("user", "assistant")
         ]
 
-        # Coletar resposta completa (sem streaming para canais externos)
         full_response = ""
         try:
             async for event in orchestrator.process_message(
                 user_message=text,
                 pipeline_job_id=pipeline.databricks_job_id or 0,
                 conversation_history=history[:-1],
-                model_override=DEFAULT_MODEL,
+                model_override=model_override,
             ):
                 if event["type"] == "token":
                     full_response += event["content"]
@@ -373,13 +377,17 @@ class ChannelMessageHandler:
 
     # --- Slash: /model ---
 
-    async def _handle_model_command(self, text: str, user: User) -> str:
-        """Trata o comando /model [opus|sonnet|haiku]."""
-        global DEFAULT_MODEL
+    async def _handle_model_command(
+        self, text: str, user: User, channel: str, channel_user_id: str,
+    ) -> str:
+        """Trata /model [opus|sonnet|haiku]. Salva preferencia na sessao (per-user)."""
+        session = await self._ensure_session(user, channel, channel_user_id)
+        current = session.preferred_model or _DEFAULT_MODEL
+
         parts = text.strip().split()
         if len(parts) < 2:
             return (
-                f"Modelo atual: *{DEFAULT_MODEL}*\n\n"
+                f"Modelo atual: *{current}*\n\n"
                 "Uso: /model [opus|sonnet|haiku]\n"
                 "- *opus* — Mais capaz, mais lento\n"
                 "- *sonnet* — Equilibrado (padrao)\n"
@@ -391,7 +399,8 @@ class ChannelMessageHandler:
         if model not in valid:
             return f"Modelo invalido. Opcoes: {', '.join(sorted(valid))}"
 
-        DEFAULT_MODEL = model
+        session.preferred_model = model
+        await self.db.commit()
         return f"Modelo alterado para *{model}*."
 
     # --- Helpers ---

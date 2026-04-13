@@ -254,26 +254,15 @@ class LLMOrchestrator:
                         if hasattr(event.delta, "text"):
                             collected_text += event.delta.text
                             yield {"type": "token", "content": event.delta.text}
-                    elif event.type == "content_block_start":
-                        if event.content_block.type == "tool_use":
-                            tool_calls.append({
-                                "id": event.content_block.id,
-                                "name": event.content_block.name,
-                                "input": {},
-                            })
-                    elif event.type == "content_block_delta":
-                        if hasattr(event.delta, "partial_json") and tool_calls:
-                            # Acumula input JSON do tool call
-                            pass
                     elif event.type == "message_delta" and hasattr(event.usage, "output_tokens"):
                         total_tokens = event.usage.output_tokens
 
-                # Pegar a mensagem final completa pra extrair tool inputs
+                # Extrair tool calls da mensagem final (mais confiavel que streaming parcial)
                 final_message = await stream.get_final_message()
-                tool_calls = []
-                for block in final_message.content:
-                    if block.type == "tool_use":
-                        tool_calls.append(block)
+                tool_calls = [
+                    block for block in final_message.content
+                    if block.type == "tool_use"
+                ]
 
             # Se nao tem tool calls, resposta finalizada
             if not tool_calls:
@@ -354,8 +343,16 @@ class LLMOrchestrator:
 
             if name == "query_delta_table":
                 sql = input_data["sql"].strip()
-                if not sql.upper().startswith("SELECT"):
+                sql_upper = sql.upper()
+                # Guard: somente SELECT puro, sem multi-statement ou DDL
+                _FORBIDDEN = {"INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE", "EXEC", "GRANT", "REVOKE"}
+                if not sql_upper.startswith("SELECT"):
                     return {"error": "Apenas queries SELECT sao permitidas"}
+                if ";" in sql:
+                    return {"error": "Multi-statement nao permitido"}
+                tokens = set(sql_upper.split())
+                if tokens & _FORBIDDEN:
+                    return {"error": f"Palavras proibidas detectadas: {tokens & _FORBIDDEN}"}
                 return await self.databricks.query_table(
                     sql, input_data.get("max_rows", 50)
                 )
