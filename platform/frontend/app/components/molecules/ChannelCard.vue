@@ -67,10 +67,10 @@
         v-if="instance.state === 'connected'"
         size="sm"
         variant="ghost"
-        icon="i-heroicons-arrow-path"
+        icon="i-heroicons-signal-slash"
         @click="$emit('resync', instance.id)"
       >
-        Ressincronizar
+        Desconectar
       </AppButton>
       <AppButton
         size="sm"

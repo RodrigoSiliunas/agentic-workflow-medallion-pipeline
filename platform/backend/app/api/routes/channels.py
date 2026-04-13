@@ -218,7 +218,7 @@ async def disconnect_channel(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Desconecta instancia no Omni e marca como disconnected (soft delete)."""
+    """Desconecta instancia no Omni e reseta estado para reconexao."""
     instance = await _load_owned(db, instance_id, auth.company_id)
 
     if instance.omni_instance_id:
@@ -227,9 +227,9 @@ async def disconnect_channel(
             await omni.disconnect_instance(instance.omni_instance_id)
         except Exception as exc:
             logger.warning("omni disconnect failed", error=str(exc))
-            instance.last_error = str(exc)[:500]
 
-    instance.state = "disconnected"
+    instance.state = "connecting"
+    instance.last_error = None
     instance.last_sync_at = datetime.now(UTC)
     await db.commit()
 

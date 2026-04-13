@@ -137,12 +137,15 @@ async function onTokenClosed() {
 }
 
 async function onResync(id: string) {
-  await store.load(true)
   const instance = store.getById(id)
   if (!instance) return
-  if (instance.channel === "whatsapp" && instance.state !== "connected") {
+  if (!confirm(`Desconectar ${instance.name}? Vai precisar parear novamente.`)) return
+  await store.disconnect(id)
+  await store.load(true)
+  // Reabrir modal de pareamento/token
+  if (instance.channel === "whatsapp") {
     pairingInstanceId.value = id
-  } else if (instance.state !== "connected") {
+  } else {
     tokenInstanceId.value = id
     tokenChannel.value = instance.channel
   }
