@@ -80,12 +80,6 @@ async def create_channel(
         instance.omni_instance_id = omni_id
         instance.last_sync_at = datetime.now(UTC)
         instance.state = "connecting"
-        # WhatsApp: iniciar conexao para gerar QR code
-        if data.channel == "whatsapp":
-            try:
-                await omni.connect_instance(omni_id)
-            except Exception as connect_exc:
-                logger.warning("omni auto-connect failed", error=str(connect_exc))
     else:
         instance.state = "failed"
         instance.last_error = "Falha ao criar instancia no Omni"
