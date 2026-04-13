@@ -9,7 +9,7 @@ from app.core.config import settings
 logger = structlog.get_logger()
 
 # Mapeamento do channel simplificado (frontend) → channel Omni
-_CHANNEL_MAP = {
+CHANNEL_MAP = {
     "whatsapp": "whatsapp-baileys",
     "discord": "discord",
     "telegram": "telegram",
@@ -50,7 +50,7 @@ class OmniService:
 
         Name convention: {company_slug}_{channel} (ex: acme_whatsapp)
         """
-        omni_channel = _CHANNEL_MAP.get(channel, channel)
+        omni_channel = CHANNEL_MAP.get(channel, channel)
         instance_name = f"{company_slug}_{channel}"
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(

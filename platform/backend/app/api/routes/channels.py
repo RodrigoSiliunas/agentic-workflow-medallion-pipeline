@@ -111,7 +111,7 @@ async def connect_channel(
     instance = await _load_owned(db, instance_id, auth.company_id)
     omni = OmniService()
 
-    # Se nao tem omni_instance_id, tentar criar no Omni primeiro
+    # Se nao tem omni_instance_id, tentar criar ou encontrar no Omni
     if not instance.omni_instance_id:
         company = await _get_company(db, auth.company_id)
         try:
@@ -121,14 +121,27 @@ async def connect_channel(
             )
             instance.omni_instance_id = result.get("id") or result.get("instanceId")
         except Exception as exc:
-            logger.warning("omni create on connect failed", error=str(exc))
-            instance.state = "failed"
-            instance.last_error = str(exc)[:500]
-            await db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Falha ao criar instancia no Omni: {exc}",
-            ) from exc
+            # 409 Conflict = ja existe no Omni — buscar o ID existente
+            if "409" in str(exc):
+                try:
+                    existing = await omni.list_instances()
+                    from app.services.omni_service import CHANNEL_MAP
+                    omni_channel = CHANNEL_MAP.get(instance.channel, instance.channel)
+                    for inst in existing:
+                        if inst.get("channel") == omni_channel:
+                            instance.omni_instance_id = inst.get("id")
+                            break
+                except Exception:
+                    pass
+            if not instance.omni_instance_id:
+                logger.warning("omni create on connect failed", error=str(exc))
+                instance.state = "failed"
+                instance.last_error = str(exc)[:500]
+                await db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Falha ao criar instancia no Omni: {exc}",
+                ) from exc
 
     try:
         await omni.connect_instance(instance.omni_instance_id, token=data.token)
