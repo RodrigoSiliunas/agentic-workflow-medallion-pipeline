@@ -60,6 +60,9 @@ REGRAS CRITICAS:
 
 TOOLS DISPONIVEIS:
 - list_databricks_jobs: lista todos os jobs/workflows com job_id e nome
+- get_job_details: configuracao completa do job (cron, tasks, timeout, tags)
+- update_job_schedule: altera cron do job (pede confirmacao). Quartz: '0 0 6 * * ?' = diario 6AM
+- update_job_settings: altera timeout, tags, max_concurrent_runs (pede confirmacao)
 - get_pipeline_status: status, ultima run, duracao
 - get_run_logs: logs detalhados de uma run especifica
 - query_delta_table: SELECT SQL em tabelas Delta (bronze/silver/gold)

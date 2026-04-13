@@ -28,6 +28,44 @@ TOOLS = [
         },
     },
     {
+        "name": "get_job_details",
+        "description": "Retorna configuracao completa de um job: schedule (cron), tasks, timeout, tags.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "integer"}},
+            "required": ["job_id"],
+        },
+    },
+    {
+        "name": "update_job_schedule",
+        "description": "Altera o agendamento (cron) de um job. REQUER CONFIRMACAO. Formato Quartz: '0 0 6 * * ?' = diario 6h.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "integer"},
+                "cron": {"type": "string", "description": "Expressao Quartz cron (ex: '0 0 6 * * ?' para diario 6AM)"},
+                "timezone": {"type": "string", "default": "America/Sao_Paulo"},
+                "paused": {"type": "boolean", "default": False},
+            },
+            "required": ["job_id", "cron"],
+        },
+    },
+    {
+        "name": "update_job_settings",
+        "description": "Atualiza configuracoes de um job (timeout, tags, max_concurrent_runs). REQUER CONFIRMACAO.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "integer"},
+                "settings": {
+                    "type": "object",
+                    "description": "Dict com as settings a alterar (ex: {\"timeout_seconds\": 3600, \"tags\": {\"env\": \"prod\"}})",
+                },
+            },
+            "required": ["job_id", "settings"],
+        },
+    },
+    {
         "name": "get_pipeline_status",
         "description": "Retorna status atual do pipeline (running, idle, failed).",
         "input_schema": {
@@ -125,7 +163,10 @@ TOOLS = [
     },
 ]
 
-CONFIRMATION_REQUIRED = {"create_pull_request", "trigger_pipeline_run"}
+CONFIRMATION_REQUIRED = {
+    "create_pull_request", "trigger_pipeline_run",
+    "update_job_schedule", "update_job_settings",
+}
 
 
 class LLMOrchestrator:
@@ -285,6 +326,23 @@ class LLMOrchestrator:
                         input_data.get("limit", 20)
                     )
                 }
+
+            if name == "get_job_details":
+                return await self.databricks.get_job_details(input_data["job_id"])
+
+            if name == "update_job_schedule":
+                return await self.databricks.update_job_schedule(
+                    job_id=input_data["job_id"],
+                    cron=input_data["cron"],
+                    timezone=input_data.get("timezone", "America/Sao_Paulo"),
+                    paused=input_data.get("paused", False),
+                )
+
+            if name == "update_job_settings":
+                return await self.databricks.update_job_settings(
+                    job_id=input_data["job_id"],
+                    settings=input_data["settings"],
+                )
 
             if name == "get_pipeline_status":
                 return await self.databricks.get_pipeline_summary(

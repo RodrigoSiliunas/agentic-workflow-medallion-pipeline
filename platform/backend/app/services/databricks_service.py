@@ -54,6 +54,76 @@ class DatabricksService:
                 for j in jobs
             ]
 
+    async def get_job_details(self, job_id: int) -> dict:
+        """Retorna configuracao completa do job (schedule, cluster, tasks, etc)."""
+        await self._ensure_credentials()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{self._host}/api/2.1/jobs/get",
+                params={"job_id": job_id},
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            settings = data.get("settings", {})
+            schedule = settings.get("schedule", {})
+            return {
+                "job_id": data.get("job_id"),
+                "name": settings.get("name", ""),
+                "schedule": {
+                    "cron": schedule.get("quartz_cron_expression", "sem agendamento"),
+                    "timezone": schedule.get("timezone_id", "UTC"),
+                    "paused": schedule.get("pause_status", "UNPAUSED"),
+                },
+                "tasks": [
+                    {"task_key": t.get("task_key"), "description": t.get("description", "")}
+                    for t in settings.get("tasks", [])
+                ],
+                "max_concurrent_runs": settings.get("max_concurrent_runs", 1),
+                "timeout_seconds": settings.get("timeout_seconds", 0),
+                "tags": settings.get("tags", {}),
+                "creator": data.get("creator_user_name", ""),
+            }
+
+    async def update_job_schedule(
+        self, job_id: int, cron: str, timezone: str = "America/Sao_Paulo",
+        paused: bool = False,
+    ) -> dict:
+        """Altera o agendamento (cron) de um job Databricks."""
+        await self._ensure_credentials()
+        async with httpx.AsyncClient(timeout=15) as client:
+            payload = {
+                "job_id": job_id,
+                "new_settings": {
+                    "schedule": {
+                        "quartz_cron_expression": cron,
+                        "timezone_id": timezone,
+                        "pause_status": "PAUSED" if paused else "UNPAUSED",
+                    },
+                },
+            }
+            resp = await client.post(
+                f"{self._host}/api/2.1/jobs/update",
+                json=payload,
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            return {"status": "updated", "job_id": job_id, "new_cron": cron, "timezone": timezone}
+
+    async def update_job_settings(
+        self, job_id: int, settings: dict,
+    ) -> dict:
+        """Atualiza configuracoes arbitrarias de um job."""
+        await self._ensure_credentials()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{self._host}/api/2.1/jobs/update",
+                json={"job_id": job_id, "new_settings": settings},
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            return {"status": "updated", "job_id": job_id, "settings_changed": list(settings.keys())}
+
     async def get_job_status(self, job_id: int) -> dict:
         """Retorna status do job Databricks."""
         await self._ensure_credentials()
