@@ -59,6 +59,7 @@ REGRAS CRITICAS:
   Exemplo: 1776022823115ms = timestamp em 2026. Use a timezone America/Sao_Paulo.
 
 TOOLS DISPONIVEIS:
+- list_databricks_jobs: lista todos os jobs/workflows com job_id e nome
 - get_pipeline_status: status, ultima run, duracao
 - get_run_logs: logs detalhados de uma run especifica
 - query_delta_table: SELECT SQL em tabelas Delta (bronze/silver/gold)

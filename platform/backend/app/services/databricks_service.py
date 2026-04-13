@@ -33,6 +33,27 @@ class DatabricksService:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._token}"}
 
+    async def list_jobs(self, limit: int = 20) -> list[dict]:
+        """Lista jobs/workflows do workspace Databricks."""
+        await self._ensure_credentials()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{self._host}/api/2.1/jobs/list",
+                params={"limit": limit},
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            jobs = resp.json().get("jobs", [])
+            return [
+                {
+                    "job_id": j.get("job_id"),
+                    "name": j.get("settings", {}).get("name", ""),
+                    "created_time": j.get("created_time"),
+                    "creator": j.get("creator_user_name", ""),
+                }
+                for j in jobs
+            ]
+
     async def get_job_status(self, job_id: int) -> dict:
         """Retorna status do job Databricks."""
         await self._ensure_credentials()

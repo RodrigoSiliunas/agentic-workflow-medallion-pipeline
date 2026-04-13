@@ -20,6 +20,14 @@ MAX_TOOL_ROUNDS = 10
 # Tool definitions para Claude API
 TOOLS = [
     {
+        "name": "list_databricks_jobs",
+        "description": "Lista todos os jobs/workflows do Databricks com job_id e nome.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 20}},
+        },
+    },
+    {
         "name": "get_pipeline_status",
         "description": "Retorna status atual do pipeline (running, idle, failed).",
         "input_schema": {
@@ -271,6 +279,13 @@ class LLMOrchestrator:
     async def _execute_tool(self, name: str, input_data: dict) -> dict:
         """Executa uma tool e retorna resultado."""
         try:
+            if name == "list_databricks_jobs":
+                return {
+                    "jobs": await self.databricks.list_jobs(
+                        input_data.get("limit", 20)
+                    )
+                }
+
             if name == "get_pipeline_status":
                 return await self.databricks.get_pipeline_summary(
                     input_data["pipeline_job_id"]
