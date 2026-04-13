@@ -194,15 +194,28 @@ async def get_channel_qr(
             detail=f"Nao foi possivel obter QR code do Omni: {exc}",
         ) from exc
 
-    # Se QR é null, instancia pode ja estar conectada
+    # Se QR e null, pode ser: (a) ja conectado ou (b) QR ainda nao gerou
     raw_qr = result.get("qr") or result.get("qrCode") or result.get("code")
     if not raw_qr:
-        instance.state = "connected"
-        instance.last_sync_at = datetime.now(UTC)
-        await db.commit()
+        # Verificar se realmente esta conectado via get_instance
+        try:
+            inst_check = await omni.get_instance(instance.omni_instance_id)
+            if inst_check.get("isActive"):
+                instance.state = "connected"
+                instance.last_sync_at = datetime.now(UTC)
+                await db.commit()
+                return QRCodeResponse(
+                    instance_id=str(instance_id),
+                    state="connected",
+                    qr_code=None,
+                    expires_at=None,
+                )
+        except Exception:
+            pass
+        # QR ainda nao gerou — retornar "connecting" para frontend fazer polling
         return QRCodeResponse(
             instance_id=str(instance_id),
-            state="connected",
+            state="connecting",
             qr_code=None,
             expires_at=None,
         )
