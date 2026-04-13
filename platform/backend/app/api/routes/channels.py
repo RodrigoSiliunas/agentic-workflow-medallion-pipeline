@@ -33,7 +33,7 @@ from app.schemas.channel import (
     OmniInstanceResponse,
     QRCodeResponse,
 )
-from app.services.omni_service import OmniService
+from app.services.omni_service import CHANNEL_MAP, OmniService
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -73,27 +73,21 @@ async def create_channel(
     await db.flush()
 
     omni = OmniService()
-    try:
-        result = await omni.create_instance(
-            name=data.name,
-            channel=data.channel,
-            company_slug=company.slug,
-        )
-        omni_id = result.get("id") or result.get("instanceId")
+    omni_id = await _create_or_find_omni_instance(omni, data, company)
+
+    if omni_id:
         instance.omni_instance_id = omni_id
         instance.last_sync_at = datetime.now(UTC)
         instance.state = "connecting"
-
         # WhatsApp: iniciar conexao para gerar QR code
-        if data.channel == "whatsapp" and omni_id:
+        if data.channel == "whatsapp":
             try:
                 await omni.connect_instance(omni_id)
             except Exception as connect_exc:
                 logger.warning("omni auto-connect failed", error=str(connect_exc))
-    except Exception as exc:
-        logger.warning("omni create_instance failed", error=str(exc), name=data.name)
+    else:
         instance.state = "failed"
-        instance.last_error = str(exc)[:500]
+        instance.last_error = "Falha ao criar instancia no Omni"
 
     await db.commit()
     await db.refresh(instance)
@@ -111,37 +105,21 @@ async def connect_channel(
     instance = await _load_owned(db, instance_id, auth.company_id)
     omni = OmniService()
 
-    # Se nao tem omni_instance_id, tentar criar ou encontrar no Omni
+    # Se nao tem omni_instance_id, criar ou encontrar no Omni
     if not instance.omni_instance_id:
         company = await _get_company(db, auth.company_id)
-        try:
-            result = await omni.create_instance(
-                name=instance.name, channel=instance.channel,
-                company_slug=company.slug,
+        fake_req = CreateChannelRequest(name=instance.name, channel=instance.channel)
+        omni_id = await _create_or_find_omni_instance(omni, fake_req, company)
+        if omni_id:
+            instance.omni_instance_id = omni_id
+        else:
+            instance.state = "failed"
+            instance.last_error = "Falha ao criar instancia no Omni"
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Falha ao criar instancia no Omni",
             )
-            instance.omni_instance_id = result.get("id") or result.get("instanceId")
-        except Exception as exc:
-            # 409 Conflict = ja existe no Omni — buscar o ID existente
-            if "409" in str(exc):
-                try:
-                    existing = await omni.list_instances()
-                    from app.services.omni_service import CHANNEL_MAP
-                    omni_channel = CHANNEL_MAP.get(instance.channel, instance.channel)
-                    for inst in existing:
-                        if inst.get("channel") == omni_channel:
-                            instance.omni_instance_id = inst.get("id")
-                            break
-                except Exception:
-                    pass
-            if not instance.omni_instance_id:
-                logger.warning("omni create on connect failed", error=str(exc))
-                instance.state = "failed"
-                instance.last_error = str(exc)[:500]
-                await db.commit()
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Falha ao criar instancia no Omni: {exc}",
-                ) from exc
 
     try:
         await omni.connect_instance(instance.omni_instance_id, token=data.token)
@@ -263,6 +241,30 @@ def _qr_to_base64(text: str) -> str:
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode()
     return f"data:image/png;base64,{b64}"
+
+
+async def _create_or_find_omni_instance(
+    omni: OmniService, data: CreateChannelRequest, company,
+) -> str | None:
+    """Cria instancia no Omni. Se 409 (ja existe), busca a existente."""
+    try:
+        result = await omni.create_instance(
+            name=data.name, channel=data.channel,
+            company_slug=company.slug,
+        )
+        return result.get("id") or result.get("instanceId")
+    except Exception as exc:
+        if "409" in str(exc):
+            try:
+                existing = await omni.list_instances()
+                omni_channel = CHANNEL_MAP.get(data.channel, data.channel)
+                for inst in existing:
+                    if inst.get("channel") == omni_channel:
+                        return inst.get("id")
+            except Exception:
+                pass
+        logger.warning("omni create failed", error=str(exc), name=data.name)
+        return None
 
 
 async def _load_owned(
