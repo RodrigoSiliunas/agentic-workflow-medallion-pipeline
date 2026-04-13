@@ -51,7 +51,7 @@ Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsAp
 
 - **Plataforma**: Databricks Trial (AWS), Unity Catalog, Delta Lake
 - **Engine**: PySpark em cluster dedicado (m5d.large) — NÃO serverless
-- **Workspace**: `data-capture-engine-prd` em `https://dbc-1bad7a6a-cc31.cloud.databricks.com`
+- **Workspace**: `data-capture-engine-prd` em `https://<your-workspace>.cloud.databricks.com`
 - **Testes**: 91 testes (pytest), ruff lint
 - **Deploy**: Scripts em `pipelines/pipeline-seguradora-whatsapp/deploy/` usando `databricks-sdk`
 
@@ -186,4 +186,4 @@ Marketplace de pipeline templates com deploy one-click. Terraform programático 
 
 - **Monorepo**: `RodrigoSiliunas/agentic-workflow-medallion-pipeline`
 - **Observer standalone (privado)**: `RodrigoSiliunas/observer` — placeholder para futura extração do `observer-framework/`
-- **Admin email**: `administrator@idlehub.com.br`
+- **Admin email**: `admin@your-domain.com`

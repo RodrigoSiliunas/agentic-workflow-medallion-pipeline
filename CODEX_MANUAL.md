@@ -571,7 +571,7 @@ Todos os scripts usam `databricks-sdk` e variaveis de ambiente:
 
 ```bash
 # Variaveis obrigatorias
-export DATABRICKS_HOST="https://dbc-1bad7a6a-cc31.cloud.databricks.com"
+export DATABRICKS_HOST="https://<your-workspace>.cloud.databricks.com"
 export DATABRICKS_TOKEN="dapi..."
 
 # Criar workflow ETL
@@ -611,7 +611,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 - Schedule: diario as 6 AM Sao Paulo
 - Tags: `project=medallion-pipeline`, `env=production`
 - Timeout: 3600 segundos
-- Email notifications para `administrator@idlehub.com.br`
+- Email notifications para `admin@your-domain.com`
 - `chaos_mode` nos shared parameters (default: "off")
 - Idempotente: se job existe, atualiza (reset + update)
 
@@ -626,9 +626,9 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 ### Databricks Workspace
 
 - **Workspace:** `data-capture-engine-prd`
-- **URL:** `https://dbc-1bad7a6a-cc31.cloud.databricks.com`
-- **Cluster:** `0409-064526-q0k9e0pd` (m5d.large, Databricks trial)
-- **Repo path:** `/Repos/administrator@idlehub.com.br/agentic-workflow-medallion-pipeline`
+- **URL:** `https://<your-workspace>.cloud.databricks.com`
+- **Cluster:** `<your-cluster-id>` (m5d.large, Databricks trial)
+- **Repo path:** `/Repos/admin@your-domain.com/agentic-workflow-medallion-pipeline`
 - O Databricks Repo sincroniza com GitHub via CD pipeline
 
 ### Databricks Secrets (Scope: `medallion-pipeline`)
@@ -676,7 +676,7 @@ Roda em push para `main`:
 env:
   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-  DATABRICKS_REPO_PATH: /Repos/administrator@idlehub.com.br/agentic-workflow-medallion-pipeline
+  DATABRICKS_REPO_PATH: /Repos/admin@your-domain.com/agentic-workflow-medallion-pipeline
 ```
 
 ### Fluxo GitHub
@@ -876,7 +876,7 @@ S3_BUCKET=namastex-medallion-datalake
 S3_BRONZE_PATH=s3://namastex-medallion-datalake/bronze/
 
 # Databricks
-DATABRICKS_HOST=https://dbc-1bad7a6a-cc31.cloud.databricks.com
+DATABRICKS_HOST=https://<your-workspace>.cloud.databricks.com
 DATABRICKS_TOKEN=dapi...
 
 # Anthropic (Claude API)
@@ -896,7 +896,7 @@ GOLD_SCHEMA=gold
 MASKING_SECRET=your-secret-key-here
 
 # Cluster (opcional, se nao usar serverless)
-PIPELINE_CLUSTER_ID=0409-064526-q0k9e0pd
+PIPELINE_CLUSTER_ID=<your-cluster-id>
 ```
 
 ### GitHub Secrets (para CI/CD)
@@ -1021,7 +1021,7 @@ git push origin main  # Triggers CD
 from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient(
-    host="https://dbc-1bad7a6a-cc31.cloud.databricks.com",
+    host="https://<your-workspace>.cloud.databricks.com",
     token="dapi..."
 )
 

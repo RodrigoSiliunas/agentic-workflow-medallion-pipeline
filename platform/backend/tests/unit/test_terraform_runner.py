@@ -117,9 +117,9 @@ class TestEnsureWorkspace:
 
 class TestSanitizeLogLine:
     def test_sanitize_log_line_redacts_aws_key(self):
-        line = "Using access key AKIAQX6Y5XZ4NPEGBQVW for auth"
+        line = "Using access key AKIAIOSFODNN7EXAMPLE for auth"
         result = _sanitize_log_line(line)
-        assert "AKIAQX6Y5XZ4NPEGBQVW" not in result
+        assert "AKIAIOSFODNN7EXAMPLE" not in result
         assert "AKIA" in result
         assert "REDACTED" in result
 

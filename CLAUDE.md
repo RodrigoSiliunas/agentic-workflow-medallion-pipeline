@@ -75,8 +75,8 @@ Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsAp
 
 - **Plataforma**: Databricks Trial (AWS), Unity Catalog, Delta Lake
 - **Engine**: PySpark em cluster dedicado (m5d.large) — NÃO serverless
-- **Workspace**: `data-capture-engine-prd` em `https://dbc-1bad7a6a-cc31.cloud.databricks.com`
-- **Cluster ID**: `0409-064526-q0k9e0pd`
+- **Workspace**: Configurado via env var `DATABRICKS_HOST`
+- **Cluster ID**: Configurado via env var ou deploy script
 - **Testes**: 91 testes (pytest), ruff lint
 - **Deploy**: Scripts em `pipelines/pipeline-seguradora-whatsapp/deploy/` usando `databricks-sdk`
 
@@ -100,8 +100,8 @@ S3 (Parquet) → [pre_check] → [Bronze] → [Silver x3] → [Gold x12] → [Va
 
 | Job | ID | Tasks | Schedule |
 |-----|----|-------|----------|
-| ETL Pipeline | 777105089901314 | 8 tasks (7 ETL + 1 sentinel) | Diário 6 AM SP |
-| Observer Agent | 848172838529828 | 1 task (on-demand) | Sem schedule |
+| ETL Pipeline | (via deploy script) | 8 tasks (7 ETL + 1 sentinel) | Diário 6 AM SP |
+| Observer Agent | (via deploy script) | 1 task (on-demand) | Sem schedule |
 
 ### Comunicação entre Tasks
 
@@ -272,4 +272,4 @@ O projeto evoluiu de teste técnico para produto real. Visão:
 ## GitHub
 
 - **Repo**: `RodrigoSiliunas/agentic-workflow-medallion-pipeline`
-- **Admin email**: `administrator@idlehub.com.br`
+- **Admin email**: Configurado no deploy

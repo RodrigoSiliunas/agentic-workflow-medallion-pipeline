@@ -47,6 +47,9 @@ bun.lock
 # Platform backend venv
 platform/backend/venv/
 
+# Playwright MCP logs/screenshots
+.playwright-mcp/
+
 # Design system repo (submodule/reference)
 platform/design/
 
