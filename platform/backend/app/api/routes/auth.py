@@ -30,6 +30,7 @@ from app.middleware.rate_limiter import rate_limit_auth
 from app.models.company import Company
 from app.models.pipeline import Pipeline
 from app.models.user import User
+from app.core.security import revoke_token
 from app.schemas.auth import (
     LoginRequest,
     RegisterCompanyRequest,
@@ -184,6 +185,8 @@ async def refresh_token(
         "company_id": str(user.company_id),
         "role": user.role,
     }
+    # Revogar refresh token antigo antes de gerar novo
+    revoke_token(token)
     access = create_access_token(token_data)
     new_refresh = create_refresh_token(token_data)
     _set_refresh_cookie(response, new_refresh)
@@ -191,6 +194,14 @@ async def refresh_token(
 
 
 @router.post("/logout", status_code=204)
-async def logout(response: Response):
-    """Limpa o cookie httpOnly do refresh_token."""
+async def logout(request: Request, response: Response):
+    """Revoga tokens e limpa cookie httpOnly."""
+    # Revogar refresh token
+    old_refresh = request.cookies.get("refresh_token")
+    if old_refresh:
+        revoke_token(old_refresh)
+    # Revogar access token (do header Authorization)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        revoke_token(auth_header[7:])
     _clear_refresh_cookie(response)

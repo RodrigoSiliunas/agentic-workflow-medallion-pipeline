@@ -281,10 +281,19 @@ class LLMOrchestrator:
                         "input": call.input,
                         "details": {"tool_id": call.id},
                     }
-                    # Por enquanto, executar sempre (confirmacao sera implementada no frontend)
-                    # TODO: aguardar confirmacao do usuario
+                    # Nao executar — retornar pedido de confirmacao ao LLM
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": call.id,
+                        "content": json.dumps({
+                            "status": "awaiting_confirmation",
+                            "message": "O usuario precisa confirmar esta acao. "
+                                       "Pergunte ao usuario se deseja prosseguir e "
+                                       "descreva exatamente o que sera feito.",
+                        }),
+                    })
+                    continue
 
-                # Executar tool
                 result = await self._execute_tool(call.name, call.input)
 
                 yield {

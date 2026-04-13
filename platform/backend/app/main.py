@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
             await poller_task
         except asyncio.CancelledError:
             pass
+    await OmniService.close()
 
 
 app = FastAPI(

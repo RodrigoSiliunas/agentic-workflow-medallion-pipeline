@@ -235,16 +235,32 @@ class ChannelMessageHandler:
     async def _ensure_session(
         self, user: User, channel: str, channel_user_id: str,
     ) -> ActiveSession:
-        """Garante sessao ativa. Herda thread/pipeline de outro canal se existir."""
+        """Garante sessao ativa. Sincroniza cross-channel."""
+        session = await self._get_session(user.id, channel)
+        synced = await self._sync_from_sibling(session, user, channel, channel_user_id)
+        if synced:
+            return synced
+
+        if session and session.active_thread_id and session.active_pipeline_id:
+            return session
+
+        # Sem sibling, sem sessao completa — criar nova
+        return await self._create_fresh_session(session, user, channel, channel_user_id)
+
+    async def _get_session(self, user_id: uuid.UUID, channel: str) -> ActiveSession | None:
         result = await self.db.execute(
             select(ActiveSession).where(
-                ActiveSession.user_id == user.id,
+                ActiveSession.user_id == user_id,
                 ActiveSession.channel == channel,
             )
         )
-        session = result.scalar_one_or_none()
+        return result.scalar_one_or_none()
 
-        # SEMPRE sincronizar com o canal mais recentemente atualizado
+    async def _sync_from_sibling(
+        self, session: ActiveSession | None, user: User,
+        channel: str, channel_user_id: str,
+    ) -> ActiveSession | None:
+        """Sincroniza com canal irmao mais recente. Retorna sessao ou None."""
         sibling_result = await self.db.execute(
             select(ActiveSession).where(
                 ActiveSession.user_id == user.id,
@@ -254,69 +270,49 @@ class ChannelMessageHandler:
             ).order_by(ActiveSession.updated_at.desc()).limit(1)
         )
         sibling = sibling_result.scalar_one_or_none()
+        if not sibling:
+            return None
 
-        if sibling:
-            if session:
-                if session.active_thread_id != sibling.active_thread_id:
-                    session.active_thread_id = sibling.active_thread_id
-                    session.active_pipeline_id = sibling.active_pipeline_id
-                    session.channel_user_id = channel_user_id
-                    await self.db.commit()
-                    logger.info("Canal: sessao sincronizada", channel=channel, thread=str(sibling.active_thread_id))
-                return session
-            else:
-                session = ActiveSession(
-                    user_id=user.id,
-                    channel=channel,
-                    channel_user_id=channel_user_id,
-                    active_thread_id=sibling.active_thread_id,
-                    active_pipeline_id=sibling.active_pipeline_id,
-                )
-                self.db.add(session)
+        if session:
+            if session.active_thread_id != sibling.active_thread_id:
+                session.active_thread_id = sibling.active_thread_id
+                session.active_pipeline_id = sibling.active_pipeline_id
+                session.channel_user_id = channel_user_id
                 await self.db.commit()
-                return session
-
-        if session and session.active_thread_id and session.active_pipeline_id:
             return session
 
-        # Nenhuma sessao em nenhum canal — buscar pipeline
+        session = ActiveSession(
+            user_id=user.id, channel=channel,
+            channel_user_id=channel_user_id,
+            active_thread_id=sibling.active_thread_id,
+            active_pipeline_id=sibling.active_pipeline_id,
+        )
+        self.db.add(session)
+        await self.db.commit()
+        return session
+
+    async def _create_fresh_session(
+        self, session: ActiveSession | None, user: User,
+        channel: str, channel_user_id: str,
+    ) -> ActiveSession:
+        """Cria sessao nova com primeiro pipeline e thread existente ou novo."""
         pipeline_result = await self.db.execute(
-            select(Pipeline)
-            .where(Pipeline.company_id == user.company_id)
-            .order_by(Pipeline.created_at.desc())
-            .limit(1)
+            select(Pipeline).where(Pipeline.company_id == user.company_id)
+            .order_by(Pipeline.created_at.desc()).limit(1)
         )
         pipeline = pipeline_result.scalar_one_or_none()
 
         if not pipeline:
             if not session:
                 session = ActiveSession(
-                    user_id=user.id,
-                    channel=channel,
+                    user_id=user.id, channel=channel,
                     channel_user_id=channel_user_id,
                 )
                 self.db.add(session)
                 await self.db.flush()
             return session
 
-        # Reutilizar thread mais recente do usuario neste pipeline
-        thread_result = await self.db.execute(
-            select(Thread).where(
-                Thread.user_id == user.id,
-                Thread.pipeline_id == pipeline.id,
-                Thread.is_active.is_(True),
-            ).order_by(Thread.updated_at.desc()).limit(1)
-        )
-        thread = thread_result.scalar_one_or_none()
-
-        if not thread:
-            thread = Thread(
-                pipeline_id=pipeline.id,
-                user_id=user.id,
-                title=f"Canal — {datetime.now(UTC).strftime('%d/%m %H:%M')}",
-            )
-            self.db.add(thread)
-            await self.db.flush()
+        thread = await self._find_or_create_thread(user, pipeline)
 
         if session:
             session.active_thread_id = thread.id
@@ -324,8 +320,7 @@ class ChannelMessageHandler:
             session.channel_user_id = channel_user_id
         else:
             session = ActiveSession(
-                user_id=user.id,
-                channel=channel,
+                user_id=user.id, channel=channel,
                 channel_user_id=channel_user_id,
                 active_thread_id=thread.id,
                 active_pipeline_id=pipeline.id,
@@ -337,6 +332,26 @@ class ChannelMessageHandler:
         return session
 
     # --- LLM ---
+
+    async def _find_or_create_thread(self, user: User, pipeline: Pipeline) -> Thread:
+        """Busca thread ativo mais recente ou cria um novo."""
+        result = await self.db.execute(
+            select(Thread).where(
+                Thread.user_id == user.id,
+                Thread.pipeline_id == pipeline.id,
+                Thread.is_active.is_(True),
+            ).order_by(Thread.updated_at.desc()).limit(1)
+        )
+        thread = result.scalar_one_or_none()
+        if not thread:
+            thread = Thread(
+                pipeline_id=pipeline.id,
+                user_id=user.id,
+                title=f"Canal — {datetime.now(UTC).strftime('%d/%m %H:%M')}",
+            )
+            self.db.add(thread)
+            await self.db.flush()
+        return thread
 
     async def _process_with_llm(
         self, user: User, pipeline: Pipeline,
