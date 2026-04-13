@@ -1,0 +1,380 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 2200" font-family="Geist, Inter, system-ui, sans-serif" font-size="13">
+  <defs>
+    <linearGradient id="gBrand" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+    <linearGradient id="gGreen" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#059669"/><stop offset="100%" stop-color="#34d399"/></linearGradient>
+    <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#60a5fa"/></linearGradient>
+    <linearGradient id="gOrange" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#d97706"/><stop offset="100%" stop-color="#fbbf24"/></linearGradient>
+    <linearGradient id="gRed" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#dc2626"/><stop offset="100%" stop-color="#f87171"/></linearGradient>
+    <linearGradient id="gPink" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#db2777"/><stop offset="100%" stop-color="#f472b6"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.15"/></filter>
+    <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse"><polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/></marker>
+    <marker id="arrowBrand" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse"><polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/></marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="2200" fill="#0a0a0f"/>
+
+  <!-- Title -->
+  <text x="700" y="45" text-anchor="middle" fill="white" font-size="24" font-weight="700">Safatechx Platform — Architecture Flow</text>
+  <text x="700" y="70" text-anchor="middle" fill="#6b7280" font-size="13">End-to-end system: Deploy, Chat AI, Multi-Channel, Pipeline ETL, Observer Agent</text>
+
+  <!-- ================================================================ -->
+  <!-- SECTION 1: USER LAYER -->
+  <!-- ================================================================ -->
+  <text x="50" y="110" fill="#a855f7" font-size="15" font-weight="600">USER LAYER</text>
+
+  <!-- Browser -->
+  <rect x="50" y="125" width="180" height="60" rx="10" fill="#1a1a2e" stroke="#7c3aed" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="140" y="152" text-anchor="middle" fill="white" font-weight="600">Browser</text>
+  <text x="140" y="170" text-anchor="middle" fill="#9ca3af" font-size="11">Nuxt 4 + Vue 3 :3000</text>
+
+  <!-- WhatsApp -->
+  <rect x="280" y="125" width="140" height="60" rx="10" fill="#1a1a2e" stroke="#25d366" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="152" text-anchor="middle" fill="#25d366" font-weight="600">WhatsApp</text>
+  <text x="350" y="170" text-anchor="middle" fill="#9ca3af" font-size="11">Baileys QR</text>
+
+  <!-- Telegram -->
+  <rect x="460" y="125" width="140" height="60" rx="10" fill="#1a1a2e" stroke="#26a5e4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="530" y="152" text-anchor="middle" fill="#26a5e4" font-weight="600">Telegram</text>
+  <text x="530" y="170" text-anchor="middle" fill="#9ca3af" font-size="11">Bot API</text>
+
+  <!-- Discord -->
+  <rect x="640" y="125" width="140" height="60" rx="10" fill="#1a1a2e" stroke="#5865f2" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="710" y="152" text-anchor="middle" fill="#5865f2" font-weight="600">Discord</text>
+  <text x="710" y="170" text-anchor="middle" fill="#9ca3af" font-size="11">Gateway Intents</text>
+
+  <!-- ================================================================ -->
+  <!-- SECTION 2: PLATFORM LAYER -->
+  <!-- ================================================================ -->
+  <text x="50" y="225" fill="#a855f7" font-size="15" font-weight="600">PLATFORM LAYER</text>
+
+  <!-- Omni Gateway -->
+  <rect x="350" y="240" width="300" height="70" rx="10" fill="#1a1a2e" stroke="#f59e0b" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="500" y="268" text-anchor="middle" fill="white" font-weight="600">Omni Gateway :8882</text>
+  <text x="500" y="288" text-anchor="middle" fill="#9ca3af" font-size="11">NATS + PM2 + pgserve (Docker)</text>
+
+  <!-- Arrows from channels to Omni -->
+  <line x1="350" y1="185" x2="420" y2="240" stroke="#25d366" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="530" y1="185" x2="500" y2="240" stroke="#26a5e4" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="710" y1="185" x2="580" y2="240" stroke="#5865f2" stroke-width="1" marker-end="url(#arrow)"/>
+
+  <!-- Backend -->
+  <rect x="50" y="360" width="700" height="80" rx="12" fill="#1a1a2e" stroke="url(#gBrand)" stroke-width="2" filter="url(#shadow)"/>
+  <text x="400" y="390" text-anchor="middle" fill="white" font-size="16" font-weight="700">FastAPI Backend :8000</text>
+  <text x="400" y="412" text-anchor="middle" fill="#9ca3af" font-size="12">JWT Auth | Service Layer | SQLAlchemy 2 Async | SSE Streaming</text>
+  <text x="400" y="428" text-anchor="middle" fill="#d8b4fe" font-size="11">Omni Poller (3s) | Channel Handler | LLM Orchestrator | Deploy Saga</text>
+
+  <!-- Arrow Browser to Backend -->
+  <line x1="140" y1="185" x2="200" y2="360" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowBrand)"/>
+  <text x="125" y="280" fill="#d8b4fe" font-size="10" transform="rotate(-68 125 280)">REST + SSE</text>
+
+  <!-- Arrow Omni to Backend -->
+  <line x1="500" y1="310" x2="400" y2="360" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="470" y="340" fill="#fbbf24" font-size="10">Events Poll</text>
+
+  <!-- ================================================================ -->
+  <!-- BACKEND SERVICES (inside backend box) -->
+  <!-- ================================================================ -->
+  <text x="50" y="485" fill="#a855f7" font-size="15" font-weight="600">BACKEND SERVICES</text>
+
+  <!-- Auth -->
+  <rect x="50" y="500" width="155" height="55" rx="8" fill="#1e1e3a" stroke="#6366f1" stroke-width="1"/>
+  <text x="127" y="523" text-anchor="middle" fill="white" font-weight="600" font-size="12">Auth</text>
+  <text x="127" y="540" text-anchor="middle" fill="#9ca3af" font-size="10">JWT + Cookie + Revoke</text>
+
+  <!-- Chat / LLM -->
+  <rect x="225" y="500" width="155" height="55" rx="8" fill="#1e1e3a" stroke="#a855f7" stroke-width="1"/>
+  <text x="302" y="523" text-anchor="middle" fill="white" font-weight="600" font-size="12">LLM Orchestrator</text>
+  <text x="302" y="540" text-anchor="middle" fill="#9ca3af" font-size="10">Claude + 12 Tools</text>
+
+  <!-- Channel Handler -->
+  <rect x="400" y="500" width="155" height="55" rx="8" fill="#1e1e3a" stroke="#25d366" stroke-width="1"/>
+  <text x="477" y="523" text-anchor="middle" fill="white" font-weight="600" font-size="12">Channel Handler</text>
+  <text x="477" y="540" text-anchor="middle" fill="#9ca3af" font-size="10">Identity + Session + LLM</text>
+
+  <!-- Deploy Saga -->
+  <rect x="575" y="500" width="155" height="55" rx="8" fill="#1e1e3a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="652" y="523" text-anchor="middle" fill="white" font-weight="600" font-size="12">Deploy Saga</text>
+  <text x="652" y="540" text-anchor="middle" fill="#9ca3af" font-size="10">10 Steps + SSE</text>
+
+  <!-- ================================================================ -->
+  <!-- CHANNEL HANDLER DETAIL -->
+  <!-- ================================================================ -->
+  <text x="50" y="600" fill="#25d366" font-size="15" font-weight="600">CHANNEL MESSAGE FLOW</text>
+
+  <!-- Flow boxes -->
+  <rect x="50" y="615" width="120" height="45" rx="6" fill="#0d3320" stroke="#25d366" stroke-width="1"/>
+  <text x="110" y="635" text-anchor="middle" fill="#34d399" font-weight="600" font-size="11">Event Received</text>
+  <text x="110" y="650" text-anchor="middle" fill="#6ee7b7" font-size="9">Omni Poller</text>
+
+  <line x1="170" y1="637" x2="195" y2="637" stroke="#25d366" marker-end="url(#arrow)"/>
+
+  <rect x="200" y="615" width="120" height="45" rx="6" fill="#0d3320" stroke="#25d366" stroke-width="1"/>
+  <text x="260" y="635" text-anchor="middle" fill="#34d399" font-weight="600" font-size="11">Identity Check</text>
+  <text x="260" y="650" text-anchor="middle" fill="#6ee7b7" font-size="9">Phone -> User</text>
+
+  <line x1="320" y1="637" x2="345" y2="637" stroke="#25d366" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="615" width="120" height="45" rx="6" fill="#0d3320" stroke="#25d366" stroke-width="1"/>
+  <text x="410" y="635" text-anchor="middle" fill="#34d399" font-weight="600" font-size="11">Session Sync</text>
+  <text x="410" y="650" text-anchor="middle" fill="#6ee7b7" font-size="9">Cross-channel</text>
+
+  <line x1="470" y1="637" x2="495" y2="637" stroke="#25d366" marker-end="url(#arrow)"/>
+
+  <!-- Decision diamond -->
+  <polygon points="555,617 605,637 555,657 505,637" fill="#0d3320" stroke="#25d366" stroke-width="1"/>
+  <text x="555" y="641" text-anchor="middle" fill="#34d399" font-size="10" font-weight="600">/cmd?</text>
+
+  <!-- Slash command path -->
+  <line x1="555" y1="617" x2="555" y2="585" stroke="#25d366" marker-end="url(#arrow)"/>
+  <rect x="495" y="560" width="120" height="25" rx="4" fill="#0d3320" stroke="#6ee7b7" stroke-width="0.5"/>
+  <text x="555" y="577" text-anchor="middle" fill="#6ee7b7" font-size="10">Slash Commands</text>
+
+  <!-- LLM path -->
+  <line x1="605" y1="637" x2="635" y2="637" stroke="#25d366" marker-end="url(#arrow)"/>
+
+  <rect x="640" y="615" width="120" height="45" rx="6" fill="#1e0d3a" stroke="#a855f7" stroke-width="1"/>
+  <text x="700" y="635" text-anchor="middle" fill="#d8b4fe" font-weight="600" font-size="11">LLM Process</text>
+  <text x="700" y="650" text-anchor="middle" fill="#c4b5fd" font-size="9">Claude + Tools</text>
+
+  <!-- Send response -->
+  <line x1="700" y1="660" x2="700" y2="685" stroke="#a855f7" marker-end="url(#arrowBrand)"/>
+
+  <rect x="640" y="688" width="120" height="35" rx="6" fill="#0d3320" stroke="#25d366" stroke-width="1"/>
+  <text x="700" y="710" text-anchor="middle" fill="#34d399" font-weight="600" font-size="11">Send via Omni</text>
+
+  <!-- ================================================================ -->
+  <!-- DEPLOY SAGA DETAIL -->
+  <!-- ================================================================ -->
+  <text x="50" y="770" fill="#f59e0b" font-size="15" font-weight="600">DEPLOY ONE-CLICK SAGA (10 Steps)</text>
+
+  <!-- Step boxes in 2 rows -->
+  <rect x="50" y="785" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="105" y="807" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">1. Validate</text>
+
+  <line x1="160" y1="802" x2="170" y2="802" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="175" y="785" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="230" y="807" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">2. S3 Bucket</text>
+
+  <line x1="285" y1="802" x2="295" y2="802" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="300" y="785" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="355" y="807" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">3. IAM Role</text>
+
+  <line x1="410" y1="802" x2="420" y2="802" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="425" y="785" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="480" y="807" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">4. Secrets</text>
+
+  <line x1="535" y1="802" x2="545" y2="802" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="550" y="785" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="605" y="807" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">5. Catalog</text>
+
+  <!-- Row 2 -->
+  <line x1="605" y1="820" x2="605" y2="835" stroke="#f59e0b" marker-end="url(#arrow)"/>
+
+  <rect x="550" y="838" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="605" y="860" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">6. Upload Code</text>
+
+  <line x1="550" y1="855" x2="540" y2="855" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="425" y="838" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="480" y="860" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">7. Observer Job</text>
+
+  <line x1="425" y1="855" x2="415" y2="855" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="300" y="838" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="355" y="860" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">8. Workflow</text>
+
+  <line x1="300" y1="855" x2="290" y2="855" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="175" y="838" width="110" height="35" rx="5" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="230" y="860" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">9. Trigger Run</text>
+
+  <line x1="175" y1="855" x2="165" y2="855" stroke="#f59e0b" marker-end="url(#arrow)"/>
+  <rect x="50" y="838" width="110" height="35" rx="5" fill="#0a1a0a" stroke="#34d399" stroke-width="1.5"/>
+  <text x="105" y="860" text-anchor="middle" fill="#34d399" font-size="10" font-weight="600">10. Register</text>
+
+  <!-- ================================================================ -->
+  <!-- DATA LAYER -->
+  <!-- ================================================================ -->
+  <text x="50" y="920" fill="#60a5fa" font-size="15" font-weight="600">DATA LAYER</text>
+
+  <!-- PostgreSQL -->
+  <rect x="50" y="935" width="200" height="65" rx="10" fill="#1a1a2e" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="150" y="960" text-anchor="middle" fill="white" font-weight="600">PostgreSQL 17</text>
+  <text x="150" y="978" text-anchor="middle" fill="#9ca3af" font-size="10">Users, Pipelines, Threads</text>
+  <text x="150" y="990" text-anchor="middle" fill="#9ca3af" font-size="10">Messages, Sessions, Credentials</text>
+
+  <!-- Redis -->
+  <rect x="280" y="935" width="200" height="65" rx="10" fill="#1a1a2e" stroke="#ef4444" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="380" y="960" text-anchor="middle" fill="white" font-weight="600">Redis 7</text>
+  <text x="380" y="978" text-anchor="middle" fill="#9ca3af" font-size="10">Token Revocation (JTI)</text>
+  <text x="380" y="990" text-anchor="middle" fill="#9ca3af" font-size="10">Poller Dedup, Rate Limit</text>
+
+  <!-- Claude API -->
+  <rect x="510" y="935" width="200" height="65" rx="10" fill="#1a1a2e" stroke="#d97706" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="610" y="960" text-anchor="middle" fill="white" font-weight="600">Claude API</text>
+  <text x="610" y="978" text-anchor="middle" fill="#9ca3af" font-size="10">Opus | Sonnet | Haiku</text>
+  <text x="610" y="990" text-anchor="middle" fill="#9ca3af" font-size="10">Streaming + Tool Use</text>
+
+  <!-- ================================================================ -->
+  <!-- AWS LAYER -->
+  <!-- ================================================================ -->
+  <text x="50" y="1050" fill="#f59e0b" font-size="15" font-weight="600">AWS CLOUD</text>
+
+  <rect x="50" y="1065" width="700" height="120" rx="12" fill="#1a1a0a" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6 3"/>
+
+  <!-- S3 -->
+  <rect x="70" y="1080" width="150" height="50" rx="8" fill="#2a2a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="145" y="1102" text-anchor="middle" fill="#fbbf24" font-weight="600" font-size="12">S3 Datalake</text>
+  <text x="145" y="1118" text-anchor="middle" fill="#a3a3a3" font-size="10">Parquet + Lifecycle</text>
+
+  <!-- IAM -->
+  <rect x="240" y="1080" width="150" height="50" rx="8" fill="#2a2a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="315" y="1102" text-anchor="middle" fill="#fbbf24" font-weight="600" font-size="12">IAM</text>
+  <text x="315" y="1118" text-anchor="middle" fill="#a3a3a3" font-size="10">Roles + Policies</text>
+
+  <!-- Secrets Manager -->
+  <rect x="410" y="1080" width="150" height="50" rx="8" fill="#2a2a0a" stroke="#f59e0b" stroke-width="1"/>
+  <text x="485" y="1102" text-anchor="middle" fill="#fbbf24" font-weight="600" font-size="12">Secrets Manager</text>
+  <text x="485" y="1118" text-anchor="middle" fill="#a3a3a3" font-size="10">Databricks Creds</text>
+
+  <!-- Databricks -->
+  <rect x="70" y="1140" width="490" height="35" rx="6" fill="#2a1a0a" stroke="#ff6f00" stroke-width="1"/>
+  <text x="315" y="1162" text-anchor="middle" fill="#ff9e40" font-weight="600" font-size="12">Databricks Workspace — Unity Catalog + Delta Lake + Jobs API</text>
+
+  <!-- ================================================================ -->
+  <!-- PIPELINE ETL -->
+  <!-- ================================================================ -->
+  <text x="50" y="1230" fill="#34d399" font-size="15" font-weight="600">PIPELINE ETL (Databricks)</text>
+
+  <!-- Pipeline flow -->
+  <rect x="50" y="1245" width="85" height="40" rx="6" fill="#0a1a1a" stroke="#6ee7b7" stroke-width="1"/>
+  <text x="92" y="1270" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">pre_check</text>
+
+  <line x1="135" y1="1265" x2="150" y2="1265" stroke="#34d399" marker-end="url(#arrow)"/>
+
+  <rect x="155" y="1245" width="85" height="40" rx="6" fill="#0a1a0a" stroke="#a78bfa" stroke-width="1"/>
+  <text x="197" y="1270" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">Bronze</text>
+
+  <line x1="240" y1="1265" x2="255" y2="1265" stroke="#34d399" marker-end="url(#arrow)"/>
+
+  <!-- Silver (3 parallel) -->
+  <rect x="260" y="1235" width="100" height="25" rx="4" fill="#0a1a1a" stroke="#93c5fd" stroke-width="1"/>
+  <text x="310" y="1252" text-anchor="middle" fill="#93c5fd" font-size="9" font-weight="600">Silver: Dedup</text>
+
+  <rect x="260" y="1263" width="100" height="25" rx="4" fill="#0a1a1a" stroke="#93c5fd" stroke-width="1"/>
+  <text x="310" y="1280" text-anchor="middle" fill="#93c5fd" font-size="9" font-weight="600">Silver: Entities</text>
+
+  <rect x="260" y="1291" width="100" height="25" rx="4" fill="#0a1a1a" stroke="#93c5fd" stroke-width="1"/>
+  <text x="310" y="1308" text-anchor="middle" fill="#93c5fd" font-size="9" font-weight="600">Silver: Enrich</text>
+
+  <line x1="360" y1="1275" x2="380" y2="1275" stroke="#34d399" marker-end="url(#arrow)"/>
+
+  <!-- Gold -->
+  <rect x="385" y="1255" width="100" height="40" rx="6" fill="#1a1a0a" stroke="#fbbf24" stroke-width="1"/>
+  <text x="435" y="1272" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">Gold x12</text>
+  <text x="435" y="1286" text-anchor="middle" fill="#a3a3a3" font-size="9">Analytics</text>
+
+  <line x1="485" y1="1275" x2="500" y2="1275" stroke="#34d399" marker-end="url(#arrow)"/>
+
+  <!-- Validation -->
+  <rect x="505" y="1255" width="90" height="40" rx="6" fill="#0a1a1a" stroke="#6ee7b7" stroke-width="1"/>
+  <text x="550" y="1280" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Validation</text>
+
+  <line x1="595" y1="1275" x2="610" y2="1275" stroke="#34d399" marker-end="url(#arrow)"/>
+
+  <!-- Observer trigger -->
+  <rect x="615" y="1255" width="120" height="40" rx="6" fill="#1a0a0a" stroke="#f87171" stroke-width="1"/>
+  <text x="675" y="1272" text-anchor="middle" fill="#f87171" font-size="10" font-weight="600">Observer Trigger</text>
+  <text x="675" y="1286" text-anchor="middle" fill="#fca5a5" font-size="9">if FAILED</text>
+
+  <!-- ================================================================ -->
+  <!-- OBSERVER AGENT -->
+  <!-- ================================================================ -->
+  <text x="50" y="1365" fill="#f87171" font-size="15" font-weight="600">OBSERVER AGENT (Autonomous AI)</text>
+
+  <rect x="50" y="1380" width="120" height="40" rx="6" fill="#1a0a0a" stroke="#f87171" stroke-width="1"/>
+  <text x="110" y="1405" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="600">Detect Failure</text>
+
+  <line x1="170" y1="1400" x2="185" y2="1400" stroke="#f87171" marker-end="url(#arrow)"/>
+
+  <rect x="190" y="1380" width="120" height="40" rx="6" fill="#1a0a0a" stroke="#f87171" stroke-width="1"/>
+  <text x="250" y="1405" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="600">Collect Context</text>
+
+  <line x1="310" y1="1400" x2="325" y2="1400" stroke="#f87171" marker-end="url(#arrow)"/>
+
+  <rect x="330" y="1380" width="120" height="40" rx="6" fill="#1e0d3a" stroke="#a855f7" stroke-width="1"/>
+  <text x="390" y="1405" text-anchor="middle" fill="#d8b4fe" font-size="10" font-weight="600">Claude Diagnose</text>
+
+  <line x1="450" y1="1400" x2="465" y2="1400" stroke="#a855f7" marker-end="url(#arrowBrand)"/>
+
+  <rect x="470" y="1380" width="120" height="40" rx="6" fill="#0a1a0a" stroke="#6ee7b7" stroke-width="1"/>
+  <text x="530" y="1405" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Validate Fix</text>
+
+  <line x1="590" y1="1400" x2="605" y2="1400" stroke="#34d399" marker-end="url(#arrow)"/>
+
+  <rect x="610" y="1380" width="120" height="40" rx="6" fill="#0a0a1a" stroke="#60a5fa" stroke-width="1"/>
+  <text x="670" y="1405" text-anchor="middle" fill="#93c5fd" font-size="10" font-weight="600">Open GitHub PR</text>
+
+  <!-- ================================================================ -->
+  <!-- LLM TOOLS -->
+  <!-- ================================================================ -->
+  <text x="50" y="1470" fill="#d8b4fe" font-size="15" font-weight="600">CHAT AI — 12 TOOLS</text>
+
+  <rect x="50" y="1485" width="145" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="122" y="1505" text-anchor="middle" fill="#c4b5fd" font-size="10">list_databricks_jobs</text>
+
+  <rect x="205" y="1485" width="130" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="270" y="1505" text-anchor="middle" fill="#c4b5fd" font-size="10">get_job_details</text>
+
+  <rect x="345" y="1485" width="140" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="415" y="1505" text-anchor="middle" fill="#c4b5fd" font-size="10">get_pipeline_status</text>
+
+  <rect x="495" y="1485" width="110" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="550" y="1505" text-anchor="middle" fill="#c4b5fd" font-size="10">get_run_logs</text>
+
+  <rect x="50" y="1522" width="135" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="117" y="1542" text-anchor="middle" fill="#c4b5fd" font-size="10">query_delta_table</text>
+
+  <rect x="195" y="1522" width="130" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="260" y="1542" text-anchor="middle" fill="#c4b5fd" font-size="10">get_table_schema</text>
+
+  <rect x="335" y="1522" width="100" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="385" y="1542" text-anchor="middle" fill="#c4b5fd" font-size="10">read_file</text>
+
+  <rect x="445" y="1522" width="120" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="505" y="1542" text-anchor="middle" fill="#c4b5fd" font-size="10">list_recent_prs</text>
+
+  <rect x="50" y="1559" width="110" height="30" rx="5" fill="#1e0d3a" stroke="#7c3aed" stroke-width="0.8"/>
+  <text x="105" y="1579" text-anchor="middle" fill="#c4b5fd" font-size="10">get_pr_diff</text>
+
+  <rect x="170" y="1559" width="150" height="30" rx="5" fill="#1a0a0a" stroke="#f87171" stroke-width="1"/>
+  <text x="245" y="1579" text-anchor="middle" fill="#fca5a5" font-size="10">update_job_schedule</text>
+
+  <rect x="330" y="1559" width="150" height="30" rx="5" fill="#1a0a0a" stroke="#f87171" stroke-width="1"/>
+  <text x="405" y="1579" text-anchor="middle" fill="#fca5a5" font-size="10">trigger_pipeline_run</text>
+
+  <rect x="490" y="1559" width="140" height="30" rx="5" fill="#1a0a0a" stroke="#f87171" stroke-width="1"/>
+  <text x="560" y="1579" text-anchor="middle" fill="#fca5a5" font-size="10">create_pull_request</text>
+
+  <text x="665" y="1579" fill="#f87171" font-size="10" font-style="italic">* requerem confirmacao</text>
+
+  <!-- ================================================================ -->
+  <!-- SECURITY -->
+  <!-- ================================================================ -->
+  <text x="50" y="1640" fill="#ef4444" font-size="15" font-weight="600">SECURITY</text>
+
+  <rect x="50" y="1655" width="700" height="70" rx="10" fill="#1a0a0a" stroke="#ef4444" stroke-width="1" stroke-dasharray="4 2"/>
+
+  <text x="70" y="1678" fill="#fca5a5" font-size="11">JWT + JTI + Redis Blacklist</text>
+  <text x="70" y="1695" fill="#fca5a5" font-size="11">Fernet Encryption (credentials)</text>
+  <text x="70" y="1712" fill="#fca5a5" font-size="11">httpOnly Cookie (refresh token)</text>
+
+  <text x="310" y="1678" fill="#fca5a5" font-size="11">SQL Guard (multi-statement block)</text>
+  <text x="310" y="1695" fill="#fca5a5" font-size="11">Security Headers (nosniff, DENY)</text>
+  <text x="310" y="1712" fill="#fca5a5" font-size="11">Rate Limiting (5/min auth)</text>
+
+  <text x="550" y="1678" fill="#fca5a5" font-size="11">CORS Restrito</text>
+  <text x="550" y="1695" fill="#fca5a5" font-size="11">Confirmation Gate (tools)</text>
+  <text x="550" y="1712" fill="#fca5a5" font-size="11">Localhost-only Docker ports</text>
+
+  <!-- Footer -->
+  <text x="700" y="1770" text-anchor="middle" fill="#4b5563" font-size="11">Safatechx Platform v0.1.0 — Built with Claude Opus 4.6</text>
+</svg>
