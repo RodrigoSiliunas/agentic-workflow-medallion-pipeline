@@ -65,6 +65,12 @@
     />
 
     <QrPairingModal :instance-id="pairingInstanceId" @close="onPairingClosed" />
+
+    <TokenInputModal
+      :instance-id="tokenInstanceId"
+      :channel="tokenChannel"
+      @close="onTokenClosed"
+    />
   </div>
 </template>
 
@@ -79,8 +85,9 @@ await store.load()
 
 const openNewModal = ref(route.query.new === "1")
 const pairingInstanceId = ref<string | null>(null)
+const tokenInstanceId = ref<string | null>(null)
+const tokenChannel = ref<ChannelKind>("telegram")
 
-// Quando abre via sidebar (query new=1), limpa o param ao fechar o modal
 watch(openNewModal, (val) => {
   if (!val && route.query.new === "1") {
     navigateTo({ path: "/channels" }, { replace: true })
@@ -94,6 +101,10 @@ const active = computed<OmniInstance[]>(() =>
 function onCreated(id: string, channel: ChannelKind) {
   if (channel === "whatsapp") {
     pairingInstanceId.value = id
+  } else {
+    // Discord/Telegram — abrir modal de token direto
+    tokenInstanceId.value = id
+    tokenChannel.value = channel
   }
 }
 
@@ -101,10 +112,11 @@ function onPair(id: string) {
   pairingInstanceId.value = id
 }
 
-async function onConnect(id: string) {
-  const token = window.prompt("Cole o bot token (Discord/Telegram):")
-  if (!token) return
-  await store.connect(id, token)
+function onConnect(id: string) {
+  const instance = store.getById(id)
+  if (!instance) return
+  tokenInstanceId.value = id
+  tokenChannel.value = instance.channel
 }
 
 async function onDisconnect(id: string) {
@@ -119,11 +131,20 @@ async function onPairingClosed() {
   await store.load(true)
 }
 
+async function onTokenClosed() {
+  tokenInstanceId.value = null
+  await store.load(true)
+}
+
 async function onResync(id: string) {
   await store.load(true)
   const instance = store.getById(id)
-  if (instance && instance.channel === "whatsapp" && instance.state !== "connected") {
+  if (!instance) return
+  if (instance.channel === "whatsapp" && instance.state !== "connected") {
     pairingInstanceId.value = id
+  } else if (instance.state !== "connected") {
+    tokenInstanceId.value = id
+    tokenChannel.value = instance.channel
   }
 }
 </script>
