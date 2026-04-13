@@ -42,6 +42,6 @@ ENV HOME=/home/omni
 ENV PATH="/root/.bun/bin:$PATH"
 
 COPY omni-entrypoint.sh /usr/local/bin/omni-entrypoint.sh
-RUN chmod +x /usr/local/bin/omni-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/omni-entrypoint.sh && chmod +x /usr/local/bin/omni-entrypoint.sh
 
 CMD ["/usr/local/bin/omni-entrypoint.sh"]
