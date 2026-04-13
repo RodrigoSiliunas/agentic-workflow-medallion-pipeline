@@ -1,6 +1,5 @@
 FROM python:3.12-slim AS base
 
-# uv para instalacao rapida de dependencias
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
@@ -12,9 +11,12 @@ RUN uv sync --frozen --no-dev --no-editable
 # Codigo
 COPY app/ app/
 
-# Non-root user
-RUN adduser --system --group app && chown -R app:app /app
+# Non-root user com home directory (uv precisa de ~/.cache)
+RUN addgroup --system app && adduser --system --ingroup app --home /home/app app \
+    && chown -R app:app /app
 USER app
+
+ENV UV_CACHE_DIR=/home/app/.cache/uv
 
 EXPOSE 8000
 
