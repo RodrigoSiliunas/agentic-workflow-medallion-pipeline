@@ -1,5 +1,9 @@
 """Settings routes — credenciais da empresa, model selection."""
 
+import uuid
+
+import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +18,47 @@ from app.schemas.settings import (
     UpdatePreferredModelRequest,
 )
 from app.services.credential_service import CredentialService
+
+logger = structlog.get_logger()
+
+# Mapeamento: credential_type da plataforma → secret key no Databricks
+_DATABRICKS_SECRET_MAP = {
+    "anthropic_api_key": "anthropic-api-key",
+    "github_token": "github-token",
+    "aws_access_key_id": "aws-access-key-id",
+    "aws_secret_access_key": "aws-secret-access-key",
+    "aws_region": "aws-region",
+}
+_DATABRICKS_SCOPE = "medallion-pipeline"
+
+
+async def _sync_to_databricks_secrets(
+    service: CredentialService, company_id: uuid.UUID,
+    credential_type: str, value: str,
+) -> None:
+    """Sincroniza credencial com Databricks Secrets (se Databricks configurado)."""
+    secret_key = _DATABRICKS_SECRET_MAP.get(credential_type)
+    if not secret_key:
+        return
+    try:
+        host = await service.get_decrypted(company_id, "databricks_host")
+        token = await service.get_decrypted(company_id, "databricks_token")
+        if not host or not token:
+            return
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{host}/api/2.0/secrets/put",
+                json={"scope": _DATABRICKS_SCOPE, "key": secret_key, "string_value": value},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code == 200:
+                logger.info("Databricks secret synced", key=secret_key)
+            else:
+                logger.warning(
+                    "Databricks secret sync failed", key=secret_key, status=resp.status_code,
+                )
+    except Exception as exc:
+        logger.warning("Databricks secret sync error", key=secret_key, error=str(exc))
 
 router = APIRouter()
 
@@ -42,7 +87,7 @@ async def set_credential(
     auth: AuthContext = Depends(require_permission("manage_credentials")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Salva uma credencial (criptografada)."""
+    """Salva uma credencial (criptografada). Sincroniza com Databricks Secrets."""
     service = CredentialService(db)
     try:
         await service.set_credential(auth.company_id, data.credential_type, data.value)
@@ -50,6 +95,10 @@ async def set_credential(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
         ) from e
+
+    # Sincronizar com Databricks Secrets se aplicavel
+    await _sync_to_databricks_secrets(service, auth.company_id, data.credential_type, data.value)
+
     return {"status": "saved", "credential_type": data.credential_type}
 
 
