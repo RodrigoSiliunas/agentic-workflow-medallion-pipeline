@@ -27,6 +27,11 @@ from app.core.exceptions import AppError
 from app.database.seed import seed_templates
 from app.database.session import AsyncSessionLocal
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security_headers import (
+    DEFAULT_CSP_DEV,
+    DEFAULT_CSP_PROD,
+    SecurityHeadersMiddleware,
+)
 from app.services.omni_service import OmniService
 
 logger = structlog.get_logger()
@@ -96,8 +101,19 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
+# T2 Phase 3 — CSP, HSTS, Permissions-Policy.
+# Dev usa CSP mais permissiva (HMR do Nuxt); prod usa a tight default.
+_csp = app_settings.SECURITY_HEADERS_CSP or (
+    DEFAULT_CSP_DEV if app_settings.DEBUG else DEFAULT_CSP_PROD
+)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    csp=_csp,
+    enable_hsts=app_settings.SECURITY_HEADERS_HSTS and not app_settings.DEBUG,
+)
 
-# Security headers
+
+# Basic security headers inline (complementam o middleware acima)
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)

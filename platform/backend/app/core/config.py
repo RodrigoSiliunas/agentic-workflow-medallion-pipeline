@@ -47,5 +47,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_AUTH_PER_MINUTE: int = 5
 
+    # Security headers (T2 Phase 3).
+    # CSP None = middleware usa default (prod ou dev) conforme DEBUG.
+    SECURITY_HEADERS_CSP: str | None = None
+    SECURITY_HEADERS_HSTS: bool = True
+
 
 settings = Settings()

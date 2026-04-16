@@ -1,18 +1,20 @@
 /**
  * Auth store — login, logout, refresh, role getters.
  *
- * Seguranca:
- * - **access_token**: Pinia memory + sessionStorage (15 min, limpo ao fechar aba).
- *   Necessario em memoria pra requests com Authorization header.
+ * Seguranca (T2 hardening):
+ * - **access_token**: SOMENTE em memoria (Pinia). NUNCA tocado por
+ *   sessionStorage/localStorage — mitiga roubo via XSS.
  * - **refresh_token**: httpOnly cookie setado pelo backend (7 dias).
  *   NUNCA acessivel via JavaScript — protegido contra XSS.
  *
  * Fluxo de sessao:
  * 1. Login/Register → backend seta cookie + retorna access_token no body
- * 2. Navegacao normal → access_token no header Authorization
- * 3. Access token expira → POST /auth/refresh (cookie auto-enviado) → novo access_token
- * 4. Nova aba/refresh → lê sessionStorage OU tenta refresh via cookie
- * 5. Logout → POST /auth/logout (limpa cookie) + limpa sessionStorage
+ * 2. Navegacao normal → access_token no header Authorization (memoria)
+ * 3. Access token expira → POST /auth/refresh (cookie auto-enviado) → novo
+ * 4. Nova aba / reload → memoria vazia → `initFromStorage` chama
+ *    `/auth/refresh`; se cookie valido, recria sessao; senao, fica
+ *    anonimo ate proximo login.
+ * 5. Logout → POST /auth/logout (limpa cookie) + limpa estado em memoria
  */
 import { defineStore } from "pinia"
 
@@ -70,7 +72,8 @@ export const useAuthStore = defineStore("auth", {
           companyId: "safatechx",
         }
         if (import.meta.client) {
-          sessionStorage.setItem("access_token", this.accessToken)
+          // access_token fica em memoria; `mock_user` persiste apenas pra
+          // devX (reload de dev server) — nunca contem credenciais.
           sessionStorage.setItem("mock_user", JSON.stringify(this.user))
         }
         return
@@ -88,10 +91,6 @@ export const useAuthStore = defineStore("auth", {
 
         this.accessToken = data.access_token
         await this.fetchUser()
-
-        if (import.meta.client) {
-          sessionStorage.setItem("access_token", this.accessToken)
-        }
       } catch (e: unknown) {
         const detail =
           (e as { data?: { detail?: string }; message?: string })?.data?.detail ??
@@ -137,10 +136,6 @@ export const useAuthStore = defineStore("auth", {
 
         this.accessToken = data.access_token
         await this.fetchUser()
-
-        if (import.meta.client) {
-          sessionStorage.setItem("access_token", this.accessToken)
-        }
       } catch (e: unknown) {
         const detail =
           (e as { data?: { detail?: string }; message?: string })?.data?.detail ??
@@ -208,9 +203,6 @@ export const useAuthStore = defineStore("auth", {
         })
 
         this.accessToken = data.access_token
-        if (import.meta.client) {
-          sessionStorage.setItem("access_token", this.accessToken)
-        }
         await this.fetchUser()
       } catch {
         this.logout()
@@ -233,6 +225,9 @@ export const useAuthStore = defineStore("auth", {
       this.user = null
       this.accessToken = null
       if (import.meta.client) {
+        // Legacy cleanup: releases antigas persistiam access_token em
+        // sessionStorage. Removemos caso ainda exista de uma sessao
+        // pre-upgrade.
         sessionStorage.removeItem("access_token")
         sessionStorage.removeItem("mock_user")
       }
@@ -264,7 +259,6 @@ export const useAuthStore = defineStore("auth", {
         }
         this.accessToken = "mock-access-token"
         if (import.meta.client) {
-          sessionStorage.setItem("access_token", this.accessToken)
           sessionStorage.setItem("mock_user", JSON.stringify(this.user))
         }
         this.initialized = true
@@ -273,42 +267,14 @@ export const useAuthStore = defineStore("auth", {
 
       if (!import.meta.client) return
 
-      // Tenta recuperar access_token do sessionStorage (sobrevive refresh da pagina)
-      const storedAccess = sessionStorage.getItem("access_token")
-      if (storedAccess) {
-        try {
-          const parts = storedAccess.split(".")
-          if (parts.length !== 3 || !parts[1]) throw new Error("invalid")
-          const payload = JSON.parse(atob(parts[1])) as {
-            sub: string
-            company_id?: string
-            role?: string
-            exp?: number
-          }
-          if (payload.exp && payload.exp * 1000 < Date.now()) {
-            // Token expirado — tenta refresh via cookie
-            sessionStorage.removeItem("access_token")
-          } else {
-            // Token valido — restaura sessao sync (rapido, sem API call)
-            this.accessToken = storedAccess
-            this.user = {
-              id: payload.sub,
-              email: "",
-              name: "",
-              role: (payload.role as User["role"]) || "viewer",
-              companyId: payload.company_id || "",
-            }
-            void this.fetchUser()
-            this.initialized = true
-            return
-          }
-        } catch {
-          sessionStorage.removeItem("access_token")
-        }
-      }
+      // T2 hardening: access_token NAO persiste mais em sessionStorage.
+      // Em reload / nova aba, memoria esta vazia — pedimos refresh via
+      // cookie httpOnly. Backend responde 200 com novo access_token se o
+      // refresh cookie ainda for valido, ou 401 se o usuario deslogou.
+      //
+      // Remover artefato legado (pre-upgrade) pra nao vazar o token antigo.
+      sessionStorage.removeItem("access_token")
 
-      // Sem access_token valido — tenta refresh via httpOnly cookie.
-      // Se o usuario logou antes e nao fez logout, o cookie ainda existe.
       try {
         await this.refresh()
       } catch {
