@@ -14,7 +14,10 @@ build/
 .venv/
 venv/
 Lib/
+# Windows venv dir (python -m venv .venv cria .venv/Scripts/).
+# Não ignorar scripts/ no repo root (case-insensitive no Windows).
 Scripts/
+!/scripts/
 pyvenv.cfg
 
 # Environment

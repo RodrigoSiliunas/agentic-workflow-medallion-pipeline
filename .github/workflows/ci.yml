@@ -59,11 +59,19 @@ jobs:
           # Deps usadas pelo pipeline_lib (storage S3)
           pip install boto3 pandas pyarrow
 
-      - name: Lint
+      - name: Lint (pipeline_lib + tests)
         run: ruff check pipeline_lib deploy tests
 
-      - name: Test
+      - name: Lint notebooks (T6)
+        working-directory: ${{ github.workspace }}
+        run: python scripts/lint_notebooks.py "pipelines/pipeline-seguradora-whatsapp/notebooks/**/*.py"
+
+      - name: Test pipeline
         run: pytest tests/ -v
+
+      - name: Test notebook linter
+        working-directory: ${{ github.workspace }}
+        run: pytest tests/test_lint_notebooks.py -v
 
   # ============================================================
   # Platform Backend (FastAPI + Postgres)

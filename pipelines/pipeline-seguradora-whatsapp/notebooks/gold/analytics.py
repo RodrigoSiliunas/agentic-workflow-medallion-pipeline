@@ -13,7 +13,18 @@
 
 # DBTITLE 1,Imports e Setup
 import logging
+import sys
 import time
+
+import yaml
+
+# Auto-detect repo path para pipeline_lib
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:4])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.orchestration import PhasedNotebookRunner
 
 logger = logging.getLogger("gold.analytics")
 start_time = time.time()
@@ -29,87 +40,38 @@ SCOPE = dbutils.widgets.get("scope")
 
 # COMMAND ----------
 
-# DBTITLE 1,Executar Notebooks na Ordem de Dependencias
-# Auto-detect repo path for sub-notebook calls
-_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-_repo_root = "/".join(_nb_path.split("/")[:4])
+# DBTITLE 1,Executar Notebooks via PhasedNotebookRunner
+# Config YAML em config/gold_phases.yaml — adicionar novo notebook =
+# 1 linha no YAML; sem edit neste notebook.
+CONFIG_PATH = f"{PIPELINE_ROOT}/config/gold_phases.yaml"
+TIMEOUT = 600  # 10 min por notebook
 NOTEBOOK_BASE = f"{_repo_root}/pipelines/pipeline-seguradora-whatsapp/notebooks"
 
-TIMEOUT = 600  # 10 min por notebook
+# O YAML armazena caminhos relativos a `notebooks/`. Expandimos em runtime
+# pro caminho absoluto do Repo Databricks.
+with open(CONFIG_PATH) as _handle:
+    _cfg = yaml.safe_load(_handle)
+for _phase in _cfg.get("phases", []):
+    for _nb in _phase.get("notebooks", []):
+        _nb["path"] = f"{NOTEBOOK_BASE}/{_nb['path']}"
 
-# Fases organizadas por dependência:
-# Notebooks dentro da mesma fase rodam em PARALELO (ThreadPoolExecutor).
-# Fases rodam em SEQUÊNCIA (phase 2 depende de phase 1).
-from concurrent.futures import ThreadPoolExecutor, as_completed
+runner = PhasedNotebookRunner.from_dict(_cfg)
+phase_results = runner.run(dbutils, timeout=TIMEOUT)
 
-phases = [
-    # Phase 1: Core (sem dependências entre si)
-    {
-        "name": "Core",
-        "notebooks": [
-            ("funnel", f"{NOTEBOOK_BASE}/gold/funnel"),
-            ("agent_performance", f"{NOTEBOOK_BASE}/gold/agent_performance"),
-            ("sentiment", f"{NOTEBOOK_BASE}/gold/sentiment"),
-            ("email_providers", f"{NOTEBOOK_BASE}/gold/email_providers"),
-        ],
-    },
-    # Phase 2: Depende de sentiment (phase 1)
-    {
-        "name": "Scoring + Analytics",
-        "notebooks": [
-            ("lead_scoring", f"{NOTEBOOK_BASE}/gold/lead_scoring"),
-            ("temporal_analysis", f"{NOTEBOOK_BASE}/gold/temporal_analysis"),
-            ("competitor_intel", f"{NOTEBOOK_BASE}/gold/competitor_intel"),
-        ],
-    },
-    # Phase 3: Depende de lead_scoring (phase 2)
-    {
-        "name": "Avançado",
-        "notebooks": [
-            ("campaign_roi", f"{NOTEBOOK_BASE}/gold/campaign_roi"),
-            ("segmentation", f"{NOTEBOOK_BASE}/gold/segmentation"),
-            ("churn_reengagement", f"{NOTEBOOK_BASE}/gold/churn_reengagement"),
-            ("negotiation_complexity", f"{NOTEBOOK_BASE}/gold/negotiation_complexity"),
-            ("first_contact_resolution", f"{NOTEBOOK_BASE}/gold/first_contact_resolution"),
-        ],
-    },
-]
-
-results = {}
-errors = []
-
-def run_notebook(name_path):
-    """Executa um notebook e retorna (nome, resultado_ou_erro)."""
-    name, path = name_path
-    try:
-        result = dbutils.notebook.run(path, TIMEOUT)
-        return (name, result)
-    except Exception as e:
-        return (name, f"FAILED: {e}")
-
-# Executa fases sequencialmente, notebooks dentro de cada fase em paralelo
-for phase in phases:
-    phase_name = phase["name"]
-    nbs = phase["notebooks"]
-    logger.info(f"Phase: {phase_name} ({len(nbs)} notebooks em paralelo)")
-
-    with ThreadPoolExecutor(max_workers=len(nbs)) as executor:
-        futures = {executor.submit(run_notebook, nb): nb[0] for nb in nbs}
-        for future in as_completed(futures):
-            name, result = future.result()
-            results[name] = result
-            if result.startswith("FAILED"):
-                errors.append(f"{name} falhou: {result}")
-                logger.error(f"  FALHOU: {name}")
-            else:
-                logger.info(f"  OK: {name}")
+# Agrega resultados + erros no formato legacy pra manter compat com o
+# bloco de resumo abaixo.
+results: dict[str, str] = {}
+errors: list[str] = []
+for phase_result in phase_results:
+    results.update(phase_result.results)
+    errors.extend(phase_result.errors)
 
 # COMMAND ----------
 
 # DBTITLE 1,Resumo da Execucao
-# Calcula estatisticas de sucesso/falha (total = soma de notebooks de todas as fases)
-total = sum(len(phase["notebooks"]) for phase in phases)
-succeeded = sum(1 for v in results.values() if v.startswith("SUCCESS"))
+# Calcula estatisticas de sucesso/falha
+total = len(results)
+succeeded = sum(1 for v in results.values() if str(v).startswith("SUCCESS"))
 failed = total - succeeded
 
 duration = round(time.time() - start_time, 2)

@@ -21,13 +21,15 @@
 # COMMAND ----------
 
 # DBTITLE 1,Imports e Setup
-import logging
-import os
-import sys
-import time
+# Imports ficam em cell 2 porque cell 1 faz `%pip install` (pip install
+# precisa rodar ANTES dos imports — restart do kernel implicito).
+import logging  # noqa: NB003
+import os  # noqa: NB003
+import sys  # noqa: NB003
+import time  # noqa: NB003
 
-from pyspark.sql import functions as F
-from pyspark.sql.types import FloatType, StringType
+from pyspark.sql import functions as F  # noqa: NB003
+from pyspark.sql.types import FloatType, StringType  # noqa: NB003
 
 # Auto-detect repo path from this notebook's location
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
@@ -35,7 +37,7 @@ _repo_root = "/".join(_nb_path.split("/")[:4])
 PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
 sys.path.insert(0, PIPELINE_ROOT)
 
-from pipeline_lib.storage import S3Lake
+from pipeline_lib.storage import S3Lake  # noqa: NB003
 
 # COMMAND ----------
 
@@ -61,7 +63,7 @@ messages = spark.table(f"{CATALOG}.silver.messages_clean")
 # DBTITLE 1,Criar Modelo de Sentimento (broadcast para workers)
 # Inicializa o analyzer de sentimento do pysentimiento
 # Usa modelo BERT fine-tuned para portugues
-from pysentimiento import create_analyzer
+from pysentimiento import create_analyzer  # noqa: NB003
 
 analyzer = create_analyzer(task="sentiment", lang="pt")
 
@@ -72,7 +74,7 @@ analyzer_bc = spark.sparkContext.broadcast(analyzer)
 # COMMAND ----------
 
 # DBTITLE 1,Pandas UDFs para Sentimento
-import pandas as pd
+import pandas as pd  # noqa: NB003
 
 
 @F.pandas_udf(FloatType())

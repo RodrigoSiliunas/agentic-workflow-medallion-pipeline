@@ -1,0 +1,44 @@
+# Gold analytics phases — consumido por notebooks/gold/analytics.py via
+# pipeline_lib.orchestration.PhasedNotebookRunner.from_dict.
+#
+# Regras:
+# - `phases` rodam SEQUENCIALMENTE (fase 2 depende de fase 1)
+# - `notebooks` dentro de uma fase rodam em PARALELO (ThreadPool)
+# - `path` é relativo a `notebooks/` (o notebook orquestrador expande
+#   o prefixo absoluto do Repo Databricks em runtime)
+#
+# Adicionar notebook = 1 linha aqui. Sem edit no orquestrador.
+
+phases:
+  - name: Core
+    notebooks:
+      - name: funnel
+        path: gold/funnel
+      - name: agent_performance
+        path: gold/agent_performance
+      - name: sentiment
+        path: gold/sentiment
+      - name: email_providers
+        path: gold/email_providers
+
+  - name: Scoring + Analytics
+    notebooks:
+      - name: lead_scoring
+        path: gold/lead_scoring
+      - name: temporal_analysis
+        path: gold/temporal_analysis
+      - name: competitor_intel
+        path: gold/competitor_intel
+
+  - name: Avancado
+    notebooks:
+      - name: campaign_roi
+        path: gold/campaign_roi
+      - name: segmentation
+        path: gold/segmentation
+      - name: churn_reengagement
+        path: gold/churn_reengagement
+      - name: negotiation_complexity
+        path: gold/negotiation_complexity
+      - name: first_contact_resolution
+        path: gold/first_contact_resolution

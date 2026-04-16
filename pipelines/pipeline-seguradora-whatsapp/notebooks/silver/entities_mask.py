@@ -18,7 +18,9 @@ import os
 import sys
 import time
 
+import pandas as pd
 from pyspark.sql import functions as F
+from pyspark.sql.functions import pandas_udf
 from pyspark.sql.types import ArrayType, FloatType, StringType
 
 # Auto-detect repo path from this notebook's location
@@ -50,10 +52,11 @@ logger = logging.getLogger("silver.entities_mask")
 # Armazenada no Databricks Secrets para nao ficar em texto claro no codigo
 os.environ["MASKING_SECRET"] = dbutils.secrets.get(SCOPE, "masking-secret")
 
-# Importa funcoes de mascaramento apos definir a variavel de ambiente
-from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate
-from pipeline_lib.masking.hash_based import hash_value
-from pipeline_lib.masking.redaction import redact_message_body
+# Importa funcoes de mascaramento APOS definir MASKING_SECRET.
+# Os modulos leem a env var no import — por isso nao podem ir pra cell 1.
+from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate  # noqa: NB003
+from pipeline_lib.masking.hash_based import hash_value  # noqa: NB003
+from pipeline_lib.masking.redaction import redact_message_body  # noqa: NB003
 
 # COMMAND ----------
 
@@ -140,8 +143,6 @@ leads = (
 # DBTITLE 1,Mascarar Dados Sensiveis (distribuido via pandas_udf)
 # T5: era `leads.collect()` + pandas (OOM em ~10x volume). Agora cada
 # executor aplica masking no batch pandas que recebe — escala linear.
-import pandas as pd
-from pyspark.sql.functions import pandas_udf
 
 
 def _safe_map(arr, fn):

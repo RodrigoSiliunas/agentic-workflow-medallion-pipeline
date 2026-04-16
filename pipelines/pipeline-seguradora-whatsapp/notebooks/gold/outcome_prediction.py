@@ -21,19 +21,21 @@
 # COMMAND ----------
 
 # DBTITLE 1,Imports e Setup
-import json
-import logging
-import os
-import sys
-import time
+# Imports ficam em cell 2 porque cell 1 faz `%pip install` (pip install
+# precisa rodar ANTES dos imports — restart do kernel implicito).
+import json  # noqa: NB003
+import logging  # noqa: NB003
+import os  # noqa: NB003
+import sys  # noqa: NB003
+import time  # noqa: NB003
 
-import numpy as np
-from pyspark.sql import Window
-from pyspark.sql import functions as F
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+import numpy as np  # noqa: NB003
+from pyspark.sql import Window  # noqa: NB003
+from pyspark.sql import functions as F  # noqa: NB003
+from sklearn.linear_model import LogisticRegression  # noqa: NB003
+from sklearn.metrics import accuracy_score, classification_report  # noqa: NB003
+from sklearn.model_selection import train_test_split  # noqa: NB003
+from sklearn.preprocessing import LabelEncoder  # noqa: NB003
 
 # Auto-detect repo path from this notebook's location
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
@@ -41,7 +43,7 @@ _repo_root = "/".join(_nb_path.split("/")[:4])
 PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
 sys.path.insert(0, PIPELINE_ROOT)
 
-from pipeline_lib.storage import S3Lake
+from pipeline_lib.storage import S3Lake  # noqa: NB003
 
 # COMMAND ----------
 

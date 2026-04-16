@@ -3,15 +3,26 @@
 # MAGIC # Bronze Layer - Raw Data Ingestion
 # MAGIC Ingestão de dados brutos do WhatsApp para camada Bronze
 
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType
-from pyspark.sql.functions import col, current_timestamp, lit
-from delta import DeltaTable
 import logging
+import sys
+
+from delta import DeltaTable
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, current_timestamp, lit
+from pyspark.sql.types import StringType, StructField, StructType
 
 # Setup
 spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
 logger = logging.getLogger(__name__)
+
+# Auto-detect repo path para importar pipeline_lib
+_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/".join(_nb_path.split("/")[:4])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.schema import conform_to_schema
+from pipeline_lib.validation import delta_row_count
 
 # Configuration
 SOURCE_PATH = "/mnt/landing/whatsapp/conversations"
@@ -44,35 +55,6 @@ EXPECTED_SCHEMA = StructType([
     StructField("metadata", StringType(), True)
 ])
 
-def validate_and_conform_schema(df, expected_schema):
-    """
-    Valida e conforma o DataFrame ao schema esperado.
-    Remove colunas extras e adiciona colunas faltantes com null.
-    """
-    expected_cols = [field.name for field in expected_schema.fields]
-    actual_cols = df.columns
-    
-    # Log colunas extras detectadas
-    extra_cols = set(actual_cols) - set(expected_cols)
-    if extra_cols:
-        logger.warning(f"Colunas extras detectadas e serão removidas: {extra_cols}")
-        # Remove chaos columns ou qualquer coluna não esperada
-        for col_name in extra_cols:
-            if col_name.startswith("_chaos_"):
-                logger.error(f"CHAOS MODE: Coluna de teste detectada: {col_name}")
-                df = df.drop(col_name)
-    
-    # Adiciona colunas faltantes
-    missing_cols = set(expected_cols) - set(actual_cols)
-    for col_name in missing_cols:
-        logger.warning(f"Coluna faltante será adicionada com NULL: {col_name}")
-        df = df.withColumn(col_name, lit(None).cast(StringType()))
-    
-    # Reordena e seleciona apenas colunas esperadas
-    df = df.select(*expected_cols)
-    
-    return df
-
 def ingest_to_bronze():
     try:
         # Chaos mode: injetar falha controlada para testar Observer Agent
@@ -91,8 +73,8 @@ def ingest_to_bronze():
             .option("inferSchema", "false") \
             .json(SOURCE_PATH)
         
-        # Validação e conformação de schema
-        df_conformed = validate_and_conform_schema(df_raw, EXPECTED_SCHEMA)
+        # Validação e conformação de schema (pipeline_lib — testado)
+        df_conformed = conform_to_schema(df_raw, EXPECTED_SCHEMA)
         
         # Adiciona metadados de ingestão
         df_bronze = df_conformed \

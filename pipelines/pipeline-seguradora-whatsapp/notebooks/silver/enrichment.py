@@ -17,6 +17,7 @@ import os
 import sys
 import time
 
+from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 # Auto-detect repo path from this notebook's location
@@ -61,7 +62,6 @@ df = spark.table(SILVER_MESSAGES)
 # T5: F.first() sem orderBy era nao-deterministico. Separamos agregacoes
 # puras (count/sum/avg) de "pegar a primeira mensagem por conversation_id"
 # que agora usa Window explicita ordenada por timestamp ascendente.
-from pyspark.sql import Window
 
 # Agregacoes puras — totalmente determinísticas independente de ordem
 aggs = df.groupBy("conversation_id").agg(
