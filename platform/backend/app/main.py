@@ -32,6 +32,7 @@ from app.middleware.security_headers import (
     DEFAULT_CSP_PROD,
     SecurityHeadersMiddleware,
 )
+from app.services.databricks_service import DatabricksService
 from app.services.omni_service import OmniService
 
 logger = structlog.get_logger()
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError):
             await poller_task
     await OmniService.close()
+    await DatabricksService.close()
 
 
 app = FastAPI(
