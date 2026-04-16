@@ -20,10 +20,12 @@ from databricks.sdk.service.jobs import (
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 
 OBSERVER_JOB_NAME = "workflow_observer_agent"
 
 
+@register_saga_step("observer")
 class ObserverStep:
     step_id = "observer"
 

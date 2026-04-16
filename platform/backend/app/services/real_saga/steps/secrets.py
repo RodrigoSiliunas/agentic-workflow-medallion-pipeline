@@ -14,6 +14,7 @@ from databricks.sdk.service.workspace import ScopeBackendType
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 
 _SECRETS_FROM_CREDENTIALS: dict[str, str] = {
     # databricks secret key -> attribute no DeploymentCredentials
@@ -31,6 +32,7 @@ _SECRETS_FROM_ENV_VARS: dict[str, str] = {
 }
 
 
+@register_saga_step("secrets")
 class SecretsStep:
     step_id = "secrets"
 

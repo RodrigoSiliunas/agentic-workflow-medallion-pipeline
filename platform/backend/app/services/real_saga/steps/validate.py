@@ -19,8 +19,10 @@ import httpx
 from app.services.real_saga.aws_client import boto3_session
 from app.services.real_saga.base import CredentialMissingError, StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 
 
+@register_saga_step("validate")
 class ValidateStep:
     step_id = "validate"
 

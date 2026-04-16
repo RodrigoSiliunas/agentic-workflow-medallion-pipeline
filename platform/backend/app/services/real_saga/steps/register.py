@@ -8,8 +8,10 @@ emitir um log de confirmacao visivel no UI.
 from __future__ import annotations
 
 from app.services.real_saga.base import StepContext
+from app.services.real_saga.registry import register_saga_step
 
 
+@register_saga_step("register")
 class RegisterStep:
     step_id = "register"
 

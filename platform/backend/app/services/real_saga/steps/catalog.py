@@ -22,11 +22,13 @@ from databricks.sdk.service.sql import StatementState
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 
 _SCHEMAS = ["bronze", "silver", "gold", "pipeline", "observer"]
 _IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
+@register_saga_step("catalog")
 class CatalogStep:
     step_id = "catalog"
 

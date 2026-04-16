@@ -15,6 +15,7 @@ from databricks.sdk.service.jobs import RunLifeCycleState
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 
 _POLL_TIMEOUT_SECONDS = 1800  # 30min — cobre o timeout_seconds do pipeline (3600s) parcialmente
 _POLL_INTERVAL_INITIAL = 10
@@ -27,6 +28,7 @@ _TERMINAL = {
 }
 
 
+@register_saga_step("trigger")
 class TriggerStep:
     step_id = "trigger"
 

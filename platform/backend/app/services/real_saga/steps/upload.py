@@ -13,8 +13,10 @@ from databricks.sdk.errors import ResourceAlreadyExists
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 
 
+@register_saga_step("upload")
 class UploadStep:
     step_id = "upload"
 

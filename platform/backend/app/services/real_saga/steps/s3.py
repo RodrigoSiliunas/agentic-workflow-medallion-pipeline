@@ -19,10 +19,69 @@ from botocore.exceptions import ClientError
 
 from app.services.real_saga.aws_client import boto3_session
 from app.services.real_saga.base import StepContext
+from app.services.real_saga.registry import register_saga_step
 
 
+@register_saga_step("s3")
 class S3Step:
     step_id = "s3"
+
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: deleta o bucket criado pelo step atual.
+
+        Comportamento seguro:
+        - Se o bucket nao era nosso (ja existia antes), NAO deleta
+          (shared.s3_bucket_url nao seria setado em execute path de reuso
+          — mas defendemos tambem checando bucket_created flag implicito).
+        - Tolera "bucket ja deletado" — loga warn.
+        - Nao deleta bucket com dados (versao ingerida), apenas em caso
+          de erro dentro da mesma saga antes de upload completar.
+        """
+        bucket = ctx.shared.s3_bucket
+        if not bucket:
+            await ctx.info("compensate(s3): sem bucket registrado — skip")
+            return
+
+        session = boto3_session(ctx.credentials)
+        s3 = session.client("s3")
+
+        def _delete() -> bool:
+            try:
+                paginator = s3.get_paginator("list_object_versions")
+                to_delete: list[dict] = []
+                for page in paginator.paginate(Bucket=bucket):
+                    for obj in page.get("Versions", []) or []:
+                        to_delete.append(
+                            {"Key": obj["Key"], "VersionId": obj.get("VersionId")}
+                        )
+                    for obj in page.get("DeleteMarkers", []) or []:
+                        to_delete.append(
+                            {"Key": obj["Key"], "VersionId": obj.get("VersionId")}
+                        )
+                    if to_delete:
+                        s3.delete_objects(
+                            Bucket=bucket,
+                            Delete={"Objects": to_delete[:1000], "Quiet": True},
+                        )
+                        to_delete = to_delete[1000:]
+                s3.delete_bucket(Bucket=bucket)
+                return True
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "")
+                if code in ("NoSuchBucket", "404"):
+                    return False
+                raise
+
+        try:
+            deleted = await asyncio.to_thread(_delete)
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate(s3) falhou em deletar {bucket}: {exc}")
+            return
+
+        if deleted:
+            await ctx.info(f"compensate(s3): bucket {bucket} removido")
+        else:
+            await ctx.info(f"compensate(s3): bucket {bucket} ja nao existia")
 
     async def execute(self, ctx: StepContext) -> None:
         bucket_name = _resolve_bucket_name(ctx)

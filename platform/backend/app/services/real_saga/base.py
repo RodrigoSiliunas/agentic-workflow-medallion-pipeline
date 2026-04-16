@@ -121,8 +121,32 @@ class StepContext:
 
 
 class SagaStep(Protocol):
-    """Contrato de um step do RealSagaRunner."""
+    """Contrato de um step do RealSagaRunner.
+
+    `execute` é obrigatório. `compensate` é opcional (duck-typed) —
+    o runner checa via `hasattr` antes de invocar. Steps com efeitos
+    colaterais externos (criação de S3, IAM, secret scope, catalog)
+    devem definir `compensate` pra habilitar rollback na saga.
+    """
 
     step_id: str
 
     async def execute(self, ctx: StepContext) -> None: ...
+
+
+class SagaStepBase:
+    """Base conveniente — implementa `compensate` como no-op documentado.
+
+    Subclasses com rollback não-trivial devem sobrescrever. Override
+    deve ser idempotente (tolerar "recurso ja removido" sem raise).
+    """
+
+    step_id: str = ""
+
+    async def execute(self, ctx: StepContext) -> None:  # pragma: no cover
+        raise NotImplementedError
+
+    async def compensate(self, ctx: StepContext) -> None:
+        await ctx.info(
+            f"compensate({self.step_id}): no-op (step idempotente)"
+        )

@@ -21,6 +21,7 @@ from databricks.sdk.service.jobs import (
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
+from app.services.real_saga.registry import register_saga_step
 from app.services.real_saga.steps.observer import _upsert_job
 
 WORKFLOW_JOB_NAME = "medallion_pipeline_whatsapp"
@@ -42,6 +43,7 @@ def _to_quartz_cron(cron: str) -> str:
     return cron  # ja esta em Quartz (6+ campos)
 
 
+@register_saga_step("workflow")
 class WorkflowStep:
     step_id = "workflow"
 

@@ -6,8 +6,8 @@ via SSE por clientes conectados em `/deployments/{id}/events`.
 """
 
 import asyncio
+import contextlib
 import uuid
-from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.session import AsyncSessionLocal
 from app.models.deployment import Deployment, DeploymentLog, DeploymentStep
 from app.models.pipeline import Pipeline
+from app.services.log_emitter import LogEmitter
+from app.services.pubsub_backend import InMemoryPubSub, get_pubsub
 from app.services.real_saga.base import DeploymentCredentials
 from app.services.saga_runners import MOCK_STEP_LOGS, SagaStepRunner, get_runner
 
@@ -83,56 +85,64 @@ SAGA_BLUEPRINT: list[dict[str, str]] = [
 STEP_LOGS = MOCK_STEP_LOGS
 
 
-# In-memory pub/sub — um dict mapeando deployment_id -> lista de asyncio.Queue
-_subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
-# Cancellation events por deployment
+# Cancellation events por deployment (sempre in-memory local ao worker —
+# cancel_event so faz sentido no worker que iniciou a saga).
 _cancellations: dict[str, asyncio.Event] = {}
+
+# Fallback in-memory compat com tests sync que chamam subscribe/unsubscribe
+# diretamente (sem async). get_pubsub() pode retornar Redis em producao,
+# mas os tests antigos usam sync API. Mantemos esse dict por compat.
+_fallback_inmem = InMemoryPubSub()
 
 
 def subscribe(deployment_id: str) -> asyncio.Queue[dict[str, Any]]:
-    """Cria uma queue para consumir eventos desse deployment."""
-    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1000)
-    _subscribers[deployment_id].append(queue)
-    return queue
+    """API sync legacy — cria queue no backend in-memory local.
+
+    Para SSE moderno use `subscribe_async(deployment_id)` (async gen)
+    que respeita o backend selecionado (Redis ou in-memory).
+    """
+    return _fallback_inmem.register(deployment_id)
 
 
 def unsubscribe(deployment_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
-    if queue in _subscribers.get(deployment_id, []):
-        _subscribers[deployment_id].remove(queue)
-    if not _subscribers[deployment_id]:
-        _subscribers.pop(deployment_id, None)
+    # Chamado sync; schedule no loop corrente se possivel.
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    coro = _fallback_inmem.unsubscribe(deployment_id, queue)
+    if loop and loop.is_running():
+        asyncio.ensure_future(coro)
+    else:
+        # Sem loop — tenta executar sync via asyncio.run (safe fora de loop).
+        with contextlib.suppress(RuntimeError):
+            asyncio.run(coro)
+
+
+async def subscribe_async(deployment_id: str):
+    """API async moderna — usa o backend pub/sub configurado (Redis ou in-mem)."""
+    backend = await get_pubsub()
+    async for event in backend.subscribe(deployment_id):
+        yield event
 
 
 async def _publish(deployment_id: str, event: dict[str, Any]) -> None:
-    """Publica um evento em todas as queues desse deployment (non-blocking).
+    """Publica em ambos: backend pub/sub configurado + fallback in-memory.
 
-    Para eventos terminais (complete, error, status_change terminal), garante
-    entrega mesmo sob backpressure — dropa o evento mais antigo se a queue
-    estiver cheia, pra abrir espaco pro terminal event.
+    O fallback in-memory garante que testes sync (e a API legacy
+    `subscribe()`) continuam funcionando. Em producao com Redis, ambos
+    recebem (fanout local redundante sem custo relevante).
     """
-    is_terminal = event.get("type") in ("complete", "error") or (
-        event.get("type") == "status_change"
-        and event.get("data", {}).get("status") in ("success", "failed", "cancelled")
-    )
-    for queue in list(_subscribers.get(deployment_id, [])):
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            if is_terminal:
-                # Forca entrega: dropa o mais antigo pra abrir espaco
-                try:
-                    queue.get_nowait()
-                    queue.put_nowait(event)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    logger.warning(
-                        "sse queue full, could not deliver terminal event",
-                        deployment_id=deployment_id,
-                    )
-            else:
-                logger.warning(
-                    "sse queue full, dropping non-terminal event",
-                    deployment_id=deployment_id,
-                )
+    backend = await get_pubsub()
+    try:
+        await backend.publish(deployment_id, event)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "pubsub backend publish raised",
+            deployment_id=deployment_id,
+            error=str(exc),
+        )
+    await _fallback_inmem.publish(deployment_id, event)
 
 
 def request_cancel(deployment_id: str) -> None:
@@ -217,45 +227,16 @@ async def run_saga(
                 step_start_ms = _now_ms()
                 log_lock = asyncio.Lock()
 
-                async def emit_log(
-                    level: str, message: str, step_id: str | None = None
-                ) -> None:
-                    """Persiste log no DB e publica no SSE.
-
-                    Lock garante que flushes concorrentes (ex: asyncio.gather
-                    no validate step) nao crashem o SQLAlchemy session.
-
-                    Performance: usa flush (sem commit) pra obter o ID e
-                    publica imediatamente no SSE com timestamp local. O
-                    commit real acontece no boundary de step (apos execute_step
-                    retornar) — reduz de ~100 commits/deploy pra ~10.
-                    """
-                    if cancel_event.is_set():
-                        return
-                    async with log_lock:  # noqa: B023
-                        log = DeploymentLog(
-                            deployment_id=deployment_id,
-                            level=level,
-                            message=message,
-                            step_id=step_id,
-                        )
-                        db.add(log)
-                        await db.flush()
-                    log_ts = datetime.now(UTC).isoformat()
-                    await _publish(
-                        dep_id_str,
-                        {
-                            "type": "log",
-                            "deployment_id": dep_id_str,
-                            "data": {
-                                "id": str(log.id),
-                                "level": level,
-                                "message": message,
-                                "step_id": step_id,
-                                "timestamp": log_ts,
-                            },
-                        },
-                    )
+                # T4 Phase 5: LogEmitter substitui o closure com noqa: B023.
+                # Deps explícitas, testável isolado, mesma semantica de
+                # batching (flush por log, commit no boundary do step).
+                emit_log = LogEmitter(
+                    db=db,
+                    deployment_id=deployment_id,
+                    cancel_event=cancel_event,
+                    publish=_publish,
+                    log_lock=log_lock,
+                )
 
                 try:
                     await step_runner.execute_step(
@@ -346,9 +327,19 @@ async def run_saga(
             )
         except asyncio.CancelledError:
             await _mark_cancelled(db, deployment)
+            # Melhor effort compensate ao cancelar tambem — deixa recursos
+            # criados pra tras seria cost leak.
+            await _run_compensation_safe(step_runner, dep_id_str)
             raise
         except Exception as exc:
             logger.exception("saga run failed", deployment_id=dep_id_str)
+            # T4: roda compensate dos steps que ja completaram com sucesso
+            # ANTES de marcar o deployment como failed — garante que
+            # recursos orfaos de S3/IAM/Secret Scope/Catalog sejam
+            # limpos na mesma request. Erros dentro de compensate nao
+            # abortam o rollback (logados, continuam).
+            await _run_compensation_safe(step_runner, dep_id_str)
+
             try:
                 deployment = await _load_deployment(db, deployment_id)
                 if deployment:
@@ -373,7 +364,38 @@ async def run_saga(
             except Exception:
                 pass
         finally:
+            # T4: cleanup unconditional — evita memory leak de deploys
+            # parciais. Chamamos `cleanup_shared_state` se o runner expoe
+            # o metodo (RealSagaRunner sim; MockSagaRunner nao tem estado
+            # compartilhado pra liberar).
+            cleanup = getattr(step_runner, "cleanup_shared_state", None)
+            if callable(cleanup):
+                try:
+                    cleanup(dep_id_str)
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "cleanup_shared_state raised",
+                        deployment_id=dep_id_str,
+                    )
             _cancellations.pop(dep_id_str, None)
+
+
+async def _run_compensation_safe(step_runner: SagaStepRunner, dep_id_str: str) -> None:
+    """Chama `step_runner.run_compensation` quando disponivel, tolerando erro.
+
+    Runners mock nao tem rollback — metodo ausente = no-op. Exceptions
+    durante compensate sao logadas mas nao propagadas, pra nao mascarar
+    a exception original da saga.
+    """
+    runner_compensate = getattr(step_runner, "run_compensation", None)
+    if not callable(runner_compensate):
+        return
+    try:
+        await runner_compensate(dep_id_str)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "compensation chain raised", deployment_id=dep_id_str
+        )
 
 
 async def _load_deployment(db: AsyncSession, deployment_id: uuid.UUID) -> Deployment | None:
