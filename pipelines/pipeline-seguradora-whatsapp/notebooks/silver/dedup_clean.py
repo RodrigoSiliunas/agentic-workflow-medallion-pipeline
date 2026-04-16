@@ -26,6 +26,7 @@ PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
 sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.storage import S3Lake
+from pipeline_lib.validation import delta_row_count
 
 # COMMAND ----------
 
@@ -55,7 +56,8 @@ start_time = time.time()
 
 # DBTITLE 1,Ler Bronze
 df = spark.table(BRONZE_TABLE)
-bronze_count = df.count()
+# T5: usa Delta metadata — sem full scan pre-dedup
+bronze_count = delta_row_count(spark, BRONZE_TABLE)
 logger.info(f"Bronze: {bronze_count} linhas")
 
 # CHAOS: Injeta NULLs no conversation_id que quebram o dedup/groupBy
@@ -94,9 +96,8 @@ w = Window.partitionBy(
 # Mantem apenas o registro de maior prioridade (rank 1)
 df_dedup = df.withColumn("_rank", F.row_number().over(w)).filter(F.col("_rank") == 1).drop("_rank")
 
-dedup_count = df_dedup.count()
-removed = bronze_count - dedup_count
-logger.info(f"Dedup: {removed} duplicatas removidas. {dedup_count} linhas restantes.")
+# T5: nao conta df_dedup aqui (força full scan duplicado do plan de dedup).
+# A contagem vem do metadata Delta apos o write, sem custo adicional.
 
 # COMMAND ----------
 
@@ -147,14 +148,16 @@ df_parsed = df_clean.withColumns(
     .saveAsTable(SILVER_TABLE)
 )
 
-silver_count = spark.table(SILVER_TABLE).count()
+# T5: row count via Delta metadata (O(1)) em vez de count() pos-write.
+silver_count = delta_row_count(spark, SILVER_TABLE)
+removed = bronze_count - silver_count
 
 # Backup em Parquet no S3
 lake.write_parquet(df_parsed, "silver/messages_clean/")
 logger.info("Parquet uploaded para S3 silver/messages_clean/")
 
 duration = round(time.time() - start_time, 2)
-logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s")
+logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s ({removed} dedup removidas)")
 
 # COMMAND ----------
 

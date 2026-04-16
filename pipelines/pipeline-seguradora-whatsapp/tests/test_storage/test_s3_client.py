@@ -147,6 +147,94 @@ class TestReadParquetNative:
 
         assert spark.read_calls == ["s3a://my-bucket/silver/clean"]
 
+
+# ================================================================
+# write_parquet (T5 — native Spark writer)
+# ================================================================
+
+
+class _FakeParquetWriter:
+    def __init__(self, tracker: dict):
+        self._tracker = tracker
+        self._mode: str | None = None
+
+    def mode(self, mode: str):
+        self._mode = mode
+        return self
+
+    def parquet(self, path: str) -> None:
+        self._tracker["mode"] = self._mode
+        self._tracker["path"] = path
+
+
+class _FakeDataFrame:
+    def __init__(self, tracker: dict):
+        self._tracker = tracker
+
+    @property
+    def write(self) -> _FakeParquetWriter:
+        return _FakeParquetWriter(self._tracker)
+
+
+class TestWriteParquet:
+    def test_uses_native_spark_writer_with_s3a_path(self):
+        spark = FakeSpark()
+        lake = _make_lake(spark=spark)
+        tracker: dict = {}
+        df = _FakeDataFrame(tracker)
+
+        s3_url = lake.write_parquet(df, "silver/clean/")
+
+        assert s3_url == "s3a://my-bucket/silver/clean"
+        assert tracker == {"mode": "overwrite", "path": "s3a://my-bucket/silver/clean"}
+
+    def test_strips_trailing_slash(self):
+        spark = FakeSpark()
+        lake = _make_lake(spark=spark)
+        tracker: dict = {}
+
+        lake.write_parquet(_FakeDataFrame(tracker), "gold/metrics//")
+
+        assert tracker["path"] == "s3a://my-bucket/gold/metrics"
+
+    def test_configures_spark_credentials_before_write(self):
+        spark = FakeSpark()
+        lake = _make_lake(spark=spark)
+
+        lake.write_parquet(_FakeDataFrame({}), "silver/x/")
+
+        # Write DEVE ter configurado spark.conf (credenciais s3a)
+        assert "spark.hadoop.fs.s3a.access.key" in spark.conf.settings
+
+    def test_filename_and_partition_size_ignored_for_compat(self):
+        """filename e partition_size eram params antigos — hoje ignorados."""
+        spark = FakeSpark()
+        lake = _make_lake(spark=spark)
+        tracker: dict = {}
+
+        lake.write_parquet(
+            _FakeDataFrame(tracker),
+            "silver/clean/",
+            filename="specific.parquet",
+            partition_size=10,
+        )
+
+        # Path continua sendo o prefix; filename nao apareceu na URL
+        assert tracker["path"] == "s3a://my-bucket/silver/clean"
+
+    def test_does_not_trigger_count_or_repartition(self):
+        """DataFrame dummy so expoe .write — se o codigo chamasse count()
+        ou repartition(), o teste explodiria com AttributeError."""
+        spark = FakeSpark()
+        lake = _make_lake(spark=spark)
+        tracker: dict = {}
+
+        # _FakeDataFrame NAO implementa count/repartition/randomSplit —
+        # se o metodo antigo ainda rodasse, AttributeError.
+        lake.write_parquet(_FakeDataFrame(tracker), "bronze/raw/")
+
+        assert tracker == {"mode": "overwrite", "path": "s3a://my-bucket/bronze/raw"}
+
     def test_empty_prefix_reads_bucket_root(self):
         spark = FakeSpark()
         lake = _make_lake(spark=spark)

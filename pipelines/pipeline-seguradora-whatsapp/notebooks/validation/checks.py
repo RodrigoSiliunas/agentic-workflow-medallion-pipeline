@@ -15,9 +15,20 @@
 # DBTITLE 1,Imports e Setup
 import logging
 import re
+import sys
 import time
 
 from pyspark.sql import functions as F
+
+# Auto-detect repo path para importar pipeline_lib
+_nb_path = (
+    dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+)
+_repo_root = "/".join(_nb_path.split("/")[:4])
+PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
+sys.path.insert(0, PIPELINE_ROOT)
+
+from pipeline_lib.validation import delta_row_count
 
 logger = logging.getLogger("validation.checks")
 
@@ -57,10 +68,9 @@ if chaos_mode == "validation_strict":
 # COMMAND ----------
 
 # DBTITLE 1,Bronze Checks
-# Verifica se a tabela Bronze existe e tem dados
+# Verifica se a tabela Bronze existe e tem dados (via Delta metadata — O(1))
 try:
-    bronze = spark.table(f"{CATALOG}.bronze.conversations")
-    bronze_count = bronze.count()
+    bronze_count = delta_row_count(spark, f"{CATALOG}.bronze.conversations")
 
     if bronze_count == 0:
         errors.append("Bronze vazia (0 linhas)")
@@ -76,7 +86,7 @@ except Exception as e:
 # Verifica messages_clean: contagem, dedup, e PII residual
 try:
     messages = spark.table(f"{CATALOG}.silver.messages_clean")
-    messages_count = messages.count()
+    messages_count = delta_row_count(spark, f"{CATALOG}.silver.messages_clean")
 
     # Se Silver tem mais linhas que Bronze, dedup pode nao ter funcionado
     if bronze_count > 0 and messages_count >= bronze_count:
@@ -118,7 +128,7 @@ except Exception as e:
 # Verifica leads_profile: existencia e colunas de mascaramento obrigatorias
 try:
     leads = spark.table(f"{CATALOG}.silver.leads_profile")
-    leads_count = leads.count()
+    leads_count = delta_row_count(spark, f"{CATALOG}.silver.leads_profile")
     logger.info(f"Silver leads_profile: {leads_count} leads")
 
     # Colunas de mascaramento sao obrigatorias -- sem elas, PII pode vazar
@@ -132,8 +142,9 @@ except Exception as e:
 
 # Verifica conversations_enriched: existencia basica
 try:
-    convs = spark.table(f"{CATALOG}.silver.conversations_enriched")
-    convs_count = convs.count()
+    convs_count = delta_row_count(
+        spark, f"{CATALOG}.silver.conversations_enriched"
+    )
     logger.info(f"Silver conversations_enriched: {convs_count} conversas")
 except Exception as e:
     errors.append(f"Silver conversations_enriched nao existe: {e}")
@@ -152,7 +163,8 @@ gold_tables = [
 for table_name in gold_tables:
     full_name = f"{CATALOG}.gold.{table_name}"
     try:
-        count = spark.table(full_name).count()
+        # T5: Delta metadata no lugar de count() — O(1) em vez de O(n).
+        count = delta_row_count(spark, full_name)
         if count == 0:
             warnings.append(f"Gold {table_name} vazia (0 linhas)")
         else:
@@ -161,10 +173,14 @@ for table_name in gold_tables:
         errors.append(f"Gold {table_name} nao existe: {e}")
 
 # Verifica range do lead_score (deve ser 0-100)
+# T5: single agg pra min+max — antes eram duas passadas.
 try:
-    scores = spark.table(f"{CATALOG}.gold.lead_scoring")
-    min_score = scores.agg(F.min("lead_score")).first()[0]
-    max_score = scores.agg(F.max("lead_score")).first()[0]
+    scores_agg = (
+        spark.table(f"{CATALOG}.gold.lead_scoring")
+        .agg(F.min("lead_score").alias("mn"), F.max("lead_score").alias("mx"))
+        .first()
+    )
+    min_score, max_score = scores_agg["mn"], scores_agg["mx"]
     if min_score is not None and (min_score < 0 or max_score > 100):
         errors.append(f"Lead scores fora do range 0-100: min={min_score}, max={max_score}")
 except Exception:
@@ -172,9 +188,12 @@ except Exception:
 
 # Verifica range do sentiment_score (deve ser -1.0 a +1.0)
 try:
-    sent = spark.table(f"{CATALOG}.gold.sentiment")
-    min_s = sent.agg(F.min("sentiment_score")).first()[0]
-    max_s = sent.agg(F.max("sentiment_score")).first()[0]
+    sent_agg = (
+        spark.table(f"{CATALOG}.gold.sentiment")
+        .agg(F.min("sentiment_score").alias("mn"), F.max("sentiment_score").alias("mx"))
+        .first()
+    )
+    min_s, max_s = sent_agg["mn"], sent_agg["mx"]
     if min_s is not None and (min_s < -1.0 or max_s > 1.0):
         errors.append(f"Sentiment fora do range -1/+1: min={min_s}, max={max_s}")
 except Exception:

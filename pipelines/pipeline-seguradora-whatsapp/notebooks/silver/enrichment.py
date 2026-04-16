@@ -58,31 +58,44 @@ df = spark.table(SILVER_MESSAGES)
 # COMMAND ----------
 
 # DBTITLE 1,Agregar Metricas por Conversa
-# Calcula metricas agregadas para cada conversation_id:
-# - Contagens: total, inbound, outbound
-# - Timestamps: primeiro e ultimo contato
-# - Contexto: outcome, campanha, agente, cidade, estado, device, lead_source
-# - Performance: response time medio, mensagens em horario comercial
-# - Tipos: lista de message_types usados na conversa
-conversations = df.groupBy("conversation_id").agg(
+# T5: F.first() sem orderBy era nao-deterministico. Separamos agregacoes
+# puras (count/sum/avg) de "pegar a primeira mensagem por conversation_id"
+# que agora usa Window explicita ordenada por timestamp ascendente.
+from pyspark.sql import Window
+
+# Agregacoes puras — totalmente determinísticas independente de ordem
+aggs = df.groupBy("conversation_id").agg(
     F.count("*").alias("total_messages"),
     F.sum(F.when(F.col("direction") == "inbound", 1).otherwise(0)).alias("inbound_count"),
     F.sum(F.when(F.col("direction") == "outbound", 1).otherwise(0)).alias("outbound_count"),
     F.min("timestamp").alias("first_message_at"),
     F.max("timestamp").alias("last_message_at"),
-    F.first("conversation_outcome").alias("outcome"),
-    F.first("campaign_id").alias("campaign_id"),
-    F.first("agent_id").alias("agent_id"),
-    F.first("meta_city").alias("city"),
-    F.first("meta_state").alias("state"),
-    F.first("meta_device").alias("device"),
-    F.first("meta_lead_source").alias("lead_source"),
     F.avg("meta_response_time_sec").alias("avg_response_time_sec"),
     F.sum(
         F.when(F.col("meta_is_business_hours") == True, 1).otherwise(0)  # noqa: E712
     ).alias("business_hours_messages"),
     F.collect_set("message_type").alias("message_types_used"),
 )
+
+# Campos pegos da PRIMEIRA mensagem da conversa (por timestamp asc).
+# Window.orderBy + row_number = escolha deterministica entre runs.
+first_msg_w = Window.partitionBy("conversation_id").orderBy(F.col("timestamp").asc())
+first_msg = (
+    df.withColumn("_rn", F.row_number().over(first_msg_w))
+    .filter(F.col("_rn") == 1)
+    .select(
+        F.col("conversation_id"),
+        F.col("conversation_outcome").alias("outcome"),
+        F.col("campaign_id").alias("campaign_id"),
+        F.col("agent_id").alias("agent_id"),
+        F.col("meta_city").alias("city"),
+        F.col("meta_state").alias("state"),
+        F.col("meta_device").alias("device"),
+        F.col("meta_lead_source").alias("lead_source"),
+    )
+)
+
+conversations = aggs.join(first_msg, on="conversation_id", how="left")
 
 # Calcula duracao da conversa em minutos (diferenca entre ultima e primeira mensagem)
 conversations = conversations.withColumn(

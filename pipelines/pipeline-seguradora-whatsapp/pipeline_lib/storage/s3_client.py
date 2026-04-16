@@ -147,54 +147,38 @@ class S3Lake:
         df,
         s3_prefix: str,
         filename: str = "data.parquet",
-        partition_size: int = WRITE_PARTITION_SIZE,
+        partition_size: int = WRITE_PARTITION_SIZE,  # noqa: ARG002 — compat
     ) -> str:
-        """Converte Spark DF para parquet e faz upload para S3.
+        """Escreve Spark DF como parquet no S3 via writer nativo do Spark.
 
-        Usa toPandas() em partições para evitar OOM no driver.
-        Cada partição é convertida separadamente e enviada ao S3.
+        T5 (PERF-02): era `count()` + `repartition()` + `randomSplit()` +
+        N `toPandas()` — 3 shuffles + materialização no driver. Agora
+        escrita distribuída direto pelos executors via `s3a://`.
+
+        Produz um diretório com `part-XXXXX-*.parquet`. `filename` não
+        controla mais o nome; o Spark gerencia. Se o chamador precisa
+        de UM arquivo parquet unico, use `toPandas()` + `_upload_pandas`
+        explicitamente (pequenos datasets apenas).
 
         Args:
             df: Spark DataFrame para exportar.
-            s3_prefix: Prefixo S3 (ex: "silver/clean/").
-            filename: Nome do arquivo parquet.
-            partition_size: Máximo de linhas por partição (default 50k).
+            s3_prefix: Prefixo S3 (ex: "silver/clean/"). Vira o path
+                do diretório onde o Spark escreve os part files.
+            filename: Mantido por retrocompatibilidade — ignorado pelo
+                writer Spark nativo.
+            partition_size: Mantido por compat — ignorado (Spark usa
+                o número de partições atual do DataFrame).
 
         Returns:
-            URL S3 do arquivo (ou último arquivo se particionado).
+            URL `s3a://...` do diretório onde o parquet foi escrito.
         """
-        total_rows = df.count()
+        # Assegura credenciais no SparkContext pra o writer s3a funcionar.
+        self.configure_spark_s3()
 
-        if total_rows <= partition_size:
-            # Dataset pequeno — conversão direta (mais rápido)
-            pdf = df.toPandas()
-            return self._upload_pandas(pdf, s3_prefix, filename)
-
-        # Dataset grande — particiona para evitar OOM
-        logger.info(
-            f"Write particionado: {total_rows} rows em "
-            f"chunks de {partition_size}"
-        )
-        num_partitions = (total_rows // partition_size) + 1
-        df_repartitioned = df.repartition(num_partitions)
-        partitions = df_repartitioned.randomSplit(
-            [1.0] * num_partitions
-        )
-
-        last_url = ""
-        for i, partition_df in enumerate(partitions):
-            pdf = partition_df.toPandas()
-            if pdf.empty:
-                continue
-            part_name = (
-                f"part-{i:05d}-{filename}"
-                if len(partitions) > 1
-                else filename
-            )
-            last_url = self._upload_pandas(pdf, s3_prefix, part_name)
-            logger.info(f"  Partição {i}: {len(pdf)} rows → {part_name}")
-
-        return last_url
+        s3_path = f"s3a://{self._bucket}/{s3_prefix.rstrip('/')}"
+        df.write.mode("overwrite").parquet(s3_path)
+        logger.info(f"write_parquet (spark native) → {s3_path}")
+        return s3_path
 
     def _upload_pandas(
         self, pdf: pd.DataFrame, s3_prefix: str, filename: str

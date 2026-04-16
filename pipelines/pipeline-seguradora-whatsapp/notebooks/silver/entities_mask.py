@@ -137,47 +137,57 @@ leads = (
 
 # COMMAND ----------
 
-# DBTITLE 1,Mascarar Dados Sensiveis
-# Converte para Pandas para aplicar mascaramento item-a-item
-# (UDFs de masking operam em strings individuais, nao em arrays)
+# DBTITLE 1,Mascarar Dados Sensiveis (distribuido via pandas_udf)
+# T5: era `leads.collect()` + pandas (OOM em ~10x volume). Agora cada
+# executor aplica masking no batch pandas que recebe — escala linear.
 import pandas as pd
+from pyspark.sql.functions import pandas_udf
 
-leads_rows = leads.collect()
-leads_pdf = pd.DataFrame([r.asDict() for r in leads_rows])
 
-def safe_map(arr, fn):
-    """Aplica funcao a cada elemento do array, tratando None/vazio."""
-    return [fn(x) for x in (arr or [])] if arr else []
+def _safe_map(arr, fn):
+    """Aplica `fn` a cada elemento do array, tolera None/vazio."""
+    if not arr:
+        return []
+    return [fn(x) for x in arr]
 
-# Aplica mascaramento format-preserving e hash HMAC
-leads_pdf["cpf_masked"] = leads_pdf["cpfs"].apply(lambda a: safe_map(a, mask_cpf))
-leads_pdf["cpf_hash"] = leads_pdf["cpfs"].apply(lambda a: safe_map(a, hash_value))
-leads_pdf["email_masked"] = leads_pdf["emails"].apply(lambda a: safe_map(a, mask_email))
-leads_pdf["phone_masked"] = leads_pdf["phones"].apply(lambda a: safe_map(a, mask_phone))
-leads_pdf["plate_masked"] = leads_pdf["plates"].apply(lambda a: safe_map(a, mask_plate))
 
-# Remove colunas com dados em texto claro (PII)
-leads_pdf = leads_pdf.drop(columns=["cpfs", "emails", "phones", "plates"])
+@pandas_udf(ArrayType(StringType()))
+def mask_cpf_array(arr_series: pd.Series) -> pd.Series:
+    return arr_series.apply(lambda a: _safe_map(a, mask_cpf))
 
-# Schema explicito para evitar NullType em arrays vazios
-from pyspark.sql.types import StructType, StructField, LongType
 
-array_str = ArrayType(StringType())
-array_float = ArrayType(FloatType())
-schema = StructType([
-    StructField("conversation_id", StringType()),
-    StructField("ceps", array_str),
-    StructField("competitors_mentioned", array_str),
-    StructField("prices_mentioned", array_float),
-    StructField("lead_name", StringType()),
-    StructField("lead_phone", StringType()),
-    StructField("cpf_masked", array_str),
-    StructField("cpf_hash", array_str),
-    StructField("email_masked", array_str),
-    StructField("phone_masked", array_str),
-    StructField("plate_masked", array_str),
-])
-leads_masked = spark.createDataFrame(leads_pdf, schema=schema)
+@pandas_udf(ArrayType(StringType()))
+def hash_cpf_array(arr_series: pd.Series) -> pd.Series:
+    return arr_series.apply(lambda a: _safe_map(a, hash_value))
+
+
+@pandas_udf(ArrayType(StringType()))
+def mask_email_array(arr_series: pd.Series) -> pd.Series:
+    return arr_series.apply(lambda a: _safe_map(a, mask_email))
+
+
+@pandas_udf(ArrayType(StringType()))
+def mask_phone_array(arr_series: pd.Series) -> pd.Series:
+    return arr_series.apply(lambda a: _safe_map(a, mask_phone))
+
+
+@pandas_udf(ArrayType(StringType()))
+def mask_plate_array(arr_series: pd.Series) -> pd.Series:
+    return arr_series.apply(lambda a: _safe_map(a, mask_plate))
+
+
+# Aplica mascaramento distribuido. Cada pandas_udf roda em batches —
+# evita `collect()` pro driver.
+leads_masked = (
+    leads
+    .withColumn("cpf_masked", mask_cpf_array(F.col("cpfs")))
+    .withColumn("cpf_hash", hash_cpf_array(F.col("cpfs")))
+    .withColumn("email_masked", mask_email_array(F.col("emails")))
+    .withColumn("phone_masked", mask_phone_array(F.col("phones")))
+    .withColumn("plate_masked", mask_plate_array(F.col("plates")))
+    # Remove colunas com texto claro (PII)
+    .drop("cpfs", "emails", "phones", "plates")
+)
 
 # COMMAND ----------
 

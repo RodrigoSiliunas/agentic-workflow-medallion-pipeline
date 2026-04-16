@@ -98,22 +98,21 @@ def ingest_to_bronze():
         df_bronze = df_conformed \
             .withColumn("_ingestion_timestamp", current_timestamp()) \
             .withColumn("_source_file", lit(SOURCE_PATH))
-        
-        # Log estatísticas
-        total_records = df_bronze.count()
-        logger.info(f"Total de registros a ingerir: {total_records}")
-        
-        # Escreve na tabela Bronze
+
+        # T5: escreve e usa Delta metadata pra rows — sem count() redundante
+        # pre-write (que forçaria full scan do conformed DF).
         df_bronze.write \
             .mode("append") \
             .option("mergeSchema", "false") \
             .saveAsTable(TARGET_TABLE)
-        
-        logger.info(f"Ingestão concluída com sucesso. {total_records} registros gravados em {TARGET_TABLE}")
-        
-        # Validação final
-        final_count = spark.table(TARGET_TABLE).count()
-        logger.info(f"Total de registros na tabela após ingestão: {final_count}")
+
+        # Validação final via Delta transaction log (O(1), sem scan)
+        try:
+            detail = spark.sql(f"DESCRIBE DETAIL {TARGET_TABLE}").collect()[0]
+            final_count = int(detail["numRows"]) if detail["numRows"] is not None else -1
+        except Exception:
+            final_count = spark.table(TARGET_TABLE).count()
+        logger.info(f"Ingestão concluída. {final_count} registros totais em {TARGET_TABLE}")
         
     except Exception as e:
         logger.error(f"Erro durante ingestão Bronze: {str(e)}")
