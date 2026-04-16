@@ -5,7 +5,17 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ## [Unreleased]
 
-Nada pendente neste momento.
+### Added — Prompt injection hardening (T1)
+
+- `_sanitize_for_xml_tag(value, tag)` em `providers/anthropic_provider.py` — envolve inputs não-confiáveis (`error_message`, `stack_trace`, `notebook_code`, `schema_info`, `pipeline_state`) em tags XML e neutraliza tentativas de fechar a tag prematuramente. `SYSTEM_PROMPT` instrui o modelo a tratar o conteúdo das tags como dados.
+- `observer/providers/path_allowlist.py` — `ALLOWED_PATH_PREFIXES` + `DENIED_PATH_PATTERNS`. `GitHubProvider.create_fix_pr` rejeita fixes fora do allowlist (`.github/`, `infra/`, `deploy/`, `terraform/`, `*secret*`, `.env*`, credenciais, chaves privadas, path traversal).
+- `observer/redaction.py` — `PIIRedactor` + `redact()`. Aplicado em `workflow_observer.build_failure_from_run` antes de mandar erro ao LLM e em `github_provider.create_fix_pr` antes de escrever PR body. Cobre CPF, CNPJ, telefone BR, email, Bearer, AKIA, `ghp_`, `sk-ant-`.
+- `_check_forbidden_imports` em `validator.py` — AST walk bloqueia `subprocess`, `socket`, `ctypes`, `pty`, `pickle`, `marshal`, `shutil`, `os.system/popen/execv/remove/unlink/rmdir/_exit`, `eval`, `exec`, `compile`, `__import__`. `validate_fix` roda o check entre syntax e ruff.
+- 70 testes novos: `tests/test_prompt_injection.py` (8), `tests/test_path_allowlist.py` (27), `tests/test_redaction.py` (17), `tests/test_validator_imports.py` (26). Total 191 passando.
+
+### Security
+
+- Fecha chain de exploit descrita em `docs/reviews/2026-04-16-improvement-themes.md#t1` (findings R1-04, R1-05, R1-15, R1-20). Documentação em `docs/ARCHITECTURE.md#security-boundaries-t1--prompt-injection-hardening`.
 
 ## [0.8.0] — 2026-04-10
 

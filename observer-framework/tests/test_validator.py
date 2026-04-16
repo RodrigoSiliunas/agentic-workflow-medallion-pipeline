@@ -139,7 +139,7 @@ class TestValidateFix:
         assert "ruff" not in result.checks_run
 
     def test_valid_notebook_passes_without_ruff(self):
-        """Notebook valido passa so com syntax check (sem ruff)."""
+        """Notebook valido passa com syntax + forbidden_imports (sem ruff)."""
         code = (
             "# Databricks notebook source\n"
             "# MAGIC %md\n"
@@ -147,7 +147,8 @@ class TestValidateFix:
         )
         result = validate_fix(code, "my_notebooks/bronze/ingest.py")
         assert result.valid is True
-        assert result.checks_run == ["syntax"]  # ruff pulado
+        # ruff pulado em notebooks; syntax e forbidden_imports sempre rodam
+        assert result.checks_run == ["syntax", "forbidden_imports"]
 
     def test_non_notebook_without_ruff_still_validates_syntax(self):
         """Sem ruff instalado, o resultado depende so de syntax."""

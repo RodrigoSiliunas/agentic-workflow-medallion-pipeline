@@ -334,3 +334,57 @@ Schema dedicado dá isolamento de permissions (quem precisa ler metrics do agent
 ### Por que `safe default = skip` no dedup quando o status é unknown?
 
 PRs duplicados são barulhentos e caros. Perder um diagnóstico ocasional porque o status do PR estava indeterminado é um custo menor. Se isso for um problema, o usuário pode ajustar `dedup_window_hours=0` para forçar cache miss.
+
+---
+
+## Security boundaries (T1 — Prompt Injection Hardening)
+
+O Observer fecha o loop `Pipeline → LLM externo → GitHub PR`. Qualquer dado hostil na falha do pipeline (ex: mensagem WhatsApp contendo instruções "ignore previous prompt") pode tentar desviar o LLM. Defesa em profundidade em quatro camadas:
+
+### 1. Isolamento via tags XML (prompt)
+
+`anthropic_provider.py` e `openai_provider.py` envolvem dados não-confiáveis em tags XML dedicadas:
+
+```
+<error_message>...</error_message>
+<stack_trace>...</stack_trace>
+<notebook_code>...</notebook_code>
+<schema_info>...</schema_info>
+<pipeline_state>...</pipeline_state>
+```
+
+O `SYSTEM_PROMPT` instrui o modelo a tratar o conteúdo dentro dessas tags como DADOS e ignorar quaisquer instruções embutidas.
+
+`_sanitize_for_xml_tag(value, tag)` neutraliza tentativas de injetar `</error_message>` no conteúdo — substitui por marcador inócuo para que o bloco jamais seja fechado prematuramente.
+
+### 2. Allowlist de paths (GitProvider)
+
+`observer/providers/path_allowlist.py` define:
+
+- `ALLOWED_PATH_PREFIXES`: `pipelines/`, `observer-framework/observer/`, `observer-framework/tests/`, `platform/backend/app|tests/`, `platform/frontend/app|tests/`.
+- `DENIED_PATH_PATTERNS`: `.github/`, `.git/`, `infra/`, `deploy/`, `terraform/`, `**/*secret*`, `.env*`, `credentials*`, `.pem`, `.key`, `id_rsa`. Também bloqueia `..` (path traversal).
+
+`GitHubProvider.create_fix_pr` chama `validate_fixes(fixes)` antes de qualquer commit. `DisallowedPathError` é logada com contexto e re-raised — PR não é criado.
+
+### 3. PII redaction (`observer/redaction.py`)
+
+Aplicado antes de qualquer dado cruzar fronteira externa:
+
+- Na coleta: `workflow_observer.build_failure_from_run` redige o campo `error` antes do truncate de 500 chars (dados vão ao LLM API).
+- Na publicação: `github_provider.create_fix_pr` redige `diagnosis`, `root_cause`, `fix_description` antes de compor o PR body.
+
+Regex cobre CPF, CNPJ, telefone BR (+55, parênteses, 9 digit prefix), email, Bearer tokens, AWS Access Keys (`AKIA...`), GitHub PATs (`ghp_...`), Anthropic keys (`sk-ant-...`). Ordem importa: CNPJ antes de CPF para não ser consumido parcialmente. Zero import de `pipeline_lib` — preserva a independência entre observer-framework e pipelines.
+
+### 4. Allowlist de imports (`observer/validator.py`)
+
+Antes do ruff, `_check_forbidden_imports` faz AST walk e rejeita:
+
+- `FORBIDDEN_IMPORTS`: `subprocess`, `socket`, `ctypes`, `pty`, `pickle`, `marshal`, `shutil`.
+- `FORBIDDEN_ATTR_CALLS`: `os.system`, `os.popen`, `os.execv`, `os.execvp`, `os.remove`, `os.unlink`, `os.rmdir`, `os._exit`.
+- `FORBIDDEN_BUILTIN_CALLS`: `eval`, `exec`, `compile`, `__import__`.
+
+Self-exempt para `observer/validator.py` — o próprio módulo precisa declarar as constantes proibidas.
+
+### Ameaça ainda não coberta
+
+- Não há sandbox de execução do fix antes do PR. O humano revisor continua sendo a última linha. Fix nessa camada está na melhoria #6 do roadmap original (validação pré-PR via pytest sandboxed).

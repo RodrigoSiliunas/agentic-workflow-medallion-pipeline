@@ -12,6 +12,11 @@ from observer.providers.base import (
     PRResult,
     with_retry,
 )
+from observer.providers.path_allowlist import (
+    DisallowedPathError,
+    validate_fixes,
+)
+from observer.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +61,19 @@ class GitHubProvider(GitProvider):
                 "DiagnosisResult nao contem fixes aplicaveis "
                 "(fixes vazio e fixed_code/file_to_fix ausentes)"
             )
+
+        # Allowlist de paths — barra injection que tenta escrever em
+        # .github/, infra/, deploy/, secrets, credenciais, chaves.
+        try:
+            fixes = validate_fixes(fixes)
+        except DisallowedPathError as exc:
+            logger.error(
+                "GitProvider rejeitou fix do LLM: %s (task=%s, provider=%s)",
+                exc,
+                failed_task,
+                diagnosis.provider,
+            )
+            raise
 
         gh = Github(auth=Auth.Token(self._token))
         repo = gh.get_repo(self._repo_name)
@@ -116,6 +134,12 @@ class GitHubProvider(GitProvider):
             f" ({len(applied_files)} arquivos)" if len(applied_files) > 1 else ""
         )
 
+        # PII redact nos campos do LLM antes de publicar no PR body.
+        # diagnosis.* pode ecoar CPF/telefone/email vindos do erro original.
+        safe_diagnosis = redact(diagnosis.diagnosis)
+        safe_root_cause = redact(diagnosis.root_cause)
+        safe_fix_desc = redact(diagnosis.fix_description)
+
         pr = repo.create_pull(
             title=f"fix: [{failed_task}] correcao automatica{title_suffix}",
             body=(
@@ -123,9 +147,9 @@ class GitHubProvider(GitProvider):
                 f"{emoji} **Confianca: {conf:.0%}** "
                 f"(provider: {diagnosis.provider}, "
                 f"model: {diagnosis.model})\n\n"
-                f"### Problema\n{diagnosis.diagnosis}\n\n"
-                f"### Causa Raiz\n{diagnosis.root_cause}\n\n"
-                f"### Fix\n{diagnosis.fix_description}\n\n"
+                f"### Problema\n{safe_diagnosis}\n\n"
+                f"### Causa Raiz\n{safe_root_cause}\n\n"
+                f"### Fix\n{safe_fix_desc}\n\n"
                 f"### Arquivos modificados ({len(applied_files)})\n{files_section}\n\n"
                 f"---\n"
                 f"🤖 PR criado pelo Observer Agent "

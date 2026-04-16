@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 from databricks.sdk import WorkspaceClient
 
+from observer.redaction import redact
 from observer.triggering import extract_failed_task_keys
 
 logger = logging.getLogger("workflow_observer")
@@ -85,7 +86,9 @@ class WorkflowObserver:
                 error = out.error or "Unknown error"
             except Exception:
                 error = "Could not retrieve error"
-            errors[task.task_key] = error[:500]
+            # PII redact antes de truncar: dados brutos de erro podem
+            # conter CPF/email/telefone vindos da execução do pipeline.
+            errors[task.task_key] = redact(error)[:500]
 
         return {
             "job_id": job_id or getattr(run, "job_id", 0),

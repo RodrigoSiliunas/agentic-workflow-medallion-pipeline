@@ -37,6 +37,45 @@ logger = logging.getLogger(__name__)
 
 RUFF_TIMEOUT_SECONDS = 30
 
+# Imports e chamadas proibidas em fixes do LLM.
+# Motivo: um prompt injection bem-sucedido poderia propor fix com
+# shell exec / network custom / eval dinâmico. Barramos aqui mesmo
+# que sintaxe + ruff passem.
+FORBIDDEN_IMPORTS: frozenset[str] = frozenset(
+    {
+        "subprocess",
+        "socket",
+        "ctypes",
+        "pty",
+        "pickle",
+        "marshal",
+        "shutil",  # rm -rf / copytree em paths arbitrários
+    }
+)
+
+# Atributos compostos proibidos (ex: os.system, os.popen).
+FORBIDDEN_ATTR_CALLS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("os", "system"),
+        ("os", "popen"),
+        ("os", "execv"),
+        ("os", "execvp"),
+        ("os", "_exit"),
+        ("os", "remove"),
+        ("os", "unlink"),
+        ("os", "rmdir"),
+    }
+)
+
+FORBIDDEN_BUILTIN_CALLS: frozenset[str] = frozenset(
+    {
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+    }
+)
+
 
 @dataclass
 class ValidationResult:
@@ -78,6 +117,65 @@ def _check_syntax(code: str, file_path: str) -> list[str]:
     except SyntaxError as exc:
         line = exc.lineno or "?"
         errors.append(f"ast.parse falhou (linha {line}): {exc.msg}")
+
+    return errors
+
+
+def _check_forbidden_imports(code: str, file_path: str) -> list[str]:
+    """Detecta imports e chamadas banidas em fixes do LLM.
+
+    Roda após o syntax check (precisa de AST válida). Escaneia:
+    - `import X`  / `from X import Y`   → valida nomes raiz contra FORBIDDEN_IMPORTS
+    - `os.system(...)` etc.             → FORBIDDEN_ATTR_CALLS
+    - `eval(...)` / `exec(...)` / `__import__(...)` → FORBIDDEN_BUILTIN_CALLS
+
+    Observer exempted de si mesmo: se o fix é em `observer/validator.py`
+    (o arquivo atual), não bloqueia porque o próprio módulo precisa
+    declarar o conjunto proibido.
+    """
+    errors: list[str] = []
+
+    # Fix do próprio validator pode mencionar os nomes banidos em listas
+    # constantes. Ficaria no caminho da própria ferramenta.
+    normalized = (file_path or "").replace("\\", "/")
+    if normalized.endswith("observer/validator.py"):
+        return errors
+
+    try:
+        tree = ast.parse(code, filename=file_path or "<fix>")
+    except SyntaxError:
+        # _check_syntax já reportou — sem mais nada a fazer aqui.
+        return errors
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root in FORBIDDEN_IMPORTS:
+                    errors.append(
+                        f"import proibido '{alias.name}' (linha {node.lineno})"
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".", 1)[0]
+            if root in FORBIDDEN_IMPORTS:
+                errors.append(
+                    f"from-import proibido '{node.module}' (linha {node.lineno})"
+                )
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in FORBIDDEN_BUILTIN_CALLS:
+                errors.append(
+                    f"chamada proibida '{func.id}()' (linha {node.lineno})"
+                )
+            elif (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and (func.value.id, func.attr) in FORBIDDEN_ATTR_CALLS
+            ):
+                errors.append(
+                    f"chamada proibida '{func.value.id}.{func.attr}()' "
+                    f"(linha {node.lineno})"
+                )
 
     return errors
 
@@ -199,7 +297,17 @@ def validate_fix(code: str, file_path: str) -> ValidationResult:
     if not result.valid:
         return result
 
-    # 2) Ruff check (condicional)
+    # 2) Import/call allowlist (sempre, depois de sintaxe valida)
+    result.checks_run.append("forbidden_imports")
+    for err in _check_forbidden_imports(code, file_path):
+        result.add_error(err)
+
+    # Se ja detectamos import banido, nao vale rodar ruff — o fix sera
+    # rejeitado de qualquer jeito e ruff pode ser lento em arquivo grande.
+    if not result.valid:
+        return result
+
+    # 3) Ruff check (condicional)
     if _should_run_ruff(file_path):
         ruff_outcome = _run_ruff(code, file_path)
         if ruff_outcome is None:
