@@ -19,7 +19,10 @@ dependencies = [
     "email-validator>=2.0.0",  # pydantic EmailStr em auth schemas
     "httpx>=0.28.0",
     "redis[hiredis]>=5.2.0",
-    "anthropic>=0.40.0",
+    # observer-framework — chat provider + T1 hardening. Editable local
+    # em dev; em prod migra para `observer[anthropic]>=0.9.0,<1.0.0`
+    # via GitHub Packages. `anthropic` vem transitivamente.
+    "observer[anthropic]>=0.9.0,<1.0.0",
     "structlog>=24.4.0",
     "python-multipart>=0.0.12",
     # Real saga runner deps — usadas pelo RealSagaRunner para deploy programatico

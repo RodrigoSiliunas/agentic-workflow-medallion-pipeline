@@ -5,6 +5,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-04-16
+
+### Added — T7 follow-up (packaging + chat API)
+
+- Pacote versionado como `observer==0.9.0`. `pyproject.toml` inclui `observer.chat` no autodiscovery.
+- `.github/workflows/publish-observer.yml` — triggered em tag `observer-v*`, roda `python -m build`, valida via `twine check`, cria release no GitHub com wheel+sdist anexados.
+- **Novo módulo `observer.chat`** — abstração de chat streaming com tool use, paralela à API `diagnose()`:
+  - `ChatLLMProvider` protocol com `stream_with_tools(model, system, messages, tools)` → AsyncIterator[ChatEvent]
+  - `ChatEvent` tagged union: `ChatTokenEvent`, `ChatToolUseEvent`, `ChatEndEvent`, `ChatErrorEvent`
+  - `ToolSpec` dataclass (name, description, input_schema)
+  - `AnthropicChatProvider` implementando via `anthropic.AsyncAnthropic.messages.stream`
+  - `create_chat_provider(name, api_key=...)` factory + registry
+  - Opção `untrusted_messages=True` aplica `_sanitize_for_xml_tag` em conteúdo de role=user antes do send
+- Estrutura de `tests/contracts/` pronta pra VCR real (ver `docs/TESTING.md` quando escrito)
+
 ### Added — Prompt injection hardening (T1)
 
 - `_sanitize_for_xml_tag(value, tag)` em `providers/anthropic_provider.py` — envolve inputs não-confiáveis (`error_message`, `stack_trace`, `notebook_code`, `schema_info`, `pipeline_state`) em tags XML e neutraliza tentativas de fechar a tag prematuramente. `SYSTEM_PROMPT` instrui o modelo a tratar o conteúdo das tags como dados.

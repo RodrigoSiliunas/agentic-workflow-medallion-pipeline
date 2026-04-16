@@ -1,6 +1,6 @@
 [project]
 name = "observer"
-version = "0.8.0"
+version = "0.9.0"
 description = "Framework autonomo de auto-diagnostico e correcao para workflows Databricks via LLM + PR no GitHub"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -47,6 +47,11 @@ github = ["PyGithub>=2.3"]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
+    # Contract tests opt-in (T7 F5) — grava cassettes sanitizados.
+    # VCR real requer API key de teste. Estrutura pronta em
+    # tests/contracts/ funciona sem vcrpy (fakes estruturais).
+    "vcrpy>=6.0",
+    "anyio>=4.0",
 ]
 
 # Meta: tudo junto

@@ -1,0 +1,52 @@
+name: Publish observer-framework
+
+on:
+  push:
+    tags:
+      - "observer-v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    name: Build + publish observer package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: observer-framework
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Validate dist
+        run: twine check dist/*
+
+      - name: Create GitHub release + attach artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#observer-v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "observer v${VERSION}" \
+            --notes-file CHANGELOG.md \
+            dist/observer-${VERSION}*.whl \
+            dist/observer-${VERSION}*.tar.gz
+
+      # GitHub Packages upload (optional — enable when namespace ready).
+      # - name: Upload to GitHub Packages
+      #   env:
+      #     TWINE_USERNAME: __token__
+      #     TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      #   run: twine upload --repository-url https://pypi.pkg.github.com/RodrigoSiliunas/ dist/*
