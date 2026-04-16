@@ -20,13 +20,16 @@ resource "aws_s3_bucket_versioning" "datalake" {
   }
 }
 
-# --- Encryption SSE-S3 com bucket key ---
+# --- Encryption SSE-KMS com CMK dedicada (T3) ---
+# CMK vem do 01-foundation. `bucket_key_enabled = true` economiza em
+# chamadas KMS (AWS gera uma chave por bucket/day).
 resource "aws_s3_bucket_server_side_encryption_configuration" "datalake" {
   bucket = aws_s3_bucket.datalake.id
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = local.datalake_kms_arn
     }
     bucket_key_enabled = true
   }
@@ -59,13 +62,32 @@ resource "aws_s3_bucket_logging" "datalake" {
   target_prefix = "_logs/"
 }
 
-# --- Bucket policy: acesso via Databricks role e Pipeline agent ---
+# --- Bucket policy: TLS enforce + acesso via Databricks role e Pipeline agent ---
+#
+# DenyInsecureTransport roda antes dos Allows (Deny sempre vence). Isso
+# garante que nenhum cliente consegue conversar com o bucket via HTTP
+# puro, mesmo com credenciais validas. Cobre o gap R1-08/R1-19.
 resource "aws_s3_bucket_policy" "datalake" {
   bucket = aws_s3_bucket.datalake.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.datalake.arn,
+          "${aws_s3_bucket.datalake.arn}/*",
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
       {
         Sid    = "DatabricksRoleAccess"
         Effect = "Allow"

@@ -1,0 +1,89 @@
+name: CI — Infra (Terraform)
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "infra/aws/**"
+      - ".github/workflows/ci-infra.yml"
+  pull_request:
+    paths:
+      - "infra/aws/**"
+      - ".github/workflows/ci-infra.yml"
+
+concurrency:
+  group: ci-infra-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  # Valor dummy — CI só faz fmt/validate, não bate na AWS. Se um dia
+  # adicionarmos `terraform plan` com credenciais via OIDC, remover o
+  # default e exigir `secrets.DATABRICKS_EXTERNAL_ID`.
+  TF_VAR_databricks_external_id: "ci-dummy-external-id"
+
+jobs:
+  fmt:
+    name: terraform fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive infra/aws
+
+  validate:
+    name: terraform validate (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - infra/aws/00-backend
+          - infra/aws/01-foundation
+          - infra/aws/02-datalake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: init -backend=false
+        working-directory: ${{ matrix.module }}
+        run: terraform init -backend=false
+      - name: validate
+        working-directory: ${{ matrix.module }}
+        run: terraform validate
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - name: tflint --recursive
+        run: tflint --recursive --chdir infra/aws
+
+  tfsec:
+    name: tfsec (static security scan)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: tfsec
+        uses: aquasecurity/tfsec-sarif-action@v0.1.4
+        with:
+          working_directory: infra/aws
+          sarif_file: tfsec.sarif
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec.sarif
+          category: tfsec

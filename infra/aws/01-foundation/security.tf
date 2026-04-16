@@ -47,34 +47,29 @@ resource "aws_security_group" "pipeline_services" {
 }
 
 # --- Security Group: Backend API ---
+#
+# T3: removido ingress 8000/tcp 0.0.0.0/0 — FastAPI deve rodar atras de
+# ALB. HTTP (80) existe apenas para redirect ao 443; em producao final,
+# preferivel deixar somente 443.
 resource "aws_security_group" "backend_api" {
   name        = "${var.project_name}-backend-api"
-  description = "Security group para a API FastAPI (HTTP/HTTPS inbound)"
+  description = "Security group para a API FastAPI (HTTP->HTTPS redirect + HTTPS)"
   vpc_id      = data.aws_vpc.default.id
 
-  # Inbound: HTTP
+  # Inbound: HTTP — apenas para responder redirect 301 -> HTTPS.
   ingress {
-    description = "HTTP"
+    description = "HTTP (redirect-only em prod)"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Inbound: HTTPS
+  # Inbound: HTTPS.
   ingress {
     description = "HTTPS"
     from_port   = 443
     to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Inbound: FastAPI dev port
-  ingress {
-    description = "FastAPI dev"
-    from_port   = 8000
-    to_port     = 8000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }

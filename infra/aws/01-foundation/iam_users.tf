@@ -27,6 +27,9 @@ resource "aws_secretsmanager_secret" "pipeline_credentials" {
   name        = "${var.project_name}/pipeline-user-credentials"
   description = "Access key do pipeline CI/CD user"
 
+  kms_key_id              = aws_kms_key.secrets.arn
+  recovery_window_in_days = 7
+
   tags = {
     Purpose = "pipeline-cicd"
   }

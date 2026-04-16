@@ -12,11 +12,18 @@ terraform {
     }
   }
 
-  # Estado local — migrar para S3 backend depois do bootstrap
+  # Remote state — rodar 00-backend primeiro e depois migrar.
+  # Passo-a-passo:
+  #   1. cd ../00-backend && terraform apply
+  #   2. Descomentar o bloco abaixo
+  #   3. cd ../01-foundation && terraform init -migrate-state
   # backend "s3" {
-  #   bucket = "namastex-terraform-state"
-  #   key    = "foundation/terraform.tfstate"
-  #   region = "us-east-2"
+  #   bucket         = "namastex-terraform-state"
+  #   key            = "foundation/terraform.tfstate"
+  #   region         = "us-east-2"
+  #   dynamodb_table = "namastex-terraform-state-lock"
+  #   encrypt        = true
+  #   kms_key_id     = "alias/namastex-tfstate"
   # }
 }
 

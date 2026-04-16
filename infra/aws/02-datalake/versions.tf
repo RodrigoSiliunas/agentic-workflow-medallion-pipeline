@@ -11,6 +11,17 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Remote state — rodar 00-backend primeiro. Mesmo setup do 01-foundation,
+  # so muda a key.
+  # backend "s3" {
+  #   bucket         = "namastex-terraform-state"
+  #   key            = "datalake/terraform.tfstate"
+  #   region         = "us-east-2"
+  #   dynamodb_table = "namastex-terraform-state-lock"
+  #   encrypt        = true
+  #   kms_key_id     = "alias/namastex-tfstate"
+  # }
 }
 
 provider "aws" {

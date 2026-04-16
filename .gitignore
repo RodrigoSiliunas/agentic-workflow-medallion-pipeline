@@ -53,8 +53,12 @@ platform/backend/venv/
 # E2E screenshots (testes locais, nao precisam estar no repo)
 e2e-*.png
 
-# Docs internos / teste tecnico
-docs/
+# Docs internos / teste tecnico (gitignored por padrao).
+# ADRs sao o canal formal de decisoes arquiteturais — esses ficam tracked.
+# Usa padrao `docs/*` (nao `docs/`) pra permitir negacao recursiva do adr.
+docs/*
+!docs/adr/
+!docs/adr/**
 conductor/
 
 # Design system repo (submodule/reference)
@@ -62,9 +66,12 @@ platform/design/
 
 # Terraform
 .terraform/
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
 *.tfplan
+*.tfvars.local
+terraform.tfvars.local
 
 # Secrets
 *.pem

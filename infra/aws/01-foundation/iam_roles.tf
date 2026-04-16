@@ -19,11 +19,12 @@ resource "aws_iam_role" "databricks_cross_account" {
           AWS = "arn:aws:iam::414351767826:root"
         }
         Action = "sts:AssumeRole"
-        Condition = var.databricks_external_id != "" ? {
+        Condition = {
           StringEquals = {
+            # Validation em variables.tf garante que nao e vazio.
             "sts:ExternalId" = var.databricks_external_id
           }
-        } : {}
+        }
       },
       {
         Sid    = "SelfAssumingRole"

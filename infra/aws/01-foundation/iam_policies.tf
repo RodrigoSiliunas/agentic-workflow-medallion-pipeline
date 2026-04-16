@@ -204,15 +204,15 @@ resource "aws_iam_policy" "databricks_ec2_vpc" {
         Resource = "*"
       },
       {
-        Sid    = "IAMPassRole"
-        Effect = "Allow"
-        Action = "iam:PassRole"
+        Sid      = "IAMPassRole"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
         Resource = "arn:aws:iam::${local.account_id}:role/service-roles/${var.project_name}-*"
       },
       {
-        Sid    = "IAMCreateServiceLinkedRole"
-        Effect = "Allow"
-        Action = "iam:CreateServiceLinkedRole"
+        Sid      = "IAMCreateServiceLinkedRole"
+        Effect   = "Allow"
+        Action   = "iam:CreateServiceLinkedRole"
         Resource = "arn:aws:iam::*:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot"
         Condition = {
           StringEquals = {

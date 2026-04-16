@@ -17,6 +17,20 @@ resource "aws_s3_bucket_versioning" "databricks_root" {
   }
 }
 
+# SSE-KMS com a CMK de datalake — assets/libs/logs do Databricks
+# herdam a mesma chave, centralizando rotation e audit.
+resource "aws_s3_bucket_server_side_encryption_configuration" "databricks_root" {
+  bucket = aws_s3_bucket.databricks_root.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.datalake.arn
+    }
+    bucket_key_enabled = true
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "databricks_root" {
   bucket = aws_s3_bucket.databricks_root.id
 
@@ -26,13 +40,29 @@ resource "aws_s3_bucket_public_access_block" "databricks_root" {
   restrict_public_buckets = true
 }
 
-# Bucket policy para Databricks (gerada pelo console Databricks)
+# Bucket policy para Databricks (gerada pelo console Databricks) +
+# Deny insecure transport (T3).
 resource "aws_s3_bucket_policy" "databricks_root" {
   bucket = aws_s3_bucket.databricks_root.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.databricks_root.arn,
+          "${aws_s3_bucket.databricks_root.arn}/*",
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
       {
         Sid    = "GrantDatabricksAccess"
         Effect = "Allow"

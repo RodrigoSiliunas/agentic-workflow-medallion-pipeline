@@ -82,10 +82,21 @@ output "vpc_cidr" {
 output "secret_arns" {
   description = "Map de ARNs dos secrets criados"
   value = {
-    anthropic   = aws_secretsmanager_secret.anthropic_api_key.arn
-    github      = aws_secretsmanager_secret.github_token.arn
-    databricks  = aws_secretsmanager_secret.databricks_token.arn
-    database    = aws_secretsmanager_secret.database_url.arn
+    anthropic    = aws_secretsmanager_secret.anthropic_api_key.arn
+    github       = aws_secretsmanager_secret.github_token.arn
+    databricks   = aws_secretsmanager_secret.databricks_token.arn
+    database     = aws_secretsmanager_secret.database_url.arn
     backend_keys = aws_secretsmanager_secret.backend_keys.arn
   }
+}
+
+# --- KMS ---
+output "datalake_kms_key_arn" {
+  description = "ARN da KMS CMK usada no datalake (consumido por 02-datalake)"
+  value       = aws_kms_key.datalake.arn
+}
+
+output "secrets_kms_key_arn" {
+  description = "ARN da KMS CMK dos Secrets Manager"
+  value       = aws_kms_key.secrets.arn
 }

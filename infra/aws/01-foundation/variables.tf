@@ -27,9 +27,22 @@ variable "databricks_account_id" {
 }
 
 variable "databricks_external_id" {
-  description = "External ID fornecido pelo Databricks Quickstart (AWS Account Setup)"
+  description = <<-EOT
+    External ID fornecido pelo Databricks Quickstart (AWS Account Setup).
+    Obrigatorio — sem ele a trust policy da role cross-account nao tem
+    barreira contra confused deputy. Ver AWS docs: IAM External ID.
+
+    NAO commitar valor real. Preencher via:
+      - `terraform.tfvars.local` (gitignored) — dev local
+      - SSM Parameter / env var `TF_VAR_databricks_external_id` — CI
+  EOT
   type        = string
-  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = length(var.databricks_external_id) > 0
+    error_message = "databricks_external_id nao pode ser vazio. Ver comentario do variable."
+  }
 }
 
 variable "create_pipeline_user" {

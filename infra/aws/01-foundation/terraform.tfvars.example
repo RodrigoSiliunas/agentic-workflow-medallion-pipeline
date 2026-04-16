@@ -1,0 +1,7 @@
+# Copie para `terraform.tfvars.local` (gitignored) e preencha com o
+# External ID real gerado pelo Databricks Quickstart.
+#
+# Alternativa pra CI: setar `TF_VAR_databricks_external_id` como env
+# var secreta.
+
+databricks_external_id = "PASTE-DATABRICKS-EXTERNAL-ID-HERE"
