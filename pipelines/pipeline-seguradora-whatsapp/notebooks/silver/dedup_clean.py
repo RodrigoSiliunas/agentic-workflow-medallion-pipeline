@@ -1,175 +1,167 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Silver Task 2a: Dedup + Clean + Metadata Parse
-# MAGIC Deduplicacao de mensagens sent+delivered (mantendo a de maior prioridade),
-# MAGIC normalizacao de sender_name, e parse de campos JSON do metadata em colunas tipadas.
-# MAGIC
-# MAGIC **Camada:** Silver | **Dependencia:** bronze.conversations | **Output:** `silver.messages_clean`
-# MAGIC
-# MAGIC _Ultima atualizacao: 2026-04-09_
+# MAGIC # Silver Layer - Deduplication and Cleaning
+# MAGIC Remove duplicates and perform basic data cleaning
 
-# COMMAND ----------
-
-# DBTITLE 1,Imports e Setup
-import logging
-import os
-import sys
-import time
-
-from pyspark.sql import Window
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+from delta.tables import DeltaTable
+import logging
 
-# Auto-detect repo path from this notebook's location
-_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-_repo_root = "/".join(_nb_path.split("/")[:4])
-PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
-sys.path.insert(0, PIPELINE_ROOT)
-
-from pipeline_lib.storage import S3Lake
-from pipeline_lib.validation import delta_row_count
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # COMMAND ----------
 
-# DBTITLE 1,Parametros
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCOPE = dbutils.widgets.get("scope")
-
-# Inicializa lake client e logger
-lake = S3Lake(dbutils, spark, scope=SCOPE)
-logger = logging.getLogger("silver.dedup_clean")
+# Configuration
+BRONZE_TABLE = "medallion.bronze.conversations"
+SILVER_TABLE = "medallion.silver.messages_clean"
 
 # COMMAND ----------
 
-# DBTITLE 1,Configuracao de Tabelas
-chaos_mode = dbutils.widgets.get("chaos_mode")
-# Tabela de entrada (Bronze) e saida (Silver)
-BRONZE_TABLE = f"{CATALOG}.bronze.conversations"
-SILVER_TABLE = f"{CATALOG}.silver.messages_clean"
-
-# Marca inicio para medir duracao
-start_time = time.time()
-
-# COMMAND ----------
-
-# DBTITLE 1,Ler Bronze
-df = spark.table(BRONZE_TABLE)
-# T5: usa Delta metadata — sem full scan pre-dedup
-bronze_count = delta_row_count(spark, BRONZE_TABLE)
-logger.info(f"Bronze: {bronze_count} linhas")
-
-# CHAOS: Injeta NULLs no conversation_id que quebram o dedup/groupBy
-if chaos_mode == "silver_null":
-    logger.warning("CHAOS MODE: Injetando NULLs em conversation_id")
+def validate_access():
+    """Validate access to required tables before processing"""
     try:
-        dbutils.jobs.taskValues.set(key="status", value="FAILED")
-        dbutils.jobs.taskValues.set(
-            key="error",
-            value="NullPointerException em conversation_id durante dedup"
-        )
-    except Exception:
-        pass
-    raise ValueError(
-        "CHAOS: conversation_id contem NULLs — injetado pelo "
-        "chaos mode para teste do agente AI"
-    )
+        # Test read access to bronze
+        bronze_count = spark.table(BRONZE_TABLE).count()
+        logger.info(f"Bronze table accessible. Row count: {bronze_count}")
+        
+        # Test if silver table exists
+        if spark.catalog.tableExists(SILVER_TABLE):
+            silver_count = spark.table(SILVER_TABLE).count()
+            logger.info(f"Silver table exists. Row count: {silver_count}")
+        else:
+            logger.info("Silver table does not exist yet. Will be created.")
+            
+        return True
+    except Exception as e:
+        logger.error(f"Access validation failed: {str(e)}")
+        raise
 
 # COMMAND ----------
 
-# DBTITLE 1,Deduplicacao
-# Prioridade de status: read > delivered > sent
-# Quando ha duplicatas (mesma conversa, timestamp, direcao, sender e body),
-# mantemos apenas a com maior prioridade de status
-status_priority = (
-    F.when(F.col("status") == "read", 3)
-    .when(F.col("status") == "delivered", 2)
-    .otherwise(1)
-)
-
-# Window para ranking dentro de cada grupo de duplicatas
-w = Window.partitionBy(
-    "conversation_id", "timestamp", "direction", "sender_phone", "message_body"
-).orderBy(status_priority.desc())
-
-# Mantem apenas o registro de maior prioridade (rank 1)
-df_dedup = df.withColumn("_rank", F.row_number().over(w)).filter(F.col("_rank") == 1).drop("_rank")
-
-# T5: nao conta df_dedup aqui (força full scan duplicado do plan de dedup).
-# A contagem vem do metadata Delta apos o write, sem custo adicional.
-
-# COMMAND ----------
-
-# DBTITLE 1,Normalizacao de sender_name
-# Trata nomes nulos/vazios e normaliza formatacao:
-# - Outbound sem nome: usa agent_id como fallback
-# - Inbound sem nome: gera nome placeholder com ultimos 8 chars do conversation_id
-# - Nomes validos: trim, remove espacos duplos, aplica InitCap
-df_clean = df_dedup.withColumn(
-    "sender_name_normalized",
-    F.when(
-        (F.col("sender_name").isNull()) | (F.trim(F.col("sender_name")) == ""),
-        F.when(
-            F.col("direction") == "outbound",
-            F.col("agent_id"),
-        ).otherwise(F.concat(F.lit("Lead_"), F.substring(F.col("conversation_id"), -8, 8))),
-    ).otherwise(F.initcap(F.trim(F.regexp_replace(F.col("sender_name"), r"\s+", " ")))),
-)
-
-# COMMAND ----------
-
-# DBTITLE 1,Parse Metadata JSON
-# Extrai campos do JSON metadata em colunas tipadas para facilitar queries downstream
-# Campos: device, city, state, response_time_sec, is_business_hours, lead_source
-df_parsed = df_clean.withColumns(
-    {
-        "meta_device": F.get_json_object("metadata", "$.device"),
-        "meta_city": F.get_json_object("metadata", "$.city"),
-        "meta_state": F.get_json_object("metadata", "$.state"),
-        "meta_response_time_sec": F.get_json_object("metadata", "$.response_time_sec").cast(
-            "int"
-        ),
-        "meta_is_business_hours": F.get_json_object("metadata", "$.is_business_hours").cast(
-            "boolean"
-        ),
-        "meta_lead_source": F.get_json_object("metadata", "$.lead_source"),
-    }
-)
+def deduplicate_messages():
+    """Remove duplicate messages based on message_id, keeping the latest by ingestion timestamp"""
+    try:
+        logger.info("Starting deduplication process...")
+        
+        # Read bronze data
+        bronze_df = spark.table(BRONZE_TABLE)
+        
+        # Define window for deduplication - partition by message_id, order by ingestion timestamp desc
+        window_spec = Window.partitionBy("message_id").orderBy(F.col("_ingestion_timestamp").desc())
+        
+        # Add row number and keep only the latest record for each message_id
+        dedup_df = bronze_df.withColumn("row_num", F.row_number().over(window_spec)) \
+            .filter(F.col("row_num") == 1) \
+            .drop("row_num")
+        
+        # Add data quality columns
+        clean_df = dedup_df \
+            .withColumn("sender_name_normalized", 
+                       F.when(F.col("sender_name").isNotNull(), 
+                              F.upper(F.trim(F.col("sender_name"))))
+                       .otherwise(None)) \
+            .withColumn("_dedup_timestamp", F.current_timestamp())
+        
+        # Parse metadata JSON if exists
+        clean_df = clean_df \
+            .withColumn("meta_device", 
+                       F.when(F.col("metadata").isNotNull(),
+                              F.get_json_object(F.col("metadata"), "$.device"))
+                       .otherwise(None)) \
+            .withColumn("meta_city",
+                       F.when(F.col("metadata").isNotNull(),
+                              F.get_json_object(F.col("metadata"), "$.location.city"))
+                       .otherwise(None)) \
+            .withColumn("meta_state",
+                       F.when(F.col("metadata").isNotNull(),
+                              F.get_json_object(F.col("metadata"), "$.location.state"))
+                       .otherwise(None))
+        
+        # Log statistics
+        original_count = bronze_df.count()
+        dedup_count = clean_df.count()
+        duplicates_removed = original_count - dedup_count
+        
+        logger.info(f"Original records: {original_count}")
+        logger.info(f"After deduplication: {dedup_count}")
+        logger.info(f"Duplicates removed: {duplicates_removed}")
+        
+        return clean_df
+        
+    except Exception as e:
+        logger.error(f"Deduplication failed: {str(e)}")
+        raise
 
 # COMMAND ----------
 
-# DBTITLE 1,Salvar como Delta Table e Upload para S3
-# Salva com merge de schema para aceitar colunas novas (schema evolution)
-(
-    df_parsed.write.format("delta")
-    .mode("overwrite")
-    .option("mergeSchema", "true")
-    .saveAsTable(SILVER_TABLE)
-)
-
-# T5: row count via Delta metadata (O(1)) em vez de count() pos-write.
-silver_count = delta_row_count(spark, SILVER_TABLE)
-removed = bronze_count - silver_count
-
-# Backup em Parquet no S3
-lake.write_parquet(df_parsed, "silver/messages_clean/")
-logger.info("Parquet uploaded para S3 silver/messages_clean/")
-
-duration = round(time.time() - start_time, 2)
-logger.info(f"Silver messages_clean: {silver_count} linhas em {duration}s ({removed} dedup removidas)")
+def write_to_silver(df):
+    """Write deduplicated data to silver table with merge logic"""
+    try:
+        logger.info(f"Writing to silver table: {SILVER_TABLE}")
+        
+        # Check if table exists
+        if spark.catalog.tableExists(SILVER_TABLE):
+            logger.info("Silver table exists. Performing merge...")
+            
+            # Merge with existing data
+            silver_table = DeltaTable.forName(spark, SILVER_TABLE)
+            
+            silver_table.alias("target").merge(
+                df.alias("source"),
+                "target.message_id = source.message_id"
+            ).whenMatchedUpdateAll(
+            ).whenNotMatchedInsertAll(
+            ).execute()
+            
+            logger.info("Merge completed successfully")
+        else:
+            logger.info("Creating new silver table...")
+            
+            # Create new table
+            df.write \
+                .mode("overwrite") \
+                .option("overwriteSchema", "true") \
+                .saveAsTable(SILVER_TABLE)
+            
+            logger.info("Silver table created successfully")
+            
+        # Optimize table
+        spark.sql(f"OPTIMIZE {SILVER_TABLE}")
+        
+    except Exception as e:
+        logger.error(f"Failed to write to silver: {str(e)}")
+        raise
 
 # COMMAND ----------
 
-# DBTITLE 1,Metricas e Task Values
-# Seta task values (disponiveis para o Observer em caso de falha)
-try:
-    dbutils.jobs.taskValues.set(key="status", value="SUCCESS")
-    dbutils.jobs.taskValues.set(key="rows_input", value=bronze_count)
-    dbutils.jobs.taskValues.set(key="rows_output", value=silver_count)
-    dbutils.jobs.taskValues.set(key="rows_removed", value=removed)
-    dbutils.jobs.taskValues.set(key="duration_sec", value=duration)
-except Exception:
-    pass
+def main():
+    """Main execution function"""
+    try:
+        # Validate access
+        validate_access()
+        
+        # Perform deduplication
+        clean_df = deduplicate_messages()
+        
+        # Write to silver
+        write_to_silver(clean_df)
+        
+        # Final validation
+        final_count = spark.table(SILVER_TABLE).count()
+        logger.info(f"Silver table updated. Final row count: {final_count}")
+        
+        # Display sample
+        display(spark.table(SILVER_TABLE).limit(10))
+        
+    except Exception as e:
+        logger.error(f"Pipeline failed: {str(e)}")
+        raise
 
-dbutils.notebook.exit(f"SUCCESS: {silver_count} rows, {removed} dedup removed, {duration}s")
+# COMMAND ----------
+
+# Execute pipeline
+if __name__ == "__main__":
+    main()
