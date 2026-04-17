@@ -76,6 +76,16 @@ class SharedSagaState:
     databricks_external_id: str | None = None
     databricks_storage_credential: str | None = None
     databricks_external_location: str | None = None
+    # Novos steps (network, workspace_credential, workspace_provision, cluster_provision)
+    aws_vpc_id: str | None = None
+    aws_subnet_ids: list[str] | None = None
+    aws_security_group_id: str | None = None
+    databricks_network_id: str | None = None
+    databricks_credentials_id: str | None = None
+    databricks_xaccount_role_arn: str | None = None
+    databricks_workspace_id: int | None = None
+    databricks_workspace_host: str | None = None
+    databricks_cluster_id: str | None = None
     secret_scope: str | None = None
     catalog: str | None = None
     repo_path: str | None = None

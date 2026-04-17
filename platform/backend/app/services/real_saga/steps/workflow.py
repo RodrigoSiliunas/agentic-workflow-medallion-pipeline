@@ -136,7 +136,9 @@ class WorkflowStep:
                 "workflow step sem observer_job_id — step `observer` deve rodar antes"
             )
 
-        cluster_id = env.get("cluster_id", "")
+        # Prefere cluster_id do shared state (cluster_provision step).
+        # Fallback: env var OR auto-detect (backward compat).
+        cluster_id = ctx.shared.databricks_cluster_id or env.get("cluster_id", "")
         if not cluster_id:
             cluster_id = await self._auto_detect_cluster(ctx)
         pipeline_notebooks = (
