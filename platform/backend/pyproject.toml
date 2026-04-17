@@ -1,5 +1,5 @@
 [project]
-name = "namastex-platform-backend"
+name = "flowertex-platform-backend"
 version = "0.1.0"
 description = "Backend da plataforma conversacional para pipelines Medallion"
 requires-python = ">=3.12"

@@ -66,10 +66,10 @@ export const useAuthStore = defineStore("auth", {
         this.accessToken = "mock-access-token"
         this.user = {
           id: "mock-user-1",
-          email: email || "rodrigo@safatechx.com",
+          email: email || "rodrigo@flowertex.com",
           name: "Rodrigo Siliunas",
           role: "admin",
-          companyId: "safatechx",
+          companyId: "flowertex",
         }
         if (import.meta.client) {
           // access_token fica em memoria; `mock_user` persiste apenas pra
@@ -251,10 +251,10 @@ export const useAuthStore = defineStore("auth", {
         if (!this.user) {
           this.user = {
             id: "mock-user-1",
-            email: "rodrigo@safatechx.com",
+            email: "rodrigo@flowertex.com",
             name: "Rodrigo Siliunas",
             role: "admin",
-            companyId: "safatechx",
+            companyId: "flowertex",
           }
         }
         this.accessToken = "mock-access-token"

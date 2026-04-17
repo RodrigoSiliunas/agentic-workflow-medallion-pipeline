@@ -4,7 +4,7 @@ Uso: python deploy/upload_data.py <local_parquet_path>
 
 Requer:
   - AWS CLI configurado (aws configure) OU env vars AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
-  - Env var S3_BUCKET (default: namastex-medallion-datalake)
+  - Env var S3_BUCKET (default: flowertex-medallion-datalake)
 """
 
 import os
@@ -14,7 +14,7 @@ import boto3
 
 
 def upload(local_path: str):
-    bucket = os.environ.get("S3_BUCKET", "namastex-medallion-datalake")
+    bucket = os.environ.get("S3_BUCKET", "flowertex-medallion-datalake")
     region = os.environ.get("AWS_REGION", "us-east-2")
 
     s3 = boto3.client("s3", region_name=region)

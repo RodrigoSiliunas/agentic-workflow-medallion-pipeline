@@ -45,7 +45,7 @@
       <AppInput
         v-model="name"
         label="Nome da instância"
-        placeholder="safatechx-suporte"
+        placeholder="flowertex-suporte"
         helper="Mínimo 2 caracteres. Vai virar parte do identificador no Omni."
       />
 

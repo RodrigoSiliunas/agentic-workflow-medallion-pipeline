@@ -1,16 +1,16 @@
 /**
- * Nuxt UI app config — define a paleta primaria como `safatechx`
- * (purple Safatechx Labs) e gray como zinc para alinhar com os tokens
+ * Nuxt UI app config — define a paleta primaria como `flowertex`
+ * (purple Flowertex Labs) e gray como zinc para alinhar com os tokens
  * CSS em assets/css/main.css.
  *
  * Os componentes do @nuxt/ui que aceitam `color="primary"` vao usar
- * automaticamente a escala safatechx (50→900) configurada via CSS
+ * automaticamente a escala flowertex (50→900) configurada via CSS
  * variables `--brand-*`.
  */
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: "safatechx",
+      primary: "flowertex",
       neutral: "zinc",
     },
     button: {

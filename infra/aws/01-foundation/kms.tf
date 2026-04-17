@@ -22,7 +22,7 @@ resource "aws_kms_key" "datalake" {
 }
 
 resource "aws_kms_alias" "datalake" {
-  name          = "alias/namastex-datalake"
+  name          = "alias/flowertex-datalake"
   target_key_id = aws_kms_key.datalake.key_id
 }
 
@@ -37,6 +37,6 @@ resource "aws_kms_key" "secrets" {
 }
 
 resource "aws_kms_alias" "secrets" {
-  name          = "alias/namastex-secrets"
+  name          = "alias/flowertex-secrets"
   target_key_id = aws_kms_key.secrets.key_id
 }

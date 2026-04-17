@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # Todos os secrets usam:
-# - KMS CMK dedicada (`alias/namastex-secrets`) — permite rotation e
+# - KMS CMK dedicada (`alias/flowertex-secrets`) — permite rotation e
 #   auditoria isoladas das outras keys do projeto.
 # - `recovery_window_in_days = 7` — janela de recuperacao apos delete
 #   (evita delete acidental que bloquearia o pipeline).

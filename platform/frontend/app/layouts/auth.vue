@@ -12,7 +12,7 @@
         <SafaLogo variant="icon" :size="32" />
         <div>
           <h1 class="text-sm font-semibold" :style="{ color: 'var(--text-primary)' }">
-            Safatechx Platform
+            Flowertex Platform
           </h1>
           <p class="text-[10px]" :style="{ color: 'var(--text-tertiary)' }">
             Pipeline agent

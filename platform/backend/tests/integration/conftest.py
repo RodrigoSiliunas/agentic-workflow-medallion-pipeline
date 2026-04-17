@@ -1,7 +1,7 @@
 """Conftest para integration tests — usa Postgres real via Docker.
 
-Requer que o container `namastex-postgres` esteja rodando com o DB
-`namastex_test` criado. Cada teste trunca todas as tabelas pra isolar.
+Requer que o container `flowertex-postgres` esteja rodando com o DB
+`flowertex_test` criado. Cada teste trunca todas as tabelas pra isolar.
 Se o DB nao estiver acessivel, toda a suite e pulada.
 """
 
@@ -23,7 +23,7 @@ from app.models.base import Base
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    settings.DATABASE_URL.replace("/namastex", "/namastex_test"),
+    settings.DATABASE_URL.replace("/flowertex", "/flowertex_test"),
 )
 
 

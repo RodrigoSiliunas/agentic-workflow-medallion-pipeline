@@ -18,12 +18,12 @@ terraform {
   #   2. Descomentar o bloco abaixo
   #   3. cd ../01-foundation && terraform init -migrate-state
   # backend "s3" {
-  #   bucket         = "namastex-terraform-state"
+  #   bucket         = "flowertex-terraform-state"
   #   key            = "foundation/terraform.tfstate"
   #   region         = "us-east-2"
-  #   dynamodb_table = "namastex-terraform-state-lock"
+  #   dynamodb_table = "flowertex-terraform-state-lock"
   #   encrypt        = true
-  #   kms_key_id     = "alias/namastex-tfstate"
+  #   kms_key_id     = "alias/flowertex-tfstate"
   # }
 }
 

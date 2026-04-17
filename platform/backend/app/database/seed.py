@@ -28,7 +28,7 @@ TEMPLATE_SEEDS = [
         "icon": "chat-bubble-left-right",
         "icon_bg": "#22c55e",
         "version": "1.3.0",
-        "author": "Namastex Labs",
+        "author": "Flowertex Labs",
         "deploy_count": 47,
         "duration_estimate": "8-12 min",
         "architecture_bullets": [
@@ -53,7 +53,7 @@ TEMPLATE_SEEDS = [
                 "label": "S3 bucket name",
                 "type": "text",
                 "required": True,
-                "placeholder": "namastex-medallion-datalake",
+                "placeholder": "flowertex-medallion-datalake",
                 "helper": "Bucket que vai receber os parquets ingeridos",
             },
             {
@@ -125,7 +125,7 @@ TEMPLATE_SEEDS = [
         "icon": "building-office-2",
         "icon_bg": "#3b82f6",
         "version": "0.9.0",
-        "author": "Namastex Labs",
+        "author": "Flowertex Labs",
         "deploy_count": 12,
         "duration_estimate": "6-9 min",
         "architecture_bullets": [
@@ -194,7 +194,7 @@ TEMPLATE_SEEDS = [
         "icon": "shopping-cart",
         "icon_bg": "#ef4444",
         "version": "0.6.0",
-        "author": "Namastex Labs",
+        "author": "Flowertex Labs",
         "deploy_count": 5,
         "duration_estimate": "7-10 min",
         "architecture_bullets": [

@@ -14,6 +14,6 @@ resource "aws_kms_key" "tfstate" {
 }
 
 resource "aws_kms_alias" "tfstate" {
-  name          = "alias/namastex-tfstate"
+  name          = "alias/flowertex-tfstate"
   target_key_id = aws_kms_key.tfstate.key_id
 }

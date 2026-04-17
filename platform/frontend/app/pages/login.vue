@@ -15,7 +15,7 @@
         v-model="email"
         label="Email"
         type="email"
-        placeholder="rodrigo@safatechx.com"
+        placeholder="rodrigo@flowertex.com"
       />
 
       <AppInput

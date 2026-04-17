@@ -16,7 +16,7 @@ export const MOCK_TEMPLATES: Template[] = [
     icon: "chat-bubble-left-right",
     iconBg: "#22c55e",
     version: "1.3.0",
-    author: "Safatechx Labs",
+    author: "Flowertex Labs",
     deployCount: 47,
     durationEstimate: "8-12 min",
     architectureBullets: [
@@ -41,7 +41,7 @@ export const MOCK_TEMPLATES: Template[] = [
         label: "S3 bucket name",
         type: "text",
         required: true,
-        placeholder: "safatechx-medallion-datalake",
+        placeholder: "flowertex-medallion-datalake",
         helper: "Bucket que vai receber os parquets ingeridos",
       },
       {
@@ -108,7 +108,7 @@ export const MOCK_TEMPLATES: Template[] = [
     icon: "building-office-2",
     iconBg: "#3b82f6",
     version: "0.9.0",
-    author: "Safatechx Labs",
+    author: "Flowertex Labs",
     deployCount: 12,
     durationEstimate: "6-9 min",
     architectureBullets: [
@@ -179,7 +179,7 @@ export const MOCK_TEMPLATES: Template[] = [
     icon: "shopping-cart",
     iconBg: "#ef4444",
     version: "0.6.0",
-    author: "Safatechx Labs",
+    author: "Flowertex Labs",
     deployCount: 5,
     durationEstimate: "7-10 min",
     architectureBullets: [

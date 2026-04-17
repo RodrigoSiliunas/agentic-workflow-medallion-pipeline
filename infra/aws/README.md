@@ -40,7 +40,7 @@ infra/aws/
 ## Segurança (T3)
 
 - **Remote state** S3 + DynamoDB lock, SSE-KMS, versionado. Evita state local comprometivel + race condition em apply concorrente.
-- **CMK dedicadas** — `alias/namastex-datalake`, `alias/namastex-secrets`, `alias/namastex-tfstate`. Rotation anual automatica.
+- **CMK dedicadas** — `alias/flowertex-datalake`, `alias/flowertex-secrets`, `alias/flowertex-tfstate`. Rotation anual automatica.
 - **TLS enforce** — `Deny aws:SecureTransport=false` em todos os buckets.
 - **Secrets** — KMS CMK + `recovery_window_in_days=7` (evita delete acidental).
 - **ExternalID** — `variable.databricks_external_id` tem `validation { length > 0 }`. Valor vem de `terraform.tfvars.local` (gitignored) ou `TF_VAR_databricks_external_id`.

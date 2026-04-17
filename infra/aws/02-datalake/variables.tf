@@ -23,5 +23,5 @@ variable "environment" {
 variable "bucket_name" {
   description = "Nome do S3 bucket do data lake"
   type        = string
-  default     = "namastex-medallion-datalake"
+  default     = "flowertex-medallion-datalake"
 }

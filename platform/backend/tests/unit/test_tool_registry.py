@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import MagicMock
+
 from app.services.tools import (
     TOOL_REGISTRY,
     all_tool_specs,
     confirmation_required_tools,
     register_tool,
 )
+from app.services.tools.databricks_tools import QueryDeltaTable
 
 
 class TestRegistryPopulation:
@@ -116,47 +120,25 @@ class TestRegisterDecorator:
             TOOL_REGISTRY.pop("__default-conf__", None)
 
 
+def _run_query_guard(sql: str) -> dict:
+    async def _run():
+        return await QueryDeltaTable().run(MagicMock(), {"sql": sql})
+
+    return asyncio.run(_run())
+
+
 class TestQueryDeltaTableGuards:
     def test_rejects_non_select(self):
-        import asyncio
-        from unittest.mock import MagicMock
-
-        from app.services.tools.databricks_tools import QueryDeltaTable
-
-        async def _run():
-            ctx = MagicMock()
-            return await QueryDeltaTable().run(ctx, {"sql": "DROP TABLE x"})
-
-        result = asyncio.run(_run())
+        result = _run_query_guard("DROP TABLE x")
         assert "error" in result
 
     def test_rejects_multi_statement(self):
-        import asyncio
-        from unittest.mock import MagicMock
-
-        from app.services.tools.databricks_tools import QueryDeltaTable
-
-        async def _run():
-            ctx = MagicMock()
-            return await QueryDeltaTable().run(ctx, {"sql": "SELECT 1; SELECT 2"})
-
-        result = asyncio.run(_run())
+        result = _run_query_guard("SELECT 1; SELECT 2")
         assert "error" in result
         assert "Multi-statement" in result["error"]
 
     def test_rejects_forbidden_standalone_keyword(self):
-        import asyncio
-        from unittest.mock import MagicMock
-
-        from app.services.tools.databricks_tools import QueryDeltaTable
-
-        async def _run():
-            ctx = MagicMock()
-            # Guard whitespace-split pega tokens standalone
-            return await QueryDeltaTable().run(
-                ctx, {"sql": "SELECT * FROM x WHERE DELETE IS NULL"}
-            )
-
-        result = asyncio.run(_run())
+        # Guard whitespace-split pega tokens standalone
+        result = _run_query_guard("SELECT * FROM x WHERE DELETE IS NULL")
         assert "error" in result
         assert "Palavras proibidas" in result["error"]

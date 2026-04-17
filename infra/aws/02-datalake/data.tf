@@ -19,10 +19,10 @@ data "terraform_remote_state" "foundation" {
 # data "terraform_remote_state" "foundation" {
 #   backend = "s3"
 #   config = {
-#     bucket         = "namastex-terraform-state"
+#     bucket         = "flowertex-terraform-state"
 #     key            = "foundation/terraform.tfstate"
 #     region         = "us-east-2"
-#     dynamodb_table = "namastex-terraform-state-lock"
+#     dynamodb_table = "flowertex-terraform-state-lock"
 #     encrypt        = true
 #   }
 # }

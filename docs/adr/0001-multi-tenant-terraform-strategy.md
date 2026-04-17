@@ -4,7 +4,7 @@
 
 ## Problema
 
-O produto está evoluindo para marketplace de pipelines com deploy "one-click" por empresa. `infra/aws/` hoje descreve uma única conta (`namastex`) e `terraform_remote_state` aponta para state local — inviabiliza N clientes sem refactor.
+O produto está evoluindo para marketplace de pipelines com deploy "one-click" por empresa. `infra/aws/` hoje descreve uma única conta (`flowertex`) e `terraform_remote_state` aponta para state local — inviabiliza N clientes sem refactor.
 
 3 alternativas em jogo:
 
@@ -68,7 +68,7 @@ Racional:
 
 ### Terraform continua servindo
 
-- Desenvolvimento do **namastex** (conta interna) — infra estável, Terraform ok
+- Desenvolvimento do **flowertex** (conta interna) — infra estável, Terraform ok
 - Template de referência: código em `infra/aws/` vira a "spec canônica" que o runtime Python precisa implementar
 - CI `ci-infra.yml` garante que o template continua válido + passa tfsec/tflint
 

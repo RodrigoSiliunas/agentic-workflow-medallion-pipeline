@@ -1,12 +1,12 @@
 services:
   backend:
     build: .
-    container_name: namastex-backend
+    container_name: flowertex-backend
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/namastex
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/flowertex
       REDIS_URL: redis://redis:6379/0
       OMNI_API_URL: http://omni:8882/api/v2
       CORS_ORIGINS: '["http://localhost:3000"]'
@@ -22,12 +22,12 @@ services:
       start_period: 30s
       retries: 3
     networks:
-      - namastex-net
+      - flowertex-net
       - omni-net
 
   frontend:
     build: ../frontend
-    container_name: namastex-frontend
+    container_name: flowertex-frontend
     ports:
       - "3000:3000"
     environment:
@@ -44,15 +44,15 @@ services:
       start_period: 20s
       retries: 3
     networks:
-      - namastex-net
+      - flowertex-net
 
   postgres:
     image: postgres:17-alpine
-    container_name: namastex-postgres
+    container_name: flowertex-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: namastex
+      POSTGRES_DB: flowertex
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -64,11 +64,11 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - namastex-net
+      - flowertex-net
 
   redis:
     image: redis:7-alpine
-    container_name: namastex-redis
+    container_name: flowertex-redis
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -77,13 +77,13 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - namastex-net
+      - flowertex-net
 
   omni:
     build:
       context: .
       dockerfile: omni.Dockerfile
-    container_name: namastex-omni
+    container_name: flowertex-omni
     ports:
       - "8882:8882"
     environment:
@@ -96,7 +96,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - namastex-net
+      - flowertex-net
       - omni-net
     restart: unless-stopped
 
@@ -105,7 +105,7 @@ volumes:
   omnidata:
 
 networks:
-  namastex-net:
+  flowertex-net:
     driver: bridge
   omni-net:
     driver: bridge

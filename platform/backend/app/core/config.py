@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # App
     DEBUG: bool = False
-    APP_NAME: str = "Namastex Platform"
+    APP_NAME: str = "Flowertex Platform"
     API_V1_PREFIX: str = "/api/v1"
     AUTO_SEED: bool = True  # Seed templates at startup — idempotente
     # Runner concreto que executa cada etapa do one-click deploy.
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     SAGA_RUNNER: str = "mock"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/namastex"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/flowertex"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

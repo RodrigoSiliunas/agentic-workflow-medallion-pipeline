@@ -8,7 +8,7 @@
 
 <script setup lang="ts">
 // Força dark mode como default. O usuário pode alternar no futuro
-// via toggle de tema, mas o brand Safatechx é dark-first.
+// via toggle de tema, mas o brand Flowertex é dark-first.
 const colorMode = useColorMode()
 onMounted(() => {
   if (!colorMode.preference || colorMode.preference === "system") {
@@ -17,7 +17,7 @@ onMounted(() => {
 })
 
 useHead({
-  title: "Safatechx Platform",
+  title: "Flowertex Platform",
   meta: [
     {
       name: "description",

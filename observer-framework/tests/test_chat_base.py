@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
 from observer.chat.base import (
     ChatEndEvent,
     ChatErrorEvent,
@@ -26,16 +30,9 @@ class TestToolSpec:
         }
 
     def test_tool_spec_is_frozen(self):
-        import dataclasses
-
         t = ToolSpec(name="x", description="y", input_schema={})
-        try:
+        with pytest.raises(dataclasses.FrozenInstanceError):
             t.name = "z"  # type: ignore[misc]
-        except dataclasses.FrozenInstanceError:
-            return
-        except AttributeError:
-            return
-        raise AssertionError("ToolSpec should be frozen")
 
 
 class TestChatEvents:

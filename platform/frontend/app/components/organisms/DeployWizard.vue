@@ -324,7 +324,7 @@ const environments: Array<{ value: "dev" | "staging" | "prod"; label: string }> 
 
 const currentStep = ref(0)
 const confirmed = ref(false)
-const tagsText = ref("team=data-platform,company=safatechx")
+const tagsText = ref("team=data-platform,company=flowertex")
 
 const config = reactive<DeploymentConfig>({
   name: `${props.template.slug}-prod`,

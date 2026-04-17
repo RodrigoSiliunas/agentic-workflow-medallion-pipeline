@@ -14,7 +14,7 @@ Requer env vars:
 
 Opcionais (se AWS integrado via Marketplace):
   AWS_IAM_ROLE_ARN   — ARN da role cross-account do Databricks
-  S3_BUCKET_URL      — URL do bucket (ex: s3://namastex-medallion-datalake)
+  S3_BUCKET_URL      — URL do bucket (ex: s3://flowertex-medallion-datalake)
 """
 
 import os

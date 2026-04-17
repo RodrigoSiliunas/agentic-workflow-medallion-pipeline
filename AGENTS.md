@@ -126,7 +126,7 @@ Detalhes completos em `observer-framework/README.md` e `observer-framework/docs/
 ## Infraestrutura (infra/aws/)
 
 - **01-foundation**: IAM users/roles/policies, Security Groups, Secrets Manager, S3 Databricks root
-- **02-datalake**: S3 `namastex-medallion-datalake` com lifecycle rules
+- **02-datalake**: S3 `flowertex-medallion-datalake` com lifecycle rules
 - Account ID dinâmico via `data.aws_caller_identity` — NUNCA hardcodar
 
 ## CI/CD

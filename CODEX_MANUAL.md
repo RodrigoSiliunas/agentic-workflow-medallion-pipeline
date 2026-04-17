@@ -638,7 +638,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 | `aws-access-key-id` | IAM access key |
 | `aws-secret-access-key` | IAM secret key |
 | `aws-region` | `us-east-2` |
-| `s3-bucket` | `namastex-medallion-datalake` |
+| `s3-bucket` | `flowertex-medallion-datalake` |
 | `anthropic-api-key` | Claude API key |
 | `github-token` | GitHub PAT |
 | `masking-secret` | Chave HMAC para PII |
@@ -809,7 +809,7 @@ infra/aws/
 
 - Account ID dinamico via `data.aws_caller_identity.current.account_id`
 - NAO hardcodar account ID em nenhum lugar
-- S3 buckets: `namastex-databricks-root` (Databricks), `namastex-medallion-datalake` (dados)
+- S3 buckets: `flowertex-databricks-root` (Databricks), `flowertex-medallion-datalake` (dados)
 - Lifecycle rules: Glacier apos 90 dias para bronze
 - Databricks workspace criado manualmente (trial) — Terraform gerencia o resto
 
@@ -872,8 +872,8 @@ target-version = "py311"
 
 ```bash
 # AWS
-S3_BUCKET=namastex-medallion-datalake
-S3_BRONZE_PATH=s3://namastex-medallion-datalake/bronze/
+S3_BUCKET=flowertex-medallion-datalake
+S3_BRONZE_PATH=s3://flowertex-medallion-datalake/bronze/
 
 # Databricks
 DATABRICKS_HOST=https://<your-workspace>.cloud.databricks.com
@@ -912,7 +912,7 @@ PIPELINE_CLUSTER_ID=<your-cluster-id>
 - Account ID: `051457670776`
 - Regiao: `us-east-2`
 - IAM user: criado via Terraform
-- Buckets: `namastex-medallion-datalake`, `namastex-databricks-root`
+- Buckets: `flowertex-medallion-datalake`, `flowertex-databricks-root`
 
 ---
 

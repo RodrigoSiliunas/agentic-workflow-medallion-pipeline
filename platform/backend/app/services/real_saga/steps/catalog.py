@@ -81,7 +81,7 @@ class CatalogStep:
             existing = [c for c in w.catalogs.list() if c.name == catalog]
             if existing:
                 return
-            w.catalogs.create(name=catalog, comment="Safatechx platform — medallion pipeline")
+            w.catalogs.create(name=catalog, comment="Flowertex platform — medallion pipeline")
 
         await asyncio.to_thread(_ensure)
 

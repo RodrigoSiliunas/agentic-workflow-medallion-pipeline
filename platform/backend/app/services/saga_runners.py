@@ -137,7 +137,7 @@ MOCK_STEP_LOGS: dict[str, list[str]] = {
         "Run completo",
     ],
     "register": [
-        "Adicionando pipeline ao dashboard Namastex",
+        "Adicionando pipeline ao dashboard Flowertex",
         "Configurando chat agent para este workflow",
         "Deployment finalizado com sucesso",
     ],

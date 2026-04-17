@@ -6,7 +6,6 @@ via SSE por clientes conectados em `/deployments/{id}/events`.
 """
 
 import asyncio
-import contextlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -74,7 +73,7 @@ SAGA_BLUEPRINT: list[dict[str, str]] = [
     },
     {
         "id": "register",
-        "name": "Register in Safatechx platform",
+        "name": "Register in Flowertex platform",
         "description": "Adiciona o pipeline ao seu dashboard com chat integrado",
     },
 ]
@@ -105,18 +104,16 @@ def subscribe(deployment_id: str) -> asyncio.Queue[dict[str, Any]]:
 
 
 def unsubscribe(deployment_id: str, queue: asyncio.Queue[dict[str, Any]]) -> None:
-    # Chamado sync; schedule no loop corrente se possivel.
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = None
-    coro = _fallback_inmem.unsubscribe(deployment_id, queue)
-    if loop and loop.is_running():
-        asyncio.ensure_future(coro)
-    else:
-        # Sem loop — tenta executar sync via asyncio.run (safe fora de loop).
-        with contextlib.suppress(RuntimeError):
-            asyncio.run(coro)
+    """Remove queue do fallback in-memory sincronamente.
+
+    Operação é O(n) num list — sem I/O. Manter sync evita race entre
+    `unsubscribe()` e `_publish()` subsequente no mesmo event loop.
+    """
+    subs = _fallback_inmem._subscribers.get(deployment_id, [])
+    if queue in subs:
+        subs.remove(queue)
+    if not subs:
+        _fallback_inmem._subscribers.pop(deployment_id, None)
 
 
 async def subscribe_async(deployment_id: str):

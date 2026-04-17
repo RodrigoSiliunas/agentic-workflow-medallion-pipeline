@@ -1,4 +1,4 @@
-# Safatechx Platform — Fluxo Completo do Sistema
+# Flowertex Platform — Fluxo Completo do Sistema
 
 ## 1. Registro e Autenticacao
 
@@ -171,7 +171,7 @@ O ponto-chave: WhatsApp, Telegram, Discord e web compartilham o **mesmo thread**
 ### Local (Docker Compose)
 
 ```
-PostgreSQL 17  (:5432)  — banco principal (namastex) + banco Omni (omni)
+PostgreSQL 17  (:5432)  — banco principal (flowertex) + banco Omni (omni)
 Redis 7        (:6379)  — cache, rate limiting, token revocation, poller dedup
 Omni Gateway   (:8882)  — WhatsApp (Baileys) + Telegram + Discord
 Backend        (:8000)  — FastAPI async

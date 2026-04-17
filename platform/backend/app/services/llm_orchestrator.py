@@ -22,8 +22,10 @@ from observer.chat import (
     ChatToolUseEvent,
     create_chat_provider,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.company import Company
 from app.services.context_engine import ContextEngine
 from app.services.credential_service import CredentialService
 from app.services.databricks_service import DatabricksService
@@ -74,9 +76,6 @@ class LLMOrchestrator:
     async def _get_model(self, override: str | None = None) -> str:
         if override and override in self.MODEL_MAP:
             return self.MODEL_MAP[override]
-        from sqlalchemy import select
-
-        from app.models.company import Company
         result = await self.db.execute(
             select(Company.preferred_model).where(Company.id == self.company_id)
         )

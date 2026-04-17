@@ -1,5 +1,5 @@
 /* ============================================================
- * Safatechx Platform — Global Styles
+ * Flowertex Platform — Global Styles
  * Design System: purple-forward, dark-first, minimal tech
  * Reference: DESIGN.md
  * ============================================================ */
@@ -8,21 +8,21 @@
 @import "@nuxt/ui";
 
 /* ------------------------------------------------------------
- * Tailwind 4 @theme — registra a cor `safatechx` na escala 50→900
+ * Tailwind 4 @theme — registra a cor `flowertex` na escala 50→900
  * para que @nuxt/ui possa usar via app.config.ts > colors.primary
  * ------------------------------------------------------------ */
 @theme static {
-  --color-safatechx-50: #f5f3ff;
-  --color-safatechx-100: #ede9fe;
-  --color-safatechx-200: #ddd6fe;
-  --color-safatechx-300: #c4b5fd;
-  --color-safatechx-400: #a78bfa;
-  --color-safatechx-500: #8e51f6;
-  --color-safatechx-600: #7f22fe;
-  --color-safatechx-700: #7008e7;
-  --color-safatechx-800: #5b0fb7;
-  --color-safatechx-900: #3b0764;
-  --color-safatechx-950: #2c0750;
+  --color-flowertex-50: #f5f3ff;
+  --color-flowertex-100: #ede9fe;
+  --color-flowertex-200: #ddd6fe;
+  --color-flowertex-300: #c4b5fd;
+  --color-flowertex-400: #a78bfa;
+  --color-flowertex-500: #8e51f6;
+  --color-flowertex-600: #7f22fe;
+  --color-flowertex-700: #7008e7;
+  --color-flowertex-800: #5b0fb7;
+  --color-flowertex-900: #3b0764;
+  --color-flowertex-950: #2c0750;
 
   --font-sans: "Geist", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", Consolas, monospace;
@@ -34,7 +34,7 @@
  * Acesso direto via var(--token) ou bg-[var(--token)] / text-[var(--token)]
  * ------------------------------------------------------------ */
 :root {
-  /* Brand purple — Safatechx scale (50 → 700) */
+  /* Brand purple — Flowertex scale (50 → 700) */
   --brand-50: #f5f3ff;
   --brand-100: #ede9fe;
   --brand-200: #ddd6fe;
@@ -131,7 +131,7 @@ samp {
 }
 
 /* ------------------------------------------------------------
- * Headings — Safatechx tracking signature (negative)
+ * Headings — Flowertex tracking signature (negative)
  * ------------------------------------------------------------ */
 h1 {
   font-weight: 600;
@@ -155,7 +155,7 @@ h4 {
 }
 
 /* ------------------------------------------------------------
- * Hero signature (Safatechx) — gradient blur circles
+ * Hero signature (Flowertex) — gradient blur circles
  * ------------------------------------------------------------ */
 .hero-blur-purple {
   position: absolute;
@@ -175,7 +175,7 @@ h4 {
 }
 
 /* ------------------------------------------------------------
- * Status pulse animation (Safatechx running indicator)
+ * Status pulse animation (Flowertex running indicator)
  * ------------------------------------------------------------ */
 @keyframes status-pulse {
   0%,

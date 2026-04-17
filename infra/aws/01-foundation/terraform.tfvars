@@ -6,4 +6,4 @@ databricks_account_id = ""
 # da env var TF_VAR_databricks_external_id — nao commitar aqui.
 # Valor anterior foi exposto em git historico — ROTACIONAR no Databricks.
 create_pipeline_user = true
-bucket_name          = "namastex-medallion-datalake"
+bucket_name          = "flowertex-medallion-datalake"

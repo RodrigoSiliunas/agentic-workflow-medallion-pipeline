@@ -94,7 +94,7 @@ export const EXAMPLE_LOGS_PER_STEP: Record<string, string[]> = {
     "Run completo",
   ],
   register: [
-    "Adicionando pipeline ao dashboard Safatechx",
+    "Adicionando pipeline ao dashboard Flowertex",
     "Configurando chat agent para este workflow",
     "Deployment finalizado com sucesso",
   ],
@@ -167,7 +167,7 @@ function generateMockDeployment(
     config: {
       name: `${name} — prod`,
       environment: "prod",
-      tags: { company: "safatechx", team: "data-platform" },
+      tags: { company: "flowertex", team: "data-platform" },
       credentials: {},
       envVars: {},
     },

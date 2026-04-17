@@ -1,4 +1,4 @@
-"""FastAPI application — Namastex Platform Backend."""
+"""FastAPI application — Flowertex Platform Backend."""
 
 import asyncio
 import contextlib
@@ -41,7 +41,7 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown hooks."""
-    logger.info("Starting Namastex Platform Backend", version="0.1.0")
+    logger.info("Starting Flowertex Platform Backend", version="0.1.0")
 
     # TODO: Initialize Redis connection pool
     # TODO: Start background tasks (subscription scheduler, etc.)
@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Namastex Platform API",
+    title="Flowertex Platform API",
     version="0.1.0",
     description="Plataforma conversacional para pipelines Medallion",
     lifespan=lifespan,

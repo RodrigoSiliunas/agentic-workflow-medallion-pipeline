@@ -1,4 +1,4 @@
-# Safatechx Platform
+# Flowertex Platform
 
 Plataforma conversacional para pipelines de dados Medallion com deploy one-click, chat AI com tools em tempo real, e integração multi-canal (WhatsApp, Telegram, Discord).
 
@@ -33,7 +33,7 @@ docker compose down -v && docker compose up -d --build
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Safatechx Platform                         │
+│                      Flowertex Platform                         │
 ├──────────────┬──────────────┬──────────────┬────────────────────┤
 │   Frontend   │   Backend    │  Omni Gateway│   Databricks       │
 │   Nuxt 4     │   FastAPI    │  WhatsApp    │   Pipeline ETL     │

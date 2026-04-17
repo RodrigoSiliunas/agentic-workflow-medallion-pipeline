@@ -1,6 +1,6 @@
-# Design System — Namastex Platform
+# Design System — Flowertex Platform
 
-Inspirado em **Cohere** (enterprise polish, 22px cards, chromatic restraint) e **namastex.ai** (purple-forward, dark-first, technical warmth, generous whitespace, minimal tech aesthetic).
+Inspirado em **Cohere** (enterprise polish, 22px cards, chromatic restraint) e **flowertex.ai** (purple-forward, dark-first, technical warmth, generous whitespace, minimal tech aesthetic).
 
 ## 1. Visual Theme
 
@@ -10,7 +10,7 @@ Uma plataforma de dados que transmite **autoridade tecnica com acessibilidade**.
 
 ## 2. Color Palette
 
-### Brand Purple (Namastex)
+### Brand Purple (Flowertex)
 
 | Step | Hex | Uso |
 |------|-----|-----|
@@ -80,7 +80,7 @@ Uma plataforma de dados que transmite **autoridade tecnica com acessibilidade**.
 | **Body/UI** | `Geist` | `system-ui, -apple-system, sans-serif` |
 | **Code** | `Geist Mono` | `JetBrains Mono, Fira Code, Consolas, monospace` |
 
-Geist eh a font da Namastex (e da Vercel). Carregada via `@nuxt/fonts` provider Google. Pesos disponiveis: 100, 200, 300, 400, 500, 600, 700, 800, 900.
+Geist eh a font da Flowertex (e da Vercel). Carregada via `@nuxt/fonts` provider Google. Pesos disponiveis: 100, 200, 300, 400, 500, 600, 700, 800, 900.
 
 ### Hierarchy
 
@@ -97,7 +97,7 @@ Geist eh a font da Namastex (e da Vercel). Carregada via `@nuxt/fonts` provider 
 | Code | 13px | 400 | 1.5 | normal |
 | Overline | 11px | 600 | 1.3 | 0.08em (uppercase) |
 
-Headings com **negative tracking** (`-0.01em` a `-0.04em`) eh signature Namastex — comunica autoridade tecnica.
+Headings com **negative tracking** (`-0.01em` a `-0.04em`) eh signature Flowertex — comunica autoridade tecnica.
 
 ## 4. Spacing
 
@@ -113,7 +113,7 @@ Base unit: **4px**
 | `2xl` | 32px | Margem entre blocos |
 | `3xl` | 48px | Espacamento entre secoes da pagina |
 | `4xl` | 64px | Hero sections |
-| `5xl` | 96px | Hero vertical breathing room (Namastex generous whitespace) |
+| `5xl` | 96px | Hero vertical breathing room (Flowertex generous whitespace) |
 
 ## 5. Border Radius
 
@@ -124,9 +124,9 @@ Base unit: **4px**
 | `lg` | 16px | Cards padrao, modais |
 | `xl` | 22px | Cards destacados (Cohere signature) |
 | `2xl` | 28px | Hero cards |
-| `full` | 9999px | Avatares, pills, status dots, CTAs Namastex (`rounded-full` buttons) |
+| `full` | 9999px | Avatares, pills, status dots, CTAs Flowertex (`rounded-full` buttons) |
 
-CTAs principais usam `rounded-full` — outra signature Namastex.
+CTAs principais usam `rounded-full` — outra signature Flowertex.
 
 ## 6. Shadows
 
@@ -137,7 +137,7 @@ CTAs principais usam `rounded-full` — outra signature Namastex.
 | None | — | Maioria dos elementos (bordas definem) |
 | Subtle | `0 1px 2px rgba(0,0,0,0.4)` | Dropdowns, tooltips |
 | Medium | `0 4px 12px rgba(0,0,0,0.5)` | Modais, popovers |
-| Inner Glow | `inset 70px -20px 130px 0px rgba(127, 34, 254, 0.05)` | Feature cards (Namastex inset shadow signature) |
+| Inner Glow | `inset 70px -20px 130px 0px rgba(127, 34, 254, 0.05)` | Feature cards (Flowertex inset shadow signature) |
 | Focus | `0 0 0 2px rgba(127, 34, 254, 0.4)` | Focus ring (brand-600 com alpha) |
 
 Em dark mode, profundidade vem de **cor de fundo** (card mais claro = mais elevado), nao de sombra.
@@ -151,9 +151,9 @@ Em dark mode, profundidade vem de **cor de fundo** (card mais claro = mais eleva
 | Card | `0 1px 3px rgba(0,0,0,0.1)` | Cards padrao |
 | Focus | `0 0 0 2px rgba(127, 34, 254, 0.2)` | Focus ring |
 
-## 7. Hero Signature (Namastex)
+## 7. Hero Signature (Flowertex)
 
-A homepage do `namastex.ai` tem dois elementos visuais que sao signature:
+A homepage do `flowertex.ai` tem dois elementos visuais que sao signature:
 
 ### Gradient Blur Circles
 

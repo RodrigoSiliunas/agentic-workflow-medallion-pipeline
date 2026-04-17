@@ -22,13 +22,13 @@
         <AppInput
           v-model="form.companyName"
           label="Nome da empresa"
-          placeholder="Safatechx Labs"
+          placeholder="Flowertex Labs"
           :error="errors.companyName"
         />
         <AppInput
           v-model="form.companySlug"
           label="Slug"
-          placeholder="safatechx"
+          placeholder="flowertex"
           helper="Identificador único (só letras minúsculas, números e hífen)"
           :error="errors.companySlug"
           @update:model-value="onSlugInput"
@@ -53,7 +53,7 @@
           v-model="form.adminEmail"
           label="Email"
           type="email"
-          placeholder="rodrigo@safatechx.com"
+          placeholder="rodrigo@flowertex.com"
           helper="Domínio precisa ser válido (ex: .com, .ai, .io)"
           :error="errors.adminEmail"
         />

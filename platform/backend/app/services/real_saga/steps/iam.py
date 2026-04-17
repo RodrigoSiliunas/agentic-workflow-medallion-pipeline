@@ -161,7 +161,7 @@ class IamStep:
                 Description="Databricks cross-account role for Unity Catalog + S3",
                 Tags=[
                     {"Key": "Project", "Value": "medallion-pipeline"},
-                    {"Key": "ManagedBy", "Value": "safatechx-platform"},
+                    {"Key": "ManagedBy", "Value": "flowertex-platform"},
                 ],
             )
             arn = role["Role"]["Arn"]

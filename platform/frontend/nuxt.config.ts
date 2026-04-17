@@ -40,17 +40,17 @@ export default defineNuxtConfig({
     },
   },
 
-  // Nuxt UI color config — primary aponta pra paleta Safatechx (definida em app.config.ts)
+  // Nuxt UI color config — primary aponta pra paleta Flowertex (definida em app.config.ts)
   ui: {
     colorMode: true,
   },
 
-  // Geist font (sans + mono) — design system Safatechx
+  // Geist font (sans + mono) — design system Flowertex
   fonts: {
     families: [
       { name: "Geist", provider: "google", weights: [300, 400, 500, 600, 700] },
       { name: "Geist Mono", provider: "google", weights: [400, 500] },
-      // Serif display para headlines elegantes (estilo ngrok / safatechx.com)
+      // Serif display para headlines elegantes (estilo ngrok / flowertex.com)
       { name: "Instrument Serif", provider: "google", weights: [400], italic: true },
     ],
   },

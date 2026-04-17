@@ -14,8 +14,8 @@ terraform apply
 
 Saída esperada:
 
-- `aws_s3_bucket.terraform_state` — `namastex-terraform-state`
-- `aws_dynamodb_table.terraform_locks` — `namastex-terraform-state-lock`
+- `aws_s3_bucket.terraform_state` — `flowertex-terraform-state`
+- `aws_dynamodb_table.terraform_locks` — `flowertex-terraform-state-lock`
 
 ## Migração dos outros módulos
 
@@ -39,18 +39,18 @@ terraform init -migrate-state
 
 | Recurso | Nome | Função |
 |---------|------|--------|
-| S3 bucket | `namastex-terraform-state` | guarda arquivos `.tfstate` |
+| S3 bucket | `flowertex-terraform-state` | guarda arquivos `.tfstate` |
 | Versioning | Enabled | recuperar state corrompido |
-| SSE-KMS | `alias/namastex-tfstate` | encryption em repouso |
+| SSE-KMS | `alias/flowertex-tfstate` | encryption em repouso |
 | Public access block | todos true | bloqueia exposição acidental |
 | Bucket policy | Deny `aws:SecureTransport=false` | força TLS |
-| DynamoDB table | `namastex-terraform-state-lock` | locking concorrente |
+| DynamoDB table | `flowertex-terraform-state-lock` | locking concorrente |
 
 ## Variáveis
 
 - `aws_region` (default `us-east-2`)
-- `backend_bucket_name` (default `namastex-terraform-state`)
-- `lock_table_name` (default `namastex-terraform-state-lock`)
+- `backend_bucket_name` (default `flowertex-terraform-state`)
+- `lock_table_name` (default `flowertex-terraform-state-lock`)
 
 ## Cleanup (não recomendado em produção)
 

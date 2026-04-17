@@ -115,7 +115,7 @@
               class="flex-1 mx-6 h-5 rounded-[var(--radius-sm)] flex items-center justify-center text-[10px] font-[var(--font-mono)]"
               :style="{ background: 'var(--bg)', color: 'var(--text-tertiary)' }"
             >
-              app.safatechx.com/deployments/dep-5f9e2
+              app.flowertex.com/deployments/dep-5f9e2
             </div>
           </div>
           <!-- Fake content — saga steps preview -->
@@ -346,7 +346,7 @@
         class="max-w-6xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3"
       >
         <p class="text-[11px]" :style="{ color: 'var(--text-tertiary)' }">
-          © 2026 Safatechx Labs · Plataforma agêntica de pipelines
+          © 2026 Flowertex Labs · Plataforma agêntica de pipelines
         </p>
         <div class="flex items-center gap-4 text-[11px]">
           <a
@@ -385,7 +385,7 @@ onMounted(() => {
 })
 
 useHead({
-  title: "Safatechx — Pipelines que corrigem a si mesmos",
+  title: "Flowertex — Pipelines que corrigem a si mesmos",
   meta: [
     {
       name: "description",

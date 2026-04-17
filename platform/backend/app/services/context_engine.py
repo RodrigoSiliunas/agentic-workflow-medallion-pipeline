@@ -39,7 +39,7 @@ class AssembledContext:
     total_tokens: int = 0
 
 
-SYSTEM_PROMPT = """Voce e o assistente do pipeline Medallion da empresa no Safatechx Platform.
+SYSTEM_PROMPT = """Voce e o assistente do pipeline Medallion da empresa no Flowertex Platform.
 Voce tem acesso a tools que consultam Databricks e GitHub em tempo real.
 
 REGRAS CRITICAS:

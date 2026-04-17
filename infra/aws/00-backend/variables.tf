@@ -11,11 +11,11 @@ variable "aws_region" {
 variable "backend_bucket_name" {
   description = "Nome do S3 bucket que hospeda os arquivos tfstate"
   type        = string
-  default     = "namastex-terraform-state"
+  default     = "flowertex-terraform-state"
 }
 
 variable "lock_table_name" {
   description = "Nome da tabela DynamoDB usada para lock concorrente"
   type        = string
-  default     = "namastex-terraform-state-lock"
+  default     = "flowertex-terraform-state-lock"
 }

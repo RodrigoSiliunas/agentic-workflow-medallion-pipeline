@@ -1,4 +1,4 @@
-# Guia de Atomic Design — Namastex Platform
+# Guia de Atomic Design — Flowertex Platform
 
 ## Hierarquia de Componentes
 

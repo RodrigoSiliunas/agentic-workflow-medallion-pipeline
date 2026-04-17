@@ -9,7 +9,7 @@
 
 <script setup lang="ts">
 // Layout dedicado da landing — sem sidebar, dark-first, full-bleed.
-// Força dark mode para manter a signature Safatechx.
+// Força dark mode para manter a signature Flowertex.
 const colorMode = useColorMode()
 onMounted(() => {
   colorMode.preference = "dark"

@@ -116,7 +116,11 @@ class OmniService:
     async def configure_webhook_provider(self, backend_webhook_url: str) -> dict:
         resp = await self._client().post(
             f"{self.base_url}/providers",
-            json={"name": "namastex-platform", "schema": "webhook", "baseUrl": backend_webhook_url},
+            json={
+                "name": "flowertex-platform",
+                "schema": "webhook",
+                "baseUrl": backend_webhook_url,
+            },
             headers=self._headers(),
         )
         resp.raise_for_status()

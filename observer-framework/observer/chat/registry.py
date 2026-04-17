@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -53,7 +54,5 @@ def _ensure_loaded() -> None:
     Segue mesmo padrão do `observer.providers._ensure_providers_loaded`.
     """
     if not CHAT_PROVIDER_REGISTRY:
-        import contextlib
-
         with contextlib.suppress(ImportError):
             import observer.chat.anthropic  # noqa: F401

@@ -35,7 +35,7 @@ _email_re = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 # Mensagens padrao
 MSG_ONBOARDING = (
-    "Ola! Sou o assistente Safatechx.\n\n"
+    "Ola! Sou o assistente Flowertex.\n\n"
     "Para comecar, preciso vincular seu numero a sua conta na plataforma.\n"
     "Por favor, digite o *email* que voce usa para fazer login:"
 )

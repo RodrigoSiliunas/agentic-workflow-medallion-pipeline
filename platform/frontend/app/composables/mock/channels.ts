@@ -8,7 +8,7 @@ export const MOCK_INSTANCES: OmniInstance[] = [
   {
     id: "ch-mock-1",
     omniInstanceId: "omni-wa-acme-1",
-    name: "safatechx-suporte",
+    name: "flowertex-suporte",
     channel: "whatsapp",
     state: "connected",
     lastSyncAt: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
@@ -19,7 +19,7 @@ export const MOCK_INSTANCES: OmniInstance[] = [
   {
     id: "ch-mock-2",
     omniInstanceId: "omni-dc-acme-1",
-    name: "safatechx-discord-bot",
+    name: "flowertex-discord-bot",
     channel: "discord",
     state: "connected",
     lastSyncAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
@@ -30,7 +30,7 @@ export const MOCK_INSTANCES: OmniInstance[] = [
   {
     id: "ch-mock-3",
     omniInstanceId: "omni-tg-acme-1",
-    name: "safatechx-telegram-alerts",
+    name: "flowertex-telegram-alerts",
     channel: "telegram",
     state: "connecting",
     lastSyncAt: null,

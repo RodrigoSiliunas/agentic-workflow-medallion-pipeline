@@ -35,14 +35,14 @@
       <circle cx="24" cy="24" r="3" fill="var(--bg, #090a0b)" />
     </svg>
 
-    <!-- Wordmark: "Safatechx" em Geist via <text> (usa font ja carregada) -->
+    <!-- Wordmark: "Flowertex" em Geist via <text> (usa font ja carregada) -->
     <svg
       v-if="variant !== 'icon'"
       class="safa-logo__wordmark"
       :height="wordmarkHeight"
       viewBox="0 0 180 36"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Safatechx"
+      aria-label="Flowertex"
     >
       <text
         x="0"
@@ -52,7 +52,7 @@
         font-size="28"
         font-weight="600"
         letter-spacing="-0.8"
-      >Safatechx</text>
+      >Flowertex</text>
     </svg>
   </component>
 </template>

@@ -14,7 +14,7 @@
       <SafaLogo variant="icon" :size="28" />
       <div class="flex-1 min-w-0">
         <h1 class="text-sm font-semibold truncate" :style="{ color: 'var(--text-primary)' }">
-          Safatechx
+          Flowertex
         </h1>
         <p class="text-[10px] truncate" :style="{ color: 'var(--text-tertiary)' }">
           Pipeline agent platform
