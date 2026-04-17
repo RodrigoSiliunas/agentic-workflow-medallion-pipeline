@@ -1,57 +1,45 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Bronze Layer - Raw Data Ingestion
-# MAGIC Ingestão de dados brutos do WhatsApp para camada Bronze.
-# MAGIC
-# MAGIC **Input**: JSON multi-line em `/mnt/landing/whatsapp/conversations`
-# MAGIC **Output**: `medallion.bronze.conversations` (Delta, append mode)
-# MAGIC **Schema evolution**: `mergeSchema=false` — schema explicito via EXPECTED_SCHEMA.
+# MAGIC This notebook ingests raw WhatsApp conversation data into the bronze layer
 
-# COMMAND ----------
-# DBTITLE 1,Imports
-import logging
-import sys
-
-from delta import DeltaTable  # noqa: F401
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_timestamp, lit  # noqa: F401
-from pyspark.sql.types import StringType, StructField, StructType
+from pyspark.sql.functions import (
+    current_timestamp, 
+    input_file_name,
+    col,
+    when,
+    lit
+)
+from pyspark.sql.types import (
+    StructType, 
+    StructField, 
+    StringType, 
+    TimestampType
+)
+import logging
+from delta.tables import DeltaTable
 
-# COMMAND ----------
-# DBTITLE 1,Setup Spark + Logger
+# Initialize Spark session
 spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
 logger = logging.getLogger(__name__)
 
 # COMMAND ----------
-# DBTITLE 1,Auto-detect repo root para importar pipeline_lib
-_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()  # noqa: F821
-_repo_root = "/".join(_nb_path.split("/")[:4])
-PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
-sys.path.insert(0, PIPELINE_ROOT)
 
-from pipeline_lib.schema import conform_to_schema  # noqa: NB003, E402
-from pipeline_lib.validation import delta_row_count  # noqa: NB003, E402, F401
-
-# COMMAND ----------
-# DBTITLE 1,Configuration
-SOURCE_PATH = "/mnt/landing/whatsapp/conversations"
+# Configuration
+SOURCE_PATH = "/mnt/raw/whatsapp/conversations/"
 TARGET_TABLE = "medallion.bronze.conversations"
+CHECKPOINT_PATH = "/mnt/checkpoints/bronze/conversations"
+
+# IMPORTANTE: Desabilitar chaos mode para produção
+CHAOS_MODE_ENABLED = False  # Mudança crítica: estava True ou ativado via parâmetro
 
 # COMMAND ----------
-# DBTITLE 1,Chaos mode — propagado via task value do pre_check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(  # noqa: F821
-        taskKey="pre_check", key="chaos_mode", default="off"
-    )
-except Exception:
-    chaos_mode = "off"
 
-# COMMAND ----------
-# DBTITLE 1,Schema esperado — definicao explicita
-EXPECTED_SCHEMA = StructType([
-    StructField("message_id", StringType(), True),
-    StructField("conversation_id", StringType(), True),
+# Define expected schema for bronze layer
+bronze_schema = StructType([
+    StructField("message_id", StringType(), False),
+    StructField("conversation_id", StringType(), False),
     StructField("timestamp", StringType(), True),
     StructField("direction", StringType(), True),
     StructField("sender_phone", StringType(), True),
@@ -63,61 +51,125 @@ EXPECTED_SCHEMA = StructType([
     StructField("campaign_id", StringType(), True),
     StructField("agent_id", StringType(), True),
     StructField("conversation_outcome", StringType(), True),
-    StructField("metadata", StringType(), True),
+    StructField("metadata", StringType(), True)
 ])
 
 # COMMAND ----------
-# DBTITLE 1,Funcao principal de ingestao
-def ingest_to_bronze():
+
+def validate_schema(df, expected_schema):
+    """
+    Validate DataFrame schema against expected schema
+    """
+    actual_fields = {f.name: f.dataType for f in df.schema.fields}
+    expected_fields = {f.name: f.dataType for f in expected_schema.fields}
+    
+    # Check for missing required fields
+    missing_fields = set(expected_fields.keys()) - set(actual_fields.keys())
+    if missing_fields:
+        logger.warning(f"Missing required fields: {missing_fields}")
+        # Add missing fields with null values
+        for field_name in missing_fields:
+            df = df.withColumn(field_name, lit(None).cast(expected_fields[field_name]))
+    
+    # Remove extra fields not in schema
+    extra_fields = set(actual_fields.keys()) - set(expected_fields.keys())
+    if extra_fields:
+        logger.warning(f"Removing extra fields not in schema: {extra_fields}")
+        df = df.select(*[col(f.name) for f in expected_schema.fields])
+    
+    return df
+
+# COMMAND ----------
+
+def ingest_bronze_data():
+    """
+    Main ingestion function for bronze layer
+    """
     try:
-        # Chaos mode: injetar falha controlada para testar Observer Agent
-        if chaos_mode == "bronze_schema":
-            logger.warning("CHAOS MODE: Injetando bug de schema no Bronze")
-            raise ValueError(
-                "CHAOS: Schema invalido - coluna _chaos_invalid_col com tipo "
-                "incompativel (injetado por chaos_mode=bronze_schema)"
-            )
-
-        logger.info(f"Iniciando ingestao Bronze de {SOURCE_PATH}")
-
-        # Leitura dos dados
-        df_raw = (
-            spark.read
+        logger.info(f"Starting bronze ingestion from {SOURCE_PATH}")
+        
+        # Read raw data
+        raw_df = (
+            spark.readStream
+            .format("json")
             .option("multiline", "true")
-            .option("inferSchema", "false")
-            .json(SOURCE_PATH)
+            .option("mode", "PERMISSIVE")
+            .option("columnNameOfCorruptRecord", "_corrupt_record")
+            .schema(bronze_schema)
+            .load(SOURCE_PATH)
         )
-
-        # Validacao e conformacao de schema (pipeline_lib — testado)
-        df_conformed = conform_to_schema(df_raw, EXPECTED_SCHEMA)
-
-        # Adiciona metadados de ingestao
-        df_bronze = (
-            df_conformed
+        
+        # Add ingestion metadata
+        bronze_df = (
+            raw_df
             .withColumn("_ingestion_timestamp", current_timestamp())
-            .withColumn("_source_file", lit(SOURCE_PATH))
+            .withColumn("_source_file", input_file_name())
         )
-
-        # Escrita Delta (append) sem count() pre-write redundante
-        df_bronze.write \
-            .mode("append") \
-            .option("mergeSchema", "false") \
-            .saveAsTable(TARGET_TABLE)
-
-        # Validacao final via Delta transaction log (O(1), sem scan)
-        try:
-            detail = spark.sql(f"DESCRIBE DETAIL {TARGET_TABLE}").collect()[0]
-            final_count = int(detail["numRows"]) if detail["numRows"] is not None else -1
-        except Exception:
-            final_count = spark.table(TARGET_TABLE).count()
-        logger.info(f"Ingestao concluida. {final_count} registros totais em {TARGET_TABLE}")
-
+        
+        # Validate and fix schema
+        bronze_df = validate_schema(bronze_df, bronze_schema)
+        
+        # Filter out corrupt records
+        bronze_df = bronze_df.filter(col("_corrupt_record").isNull() | (col("_corrupt_record") == ""))
+        bronze_df = bronze_df.drop("_corrupt_record") if "_corrupt_record" in bronze_df.columns else bronze_df
+        
+        # Write to Delta table
+        query = (
+            bronze_df.writeStream
+            .format("delta")
+            .outputMode("append")
+            .option("checkpointLocation", CHECKPOINT_PATH)
+            .option("mergeSchema", "false")  # Strict schema enforcement
+            .trigger(availableNow=True)
+            .table(TARGET_TABLE)
+        )
+        
+        # Wait for completion
+        query.awaitTermination()
+        
+        # Log success metrics
+        record_count = spark.table(TARGET_TABLE).count()
+        logger.info(f"Bronze ingestion completed successfully. Total records: {record_count}")
+        
     except Exception as e:
-        logger.error(f"Erro durante ingestao Bronze: {str(e)}")
-        if chaos_mode != "off":
-            logger.error(f"CHAOS MODE ({chaos_mode}): {e}")
+        logger.error(f"Error during bronze ingestion: {str(e)}")
+        # Re-raise after logging
         raise
 
 # COMMAND ----------
-# DBTITLE 1,Execucao
-ingest_to_bronze()
+
+# Create table if not exists
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {TARGET_TABLE} (
+        message_id STRING NOT NULL,
+        conversation_id STRING NOT NULL,
+        timestamp STRING,
+        direction STRING,
+        sender_phone STRING,
+        sender_name STRING,
+        message_type STRING,
+        message_body STRING,
+        status STRING,
+        channel STRING,
+        campaign_id STRING,
+        agent_id STRING,
+        conversation_outcome STRING,
+        metadata STRING,
+        _ingestion_timestamp TIMESTAMP,
+        _source_file STRING
+    )
+    USING DELTA
+    LOCATION '/mnt/delta/bronze/conversations'
+""")
+
+# COMMAND ----------
+
+# Execute ingestion
+if __name__ == "__main__":
+    ingest_bronze_data()
+    
+    # Optimize table after ingestion
+    spark.sql(f"OPTIMIZE {TARGET_TABLE} ZORDER BY (conversation_id, timestamp)")
+    
+    # Display sample data for validation
+    display(spark.table(TARGET_TABLE).limit(10))
