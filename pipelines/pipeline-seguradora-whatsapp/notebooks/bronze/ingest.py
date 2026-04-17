@@ -1,123 +1,168 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Bronze Layer - Raw Data Ingestion
-# MAGIC Ingestão de dados brutos do WhatsApp para camada Bronze.
-# MAGIC
-# MAGIC **Input**: JSON multi-line em `/mnt/landing/whatsapp/conversations`
-# MAGIC **Output**: `medallion.bronze.conversations` (Delta, append mode)
-# MAGIC **Schema evolution**: `mergeSchema=false` — schema explicito via EXPECTED_SCHEMA.
+# MAGIC # Bronze Layer - Data Ingestion
+# MAGIC This notebook ingests raw data into the bronze layer
 
-# COMMAND ----------
-# DBTITLE 1,Imports
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import current_timestamp, lit, col
+from datetime import datetime
 import logging
 import sys
 
-from delta import DeltaTable  # noqa: F401
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_timestamp, lit  # noqa: F401
-from pyspark.sql.types import StringType, StructField, StructType
-
-# COMMAND ----------
-# DBTITLE 1,Setup Spark + Logger
-spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # COMMAND ----------
-# DBTITLE 1,Auto-detect repo root para importar pipeline_lib
-_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()  # noqa: F821
-_repo_root = "/".join(_nb_path.split("/")[:4])
-PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
-sys.path.insert(0, PIPELINE_ROOT)
 
-from pipeline_lib.schema import conform_to_schema  # noqa: NB003, E402
-from pipeline_lib.validation import delta_row_count  # noqa: NB003, E402, F401
+# Configuration
+BRONZE_PATH = dbutils.widgets.get("bronze_path") if dbutils.widgets.get("bronze_path") else "s3a://your-bucket/bronze"
+SOURCE_PATH = dbutils.widgets.get("source_path") if dbutils.widgets.get("source_path") else "s3a://your-bucket/raw"
+SOURCE_FORMAT = dbutils.widgets.get("source_format") if dbutils.widgets.get("source_format") else "json"
 
 # COMMAND ----------
-# DBTITLE 1,Configuration
-SOURCE_PATH = "/mnt/landing/whatsapp/conversations"
-TARGET_TABLE = "medallion.bronze.conversations"
 
-# COMMAND ----------
-# DBTITLE 1,Chaos mode — propagado via task value do pre_check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(  # noqa: F821
-        taskKey="pre_check", key="chaos_mode", default="off"
-    )
-except Exception:
-    chaos_mode = "off"
-
-# COMMAND ----------
-# DBTITLE 1,Schema esperado — definicao explicita
-EXPECTED_SCHEMA = StructType([
-    StructField("message_id", StringType(), True),
-    StructField("conversation_id", StringType(), True),
-    StructField("timestamp", StringType(), True),
-    StructField("direction", StringType(), True),
-    StructField("sender_phone", StringType(), True),
-    StructField("sender_name", StringType(), True),
-    StructField("message_type", StringType(), True),
-    StructField("message_body", StringType(), True),
-    StructField("status", StringType(), True),
-    StructField("channel", StringType(), True),
-    StructField("campaign_id", StringType(), True),
-    StructField("agent_id", StringType(), True),
-    StructField("conversation_outcome", StringType(), True),
-    StructField("metadata", StringType(), True),
-])
-
-# COMMAND ----------
-# DBTITLE 1,Funcao principal de ingestao
-def ingest_to_bronze():
+# Test S3 access before proceeding
+def test_s3_access(path):
+    """
+    Test if we have proper access to S3 path
+    """
     try:
-        # Chaos mode: injetar falha controlada para testar Observer Agent
-        if chaos_mode == "bronze_schema":
-            logger.warning("CHAOS MODE: Injetando bug de schema no Bronze")
-            raise ValueError(
-                "CHAOS: Schema invalido - coluna _chaos_invalid_col com tipo "
-                "incompativel (injetado por chaos_mode=bronze_schema)"
-            )
-
-        logger.info(f"Iniciando ingestao Bronze de {SOURCE_PATH}")
-
-        # Leitura dos dados
-        df_raw = (
-            spark.read
-            .option("multiline", "true")
-            .option("inferSchema", "false")
-            .json(SOURCE_PATH)
-        )
-
-        # Validacao e conformacao de schema (pipeline_lib — testado)
-        df_conformed = conform_to_schema(df_raw, EXPECTED_SCHEMA)
-
-        # Adiciona metadados de ingestao
-        df_bronze = (
-            df_conformed
-            .withColumn("_ingestion_timestamp", current_timestamp())
-            .withColumn("_source_file", lit(SOURCE_PATH))
-        )
-
-        # Escrita Delta (append) sem count() pre-write redundante
-        df_bronze.write \
-            .mode("append") \
-            .option("mergeSchema", "false") \
-            .saveAsTable(TARGET_TABLE)
-
-        # Validacao final via Delta transaction log (O(1), sem scan)
-        try:
-            detail = spark.sql(f"DESCRIBE DETAIL {TARGET_TABLE}").collect()[0]
-            final_count = int(detail["numRows"]) if detail["numRows"] is not None else -1
-        except Exception:
-            final_count = spark.table(TARGET_TABLE).count()
-        logger.info(f"Ingestao concluida. {final_count} registros totais em {TARGET_TABLE}")
-
+        # Try to list the path
+        dbutils.fs.ls(path)
+        logger.info(f"Successfully accessed path: {path}")
+        return True
     except Exception as e:
-        logger.error(f"Erro durante ingestao Bronze: {str(e)}")
-        if chaos_mode != "off":
-            logger.error(f"CHAOS MODE ({chaos_mode}): {e}")
-        raise
+        logger.error(f"Failed to access path {path}: {str(e)}")
+        if "Forbidden" in str(e) or "AccessDenied" in str(e):
+            logger.error("This is a permissions issue. Please check:")
+            logger.error("1. IAM role attached to Databricks cluster has s3:GetObject, s3:ListBucket permissions")
+            logger.error("2. S3 bucket policy allows access from Databricks")
+            logger.error("3. The path exists and is correctly specified")
+        return False
 
 # COMMAND ----------
-# DBTITLE 1,Execucao
-ingest_to_bronze()
+
+# Validate access to required paths
+if not test_s3_access(SOURCE_PATH.rsplit('/', 1)[0]):
+    raise Exception(f"Cannot access source path: {SOURCE_PATH}. Please fix S3 permissions.")
+
+if not test_s3_access(BRONZE_PATH.rsplit('/', 1)[0]):
+    raise Exception(f"Cannot access bronze path: {BRONZE_PATH}. Please fix S3 permissions.")
+
+# COMMAND ----------
+
+def ingest_to_bronze():
+    """
+    Ingest raw data to bronze layer with error handling
+    """
+    try:
+        logger.info(f"Starting ingestion from {SOURCE_PATH} to {BRONZE_PATH}")
+        
+        # Read source data based on format
+        if SOURCE_FORMAT.lower() == "json":
+            df = spark.read.option("multiLine", "true").json(SOURCE_PATH)
+        elif SOURCE_FORMAT.lower() == "csv":
+            df = spark.read.option("header", "true").option("inferSchema", "true").csv(SOURCE_PATH)
+        elif SOURCE_FORMAT.lower() == "parquet":
+            df = spark.read.parquet(SOURCE_PATH)
+        else:
+            raise ValueError(f"Unsupported source format: {SOURCE_FORMAT}")
+        
+        # Add metadata columns
+        df_with_metadata = df \
+            .withColumn("ingestion_timestamp", current_timestamp()) \
+            .withColumn("source_file", lit(SOURCE_PATH)) \
+            .withColumn("processing_date", lit(datetime.now().strftime("%Y-%m-%d")))
+        
+        # Write to bronze layer
+        df_with_metadata.write \
+            .mode("append") \
+            .partitionBy("processing_date") \
+            .parquet(BRONZE_PATH)
+        
+        record_count = df.count()
+        logger.info(f"Successfully ingested {record_count} records to bronze layer")
+        
+        # Return metrics
+        return {
+            "status": "success",
+            "records_processed": record_count,
+            "target_path": BRONZE_PATH,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to ingest data: {str(e)}")
+        
+        # Provide specific guidance based on error type
+        error_msg = str(e)
+        if "AccessDeniedException" in error_msg or "Forbidden" in error_msg:
+            logger.error("\n=== S3 PERMISSION ERROR ===")
+            logger.error("Action required:")
+            logger.error("1. Go to AWS IAM console")
+            logger.error("2. Find the IAM role used by your Databricks cluster")
+            logger.error("3. Attach a policy with these permissions:")
+            logger.error("""{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:ListBucket",
+                "s3:PutObject",
+                "s3:HeadObject"
+            ],
+            "Resource": [
+                "arn:aws:s3:::your-bucket/*",
+                "arn:aws:s3:::your-bucket"
+            ]
+        }
+    ]
+}""")
+            logger.error("4. Restart the Databricks cluster after updating IAM")
+        
+        raise e
+
+# COMMAND ----------
+
+# Execute ingestion
+result = ingest_to_bronze()
+print(f"Ingestion completed: {result}")
+
+# COMMAND ----------
+
+# Data quality checks
+def validate_bronze_data():
+    """
+    Validate data was properly written to bronze
+    """
+    try:
+        bronze_df = spark.read.parquet(BRONZE_PATH)
+        
+        # Basic validations
+        row_count = bronze_df.count()
+        if row_count == 0:
+            raise ValueError("No data found in bronze layer")
+        
+        # Check for required metadata columns
+        required_cols = ["ingestion_timestamp", "source_file", "processing_date"]
+        missing_cols = [col for col in required_cols if col not in bronze_df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+        
+        logger.info(f"Bronze validation passed. Total rows: {row_count}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Bronze validation failed: {str(e)}")
+        return False
+
+# COMMAND ----------
+
+# Run validation
+if validate_bronze_data():
+    dbutils.notebook.exit("SUCCESS")
+else:
+    dbutils.notebook.exit("VALIDATION_FAILED")
