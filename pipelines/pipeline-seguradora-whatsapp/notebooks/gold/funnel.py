@@ -34,6 +34,7 @@ from pipeline_lib.storage import S3Lake
 # DBTITLE 1,Parametros
 dbutils.widgets.text("catalog", "medallion", "Catalog Name")
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
+dbutils.widgets.text("chaos_mode", "off", "Chaos Mode")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCOPE = dbutils.widgets.get("scope")

@@ -30,11 +30,16 @@ PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
 sys.path.insert(0, PIPELINE_ROOT)
 
 from pipeline_lib.schema import conform_to_schema  # noqa: NB003, E402
+from pipeline_lib.storage import S3Lake  # noqa: NB003, E402
 from pipeline_lib.validation import delta_row_count  # noqa: NB003, E402, F401
 
 # COMMAND ----------
 # DBTITLE 1,Configuration
-SOURCE_PATH = "/mnt/landing/whatsapp/conversations"
+# Widget scope passa secret scope com AWS creds + s3-bucket + bronze-prefix
+dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")  # noqa: F821
+dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")  # noqa: F821
+SCOPE = dbutils.widgets.get("scope")  # noqa: F821
+BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")  # noqa: F821
 TARGET_TABLE = "medallion.bronze.conversations"
 
 # COMMAND ----------
@@ -78,15 +83,13 @@ def ingest_to_bronze():
                 "incompativel (injetado por chaos_mode=bronze_schema)"
             )
 
-        logger.info(f"Iniciando ingestao Bronze de {SOURCE_PATH}")
+        # S3Lake usa dbutils.secrets.get pra pegar credenciais AWS do scope
+        lake = S3Lake(dbutils, spark, scope=SCOPE)  # noqa: F821
+        source_uri = f"s3://{lake._bucket}/{BRONZE_PREFIX}"
+        logger.info(f"Iniciando ingestao Bronze de {source_uri}")
 
-        # Leitura dos dados
-        df_raw = (
-            spark.read
-            .option("multiline", "true")
-            .option("inferSchema", "false")
-            .json(SOURCE_PATH)
-        )
+        # Leitura via Spark S3A (distributed, zero materializacao driver)
+        df_raw = lake.read_parquet(BRONZE_PREFIX)
 
         # Validacao e conformacao de schema (pipeline_lib — testado)
         df_conformed = conform_to_schema(df_raw, EXPECTED_SCHEMA)
@@ -95,7 +98,7 @@ def ingest_to_bronze():
         df_bronze = (
             df_conformed
             .withColumn("_ingestion_timestamp", current_timestamp())
-            .withColumn("_source_file", lit(SOURCE_PATH))
+            .withColumn("_source_file", lit(source_uri))
         )
 
         # Escrita Delta (append) sem count() pre-write redundante

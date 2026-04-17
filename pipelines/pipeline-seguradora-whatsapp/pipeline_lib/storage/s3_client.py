@@ -85,6 +85,14 @@ class S3Lake:
             "spark.hadoop.fs.s3a.endpoint",
             f"s3.{self._aws_region}.amazonaws.com",
         )
+        # Usa region explicita + path-style pra evitar SSL virtual-hosted
+        # que quebra em buckets com hifen/ponto (Forbidden em HEAD object).
+        conf.set("spark.hadoop.fs.s3a.endpoint.region", self._aws_region)
+        conf.set("spark.hadoop.fs.s3a.path.style.access", "true")
+        conf.set(
+            "spark.hadoop.fs.s3a.aws.credentials.provider",
+            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+        )
         self._spark_configured = True
 
     def read_parquet(self, s3_prefix: str):
