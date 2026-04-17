@@ -73,6 +73,9 @@ class SharedSagaState:
     s3_bucket: str | None = None
     s3_bucket_url: str | None = None
     databricks_role_arn: str | None = None
+    databricks_external_id: str | None = None
+    databricks_storage_credential: str | None = None
+    databricks_external_location: str | None = None
     secret_scope: str | None = None
     catalog: str | None = None
     repo_path: str | None = None

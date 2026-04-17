@@ -52,7 +52,8 @@ class WorkflowStep:
         """Auto-detecta o primeiro cluster disponivel no workspace.
 
         Necessario porque serverless nao suporta spark.hadoop.fs.s3a.*
-        que o S3Lake usa pra ler/escrever dados.
+        que o S3Lake usa pra ler/escrever dados. Se nenhum cluster
+        existir, cria um dedicado m5d.large.
         """
         import asyncio
 
@@ -62,7 +63,6 @@ class WorkflowStep:
             clusters = list(w.clusters.list())
             if not clusters:
                 return ""
-            # Prefere cluster que ja esteja running ou que tenha "pipeline" no nome
             pipeline_cluster = next(
                 (c for c in clusters if "pipeline" in (c.cluster_name or "").lower()), None
             )
@@ -72,8 +72,48 @@ class WorkflowStep:
         cluster_id = await asyncio.to_thread(_find)
         if cluster_id:
             await ctx.info(f"Cluster auto-detectado: {cluster_id}")
-        else:
-            await ctx.warn("Nenhum cluster encontrado — usando serverless (pode falhar com S3)")
+            return cluster_id
+
+        # Fallback: cria cluster dedicado
+        await ctx.info("Nenhum cluster encontrado — criando medallion-pipeline m5d.large")
+        user_name = ctx.env_vars().get("admin_email", "administrator@idlehub.com.br")
+
+        def _create() -> str:
+            from databricks.sdk.service.compute import (
+                AwsAttributes,
+                AwsAvailability,
+                DataSecurityMode,
+            )
+
+            scope = ctx.env_vars().get("secret_scope", "medallion-pipeline")
+            region = ctx.credentials.aws_region or "us-east-2"
+            # Spark S3A config via secret scope — cluster precisa dessas
+            # spark.conf pra s3a:// funcionar (sem instance profile).
+            # Databricks resolve {{secrets/...}} em runtime.
+            spark_conf = {
+                "spark.hadoop.fs.s3a.access.key": f"{{{{secrets/{scope}/aws-access-key-id}}}}",
+                "spark.hadoop.fs.s3a.secret.key": f"{{{{secrets/{scope}/aws-secret-access-key}}}}",
+                "spark.hadoop.fs.s3a.endpoint": f"s3.{region}.amazonaws.com",
+            }
+            resp = w.clusters.create(
+                cluster_name="medallion-pipeline",
+                spark_version="15.4.x-scala2.12",
+                node_type_id="m5d.large",
+                num_workers=2,
+                autotermination_minutes=30,
+                data_security_mode=DataSecurityMode.SINGLE_USER,
+                single_user_name=user_name,
+                spark_conf=spark_conf,
+                aws_attributes=AwsAttributes(
+                    first_on_demand=1,
+                    availability=AwsAvailability.ON_DEMAND,
+                    zone_id="auto",
+                ),
+            )
+            return resp.cluster_id or ""
+
+        cluster_id = await asyncio.to_thread(_create)
+        await ctx.info(f"Cluster criado: {cluster_id} (cold start ~2min)")
         return cluster_id
 
     async def execute(self, ctx: StepContext) -> None:
@@ -266,6 +306,6 @@ class WorkflowStep:
             ),
         }
 
-        job_id = await _upsert_job(w, WORKFLOW_JOB_NAME, settings)
+        job_id = await _upsert_job(w, WORKFLOW_JOB_NAME, settings, owner_email=admin_email)
         await ctx.success(f"Pipeline workflow pronto: id={job_id}")
         ctx.shared.workflow_job_id = job_id

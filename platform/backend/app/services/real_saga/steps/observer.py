@@ -86,16 +86,19 @@ class ObserverStep:
             ),
         }
 
-        job_id = await _upsert_job(w, OBSERVER_JOB_NAME, settings)
+        job_id = await _upsert_job(w, OBSERVER_JOB_NAME, settings, owner_email=admin_email)
         await ctx.success(f"Observer job pronto: id={job_id}")
         ctx.shared.observer_job_id = job_id
 
 
-async def _upsert_job(w, name: str, settings: dict) -> int:
+async def _upsert_job(w, name: str, settings: dict, owner_email: str | None = None) -> int:
     """Cria ou atualiza um job no Databricks.
 
     Se ja existe um job com o mesmo nome, deleta e recria (mais simples que
     reset, que exige JobSettings object em vez de dict kwargs).
+
+    Se `owner_email` fornecido, transfere IS_OWNER pro admin user — saga usa
+    service principal pra criar, mas admin precisa ver jobs em "Accessible by me".
     """
 
     def _do() -> int:
@@ -108,6 +111,23 @@ async def _upsert_job(w, name: str, settings: dict) -> int:
             w.jobs.delete(job_id=existing_id)
 
         created = w.jobs.create(**settings)
-        return created.job_id
+        job_id = created.job_id
+
+        if owner_email and job_id:
+            # SP que criou perde IS_OWNER — readd como CAN_MANAGE pra saga
+            # continuar gerenciando (update_trust, run-now, etc).
+            sp_id = w.current_user.me().user_name
+            w.api_client.do(
+                "PUT",
+                f"/api/2.0/permissions/jobs/{job_id}",
+                body={
+                    "access_control_list": [
+                        {"user_name": owner_email, "permission_level": "IS_OWNER"},
+                        {"service_principal_name": sp_id, "permission_level": "CAN_MANAGE"},
+                    ]
+                },
+            )
+
+        return job_id
 
     return await asyncio.to_thread(_do)

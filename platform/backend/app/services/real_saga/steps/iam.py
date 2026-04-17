@@ -21,7 +21,47 @@ from app.services.real_saga.base import StepContext
 from app.services.real_saga.registry import register_saga_step
 
 _DATABRICKS_ACCOUNT_ID = "414351767826"
-_DATABRICKS_ROLE_SUFFIX = "-databricks-role"
+# UCMasterRole pra AWS prod — documentado + estavel
+# https://docs.databricks.com/en/connect/unity-catalog/cloud-storage/storage-credentials.html
+_UC_MASTER_ROLE_ARN = (
+    f"arn:aws:iam::{_DATABRICKS_ACCOUNT_ID}:role/unity-catalog-prod-UCMasterRole-14S5ZJVKOTYTL"
+)
+_DATABRICKS_ROLE_SUFFIX = "-uc-role"
+
+
+def _build_trust_policy(
+    external_id: str | None = None,
+    self_role_arn: str | None = None,
+) -> dict:
+    """Trust policy Unity Catalog — self-assuming + external_id.
+
+    UC exige que a role assumivel seja 'self-assuming':
+    - Principal = UCMasterRole + a propria role (quando conhecida)
+    - Condition StringEquals sts:ExternalId = <gerado Databricks>
+
+    Fluxo:
+    1. iam step cria role com bootstrap (UCMasterRole apenas, sem external_id)
+       - self_role_arn=None + external_id=None
+    2. catalog step cria Storage Credential -> Databricks retorna external_id
+    3. catalog step chama update com (UCMasterRole + role_arn + external_id)
+    """
+    principals: list[str] = [_UC_MASTER_ROLE_ARN]
+    if self_role_arn:
+        principals.append(self_role_arn)
+
+    statement: dict = {
+        "Effect": "Allow",
+        "Principal": {"AWS": principals if len(principals) > 1 else principals[0]},
+        "Action": "sts:AssumeRole",
+    }
+    if external_id:
+        statement["Condition"] = {
+            "StringEquals": {"sts:ExternalId": external_id},
+        }
+    return {
+        "Version": "2012-10-17",
+        "Statement": [statement],
+    }
 
 
 @register_saga_step("iam")
@@ -86,10 +126,14 @@ class IamStep:
             ctx.shared.databricks_role_arn = existing
             return
 
-        await ctx.info("Role nao encontrada — criando via boto3...")
+        # Cria role com trust bootstrap (sem Condition). catalog step
+        # depois recupera external_id do Databricks e atualiza trust policy.
+        await ctx.info("Role nao encontrada — criando via boto3 (trust bootstrap)...")
         arn = await self._create_role(ctx, role_name)
         ctx.shared.databricks_role_arn = arn
-        await ctx.success(f"Role criada: {arn}")
+        await ctx.success(
+            f"Role criada: {arn} (trust sem Condition — catalog step atualiza com external_id)"
+        )
 
     @staticmethod
     async def _get_role(ctx: StepContext, role_name: str) -> str | None:
@@ -114,19 +158,16 @@ class IamStep:
         iam = session.client("iam")
         bucket_name = ctx.shared.s3_bucket or ctx.env_vars().get("s3_bucket", "*")
 
-        trust_policy = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Principal": {
-                        "AWS": f"arn:aws:iam::{_DATABRICKS_ACCOUNT_ID}:root"
-                    },
-                    "Action": "sts:AssumeRole",
-                    "Condition": {},
-                }
-            ],
-        }
+        # Trust bootstrap sem Condition. catalog step atualiza com external_id.
+        trust_policy = _build_trust_policy(external_id=None)
+
+        # Policy UC pattern: S3 access + sts:AssumeRole self-reference.
+        # Self-assuming exige BOTH trust policy principal self-ref E
+        # inline allow sts:AssumeRole na propria role (esse statement).
+        account_id = ctx.credentials.aws_access_key_id  # placeholder — precisa real
+        # Na verdade role_arn sera construido abaixo apos create; aqui
+        # usamos wildcard controlado: role name na inline policy.
+        role_arn_for_self = f"arn:aws:iam::*:role/{role_name}"
 
         s3_policy = {
             "Version": "2012-10-17",
@@ -135,7 +176,9 @@ class IamStep:
                     "Effect": "Allow",
                     "Action": [
                         "s3:GetObject",
+                        "s3:GetObjectVersion",
                         "s3:PutObject",
+                        "s3:PutObjectAcl",
                         "s3:DeleteObject",
                         "s3:ListBucket",
                         "s3:GetBucketLocation",
@@ -150,13 +193,21 @@ class IamStep:
                     "Action": ["s3:ListAllMyBuckets"],
                     "Resource": "*",
                 },
+                # Self-assuming: role precisa poder assumir a si mesma
+                # (pattern UC). Sem isso, Databricks nao consegue validar.
+                {
+                    "Effect": "Allow",
+                    "Action": ["sts:AssumeRole"],
+                    "Resource": [role_arn_for_self],
+                },
             ],
         }
 
         def _create() -> str:
+            # Path="/" (default) — UC self-assuming trust policy nao aceita
+            # role ARN com Path customizado no Principal ("Invalid principal").
             role = iam.create_role(
                 RoleName=role_name,
-                Path="/service-roles/",
                 AssumeRolePolicyDocument=json.dumps(trust_policy),
                 Description="Databricks cross-account role for Unity Catalog + S3",
                 Tags=[
@@ -175,3 +226,56 @@ class IamStep:
             return arn
 
         return await asyncio.to_thread(_create)
+
+
+async def update_trust_policy_with_external_id(
+    ctx: StepContext, role_arn: str, external_id: str
+) -> None:
+    """Helper chamado pelo catalog step apos criar Storage Credential.
+
+    Atualiza trust policy da role com pattern UC completo:
+    - Principal: UCMasterRole + a propria role (self-assuming)
+    - Condition: StringEquals sts:ExternalId = external_id gerado Databricks
+
+    Retry com backoff: role recem-criada pode nao ser principal valido
+    (IAM eventual consistency ~10s). MalformedPolicyDocument com 'Invalid
+    principal' indica role ainda nao propagou.
+    """
+    role_name = role_arn.rsplit("/", 1)[-1]
+    session = boto3_session(ctx.credentials)
+    iam = session.client("iam")
+    trust = _build_trust_policy(external_id=external_id, self_role_arn=role_arn)
+
+    def _update() -> None:
+        iam.update_assume_role_policy(
+            RoleName=role_name, PolicyDocument=json.dumps(trust)
+        )
+
+    delays = [0, 5, 10, 15, 20, 30]
+    last_err: Exception | None = None
+    for attempt, delay in enumerate(delays, start=1):
+        if delay:
+            await ctx.info(
+                f"Trust update retry {attempt}/{len(delays)} "
+                f"apos {delay}s (IAM principal propagation)"
+            )
+            await asyncio.sleep(delay)
+        try:
+            await asyncio.to_thread(_update)
+            await ctx.info(
+                f"Trust policy da role {role_name} atualizada "
+                f"(self-assuming + external_id len={len(external_id)})"
+            )
+            return
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            msg = str(exc)
+            if code == "MalformedPolicyDocument" and "Invalid principal" in msg:
+                last_err = exc
+                continue
+            raise
+
+    raise RuntimeError(
+        f"Trust policy update falhou apos {len(delays)} retries "
+        f"(IAM principal propagation timeout): {last_err}"
+    )

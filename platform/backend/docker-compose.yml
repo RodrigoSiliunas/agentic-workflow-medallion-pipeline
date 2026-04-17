@@ -1,6 +1,8 @@
 services:
   backend:
-    build: .
+    build:
+      context: ../..
+      dockerfile: platform/backend/Dockerfile
     container_name: flowertex-backend
     ports:
       - "8000:8000"

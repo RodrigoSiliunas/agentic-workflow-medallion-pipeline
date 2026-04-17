@@ -1,19 +1,27 @@
-"""Step `upload` — clona/atualiza o repo no Databricks via Repos API.
+"""Step `upload` — sincroniza notebooks via Workspace API.
 
-Requer classic PAT (ghp_*). Fine-grained tokens (github_pat_*) NAO funcionam
-com Databricks Repos.
+Usa GitHub tarball (requer apenas token + repo, sem Repos/git-clone do Databricks
+que depende de workspace root bucket). Upload arquivo-por-arquivo via
+workspace.import_ com format=SOURCE. Suporta workspaces onde Repos API
+esta quebrado (ex: infra bucket ausente).
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import base64
+import io
+import tarfile
+from pathlib import Path
 
-from databricks.sdk.errors import ResourceAlreadyExists
+import httpx
+from databricks.sdk.service.workspace import ImportFormat, Language
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
 from app.services.real_saga.registry import register_saga_step
+
+_UPLOAD_BASE = "/Shared/flowertex"
 
 
 @register_saga_step("upload")
@@ -24,84 +32,133 @@ class UploadStep:
         github_repo = ctx.credentials.github_repo
         if not github_repo:
             raise ValueError("github_repo nao configurado em credentials")
+        token = ctx.credentials.github_token
+        if not token:
+            raise ValueError("github_token nao configurado em credentials")
 
-        repo_url = f"https://github.com/{github_repo}.git"
         branch = ctx.env_vars().get("git_branch", "main")
-
-        w = workspace_client(ctx.credentials)
-
-        # Configurar Git credential com o classic PAT
-        if ctx.credentials.github_token:
-            await self._ensure_git_credential(ctx, w)
-
-        def _user_name() -> str:
-            return w.current_user.me().user_name or "unknown"
-
-        user = await asyncio.to_thread(_user_name)
         repo_name = github_repo.split("/")[-1]
-        repo_path = f"/Repos/{user}/{repo_name}"
+        workspace_path = f"{_UPLOAD_BASE}/{repo_name}"
 
-        await ctx.info(f"Sincronizando repo {repo_url}@{branch} -> {repo_path}")
+        await ctx.info(f"Baixando tarball {github_repo}@{branch}")
+        tar_bytes = await self._fetch_tarball(github_repo, branch, token)
 
-        # Criar ou atualizar o repo
-        existing = await self._find_repo(w, repo_path)
-        if existing is None:
-            await self._create(ctx, w, repo_url, repo_path, branch)
-        else:
-            await self._update(ctx, w, existing, branch)
+        await ctx.info(f"Extraindo e uploading notebooks -> {workspace_path}")
+        w = workspace_client(ctx.credentials)
+        count = await self._upload_tarball(ctx, w, tar_bytes, workspace_path)
 
-        await ctx.success(f"Repo sincronizado: {repo_path}")
-        ctx.shared.repo_path = repo_path
+        await ctx.success(
+            f"Notebooks sincronizados: {count} arquivos em {workspace_path}"
+        )
+        ctx.shared.repo_path = workspace_path
 
     @staticmethod
-    async def _ensure_git_credential(ctx: StepContext, w) -> None:
-        token = ctx.credentials.github_token
+    async def _fetch_tarball(repo: str, branch: str, token: str) -> bytes:
+        url = f"https://api.github.com/repos/{repo}/tarball/{branch}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+        }
+        async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
+            r = await client.get(url, headers=headers)
+            r.raise_for_status()
+            return r.content
 
-        def _ensure() -> None:
-            creds = list(w.git_credentials.list())
-            if creds:
-                w.git_credentials.update(
-                    credential_id=creds[0].credential_id,
-                    git_provider="gitHub",
-                    git_username="deploy-bot",
-                    personal_access_token=token,
+    @staticmethod
+    async def _upload_tarball(
+        ctx: StepContext, w, tar_bytes: bytes, workspace_base: str
+    ) -> int:
+        """Extrai tarball + upload cada .py via workspace.import_."""
+
+        # Filtra só .py em pipelines/*/notebooks/ e observer-framework/notebooks/
+        def _walk_tar() -> list[tuple[str, bytes]]:
+            files: list[tuple[str, bytes]] = []
+            with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:gz") as tar:
+                for member in tar.getmembers():
+                    if not member.isfile():
+                        continue
+                    # tarball wraps files in {owner}-{repo}-{sha}/ prefix
+                    parts = member.name.split("/", 1)
+                    if len(parts) < 2:
+                        continue
+                    rel_path = parts[1]
+                    if not rel_path.endswith(".py"):
+                        continue
+                    # Apenas notebooks relevantes
+                    # Pipeline notebooks (executados pelo workflow)
+                    pipe_notebook = (
+                        "pipelines/" in rel_path and "/notebooks/" in rel_path
+                    )
+                    # Observer notebooks
+                    observer_notebook = "observer-framework/notebooks/" in rel_path
+                    # pipeline_lib/ (imported by pipeline notebooks via sys.path)
+                    pipe_lib = (
+                        "pipelines/" in rel_path and "/pipeline_lib/" in rel_path
+                    )
+                    # observer/ module (imported by observer notebooks)
+                    observer_lib = (
+                        "observer-framework/observer/" in rel_path
+                    )
+                    if not (
+                        pipe_notebook
+                        or observer_notebook
+                        or pipe_lib
+                        or observer_lib
+                    ):
+                        continue
+                    f = tar.extractfile(member)
+                    if f is None:
+                        continue
+                    files.append((rel_path, f.read()))
+            return files
+
+        files = await asyncio.to_thread(_walk_tar)
+        await ctx.info(f"{len(files)} .py relevantes encontrados no tarball")
+
+        dirs_created: set[str] = set()
+
+        def _ensure_dir(workspace_dir: str) -> None:
+            if workspace_dir in dirs_created:
+                return
+            w.workspace.mkdirs(path=workspace_dir)
+            dirs_created.add(workspace_dir)
+
+        def _upload_one(rel_path: str, content: bytes) -> None:
+            # Pipeline_lib e observer modulos sao Python puro — upload
+            # preserva .py pra Python import(). Notebooks executaveis
+            # (com header '# Databricks notebook source') viram notebooks
+            # sem extension.
+            is_module = "/pipeline_lib/" in rel_path or "/observer/" in rel_path
+            if is_module:
+                # Files API preserva .py + trata como raw file
+                ws_path = f"{workspace_base}/{rel_path}"
+                ws_dir = ws_path.rsplit("/", 1)[0]
+                _ensure_dir(ws_dir)
+                w.workspace.upload(
+                    path=ws_path,
+                    content=content,
+                    format=ImportFormat.AUTO,
+                    overwrite=True,
                 )
             else:
-                w.git_credentials.create(
-                    git_provider="gitHub",
-                    git_username="deploy-bot",
-                    personal_access_token=token,
+                # Notebook executavel — strip .py, Databricks converte pra notebook
+                ws_notebook = f"{workspace_base}/{rel_path[:-3]}"
+                ws_dir = ws_notebook.rsplit("/", 1)[0]
+                _ensure_dir(ws_dir)
+                b64 = base64.b64encode(content).decode("ascii")
+                w.workspace.import_(
+                    path=ws_notebook,
+                    format=ImportFormat.SOURCE,
+                    language=Language.PYTHON,
+                    content=b64,
+                    overwrite=True,
                 )
 
-        await asyncio.to_thread(_ensure)
-        await ctx.info("Git credential configurado")
+        def _upload_all() -> int:
+            # mkdirs do base path primeiro
+            w.workspace.mkdirs(path=workspace_base)
+            for rel_path, content in files:
+                _upload_one(rel_path, content)
+            return len(files)
 
-    @staticmethod
-    async def _find_repo(w, path: str):
-        def _search():
-            for repo in w.repos.list():
-                if repo.path == path:
-                    return repo
-            return None
-
-        return await asyncio.to_thread(_search)
-
-    @staticmethod
-    async def _create(ctx: StepContext, w, url: str, path: str, branch: str) -> None:
-        def _do():
-            with contextlib.suppress(ResourceAlreadyExists):
-                return w.repos.create(url=url, provider="gitHub", path=path)
-
-        await asyncio.to_thread(_do)
-        await ctx.info(f"Repo criado: {path}")
-        found = await UploadStep._find_repo(w, path)
-        if found is not None:
-            await UploadStep._update(ctx, w, found, branch)
-
-    @staticmethod
-    async def _update(ctx: StepContext, w, repo, branch: str) -> None:
-        def _do():
-            w.repos.update(repo_id=repo.id, branch=branch)
-
-        await asyncio.to_thread(_do)
-        await ctx.info(f"Repo atualizado para branch {branch}")
+        return await asyncio.to_thread(_upload_all)

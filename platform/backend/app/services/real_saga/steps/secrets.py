@@ -23,6 +23,7 @@ _SECRETS_FROM_CREDENTIALS: dict[str, str] = {
     "aws-region": "aws_region",
     "anthropic-api-key": "anthropic_api_key",
     "github-token": "github_token",
+    "github-repo": "github_repo",
 }
 
 # Secret key que vem de env_vars (nao de credentials)

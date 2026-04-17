@@ -46,6 +46,12 @@ override-dependencies = [
     "bcrypt<4.1",
 ]
 
+[tool.uv.sources]
+# observer-framework local path. Docker preserva layout (WORKDIR
+# /app/platform/backend + observer em /app/observer-framework) pra
+# mesmo relative path `../../observer-framework` funcionar em host + container.
+observer = { path = "../../observer-framework", editable = true }
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
