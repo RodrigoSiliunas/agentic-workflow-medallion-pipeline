@@ -33,20 +33,36 @@
         Carregando workspaces da Databricks Account...
       </div>
 
-      <div
-        v-else-if="oauthConfigured === false"
-        class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
-        :style="{
-          borderColor: 'var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--text-secondary)',
-        }"
-      >
-        Databricks Account OAuth nao configurado em
-        <NuxtLink to="/settings" class="underline" :style="{ color: 'var(--brand-400)' }">
-          /settings
-        </NuxtLink>
-        — preencha account_id + oauth client_id + secret pra listar workspaces existentes.
+      <div v-else-if="oauthConfigured === false" class="space-y-3">
+        <div
+          class="rounded-[var(--radius-md)] border px-3 py-2 text-xs"
+          :style="{
+            borderColor: 'var(--border)',
+            background: 'rgba(99,102,241,0.08)',
+            color: 'var(--text-secondary)',
+          }"
+        >
+          OAuth M2M nao configurado em
+          <NuxtLink to="/settings" class="underline" :style="{ color: 'var(--brand-400)' }">
+            /settings
+          </NuxtLink>
+          — autofill desabilitado. Preencha workspace_id + host manualmente abaixo
+          (encontre no Account Console em <code>accounts.cloud.databricks.com</code>).
+        </div>
+        <AppInput
+          v-model="manualWorkspaceId"
+          label="Workspace ID *"
+          placeholder="7474653776574327"
+          helper="Numero inteiro listado no Account Console > Workspaces"
+          @update:model-value="emitState"
+        />
+        <AppInput
+          v-model="manualWorkspaceHost"
+          label="Workspace Host (FQDN) *"
+          placeholder="https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+          helper="URL completa do workspace (com https://)"
+          @update:model-value="emitState"
+        />
       </div>
 
       <div v-else-if="error" class="text-xs" :style="{ color: 'var(--status-error)' }">
@@ -145,6 +161,8 @@ interface WorkspacePickerState {
   mode: "existing" | "new"
   workspaceId?: string
   workspaceName?: string
+  /** Host manual digitado (modo existing sem OAuth pra autofill). */
+  workspaceHost?: string
   /** Config completa do workspace selecionado — usado pra autofill advanced */
   config?: DatabricksWorkspaceConfig
 }
@@ -158,6 +176,9 @@ const selectedWorkspaceId = ref<string>("")
 const selectedConfig = ref<DatabricksWorkspaceConfig | null>(null)
 const newWorkspaceName = ref<string>("")
 const loadingConfig = ref(false)
+// Inputs manuais usados quando OAuth M2M nao esta configurado
+const manualWorkspaceId = ref<string>("")
+const manualWorkspaceHost = ref<string>("")
 
 const {
   workspaces,
@@ -200,10 +221,24 @@ async function onSelectWorkspace() {
 }
 
 function emitState() {
+  // Em modo "existing":
+  //  - Com OAuth M2M configurado: pega workspace_id do dropdown (selectedWorkspaceId)
+  //  - Sem OAuth: usa input manual (manualWorkspaceId + manualWorkspaceHost)
+  const resolvedWorkspaceId =
+    mode.value === "existing"
+      ? (oauthConfigured.value === false
+          ? manualWorkspaceId.value
+          : selectedWorkspaceId.value) || undefined
+      : undefined
+  const resolvedWorkspaceHost =
+    mode.value === "existing" && oauthConfigured.value === false
+      ? manualWorkspaceHost.value || undefined
+      : undefined
   emit("update:state", {
     mode: mode.value,
-    workspaceId: mode.value === "existing" ? selectedWorkspaceId.value : undefined,
+    workspaceId: resolvedWorkspaceId,
     workspaceName: mode.value === "new" ? newWorkspaceName.value || undefined : undefined,
+    workspaceHost: resolvedWorkspaceHost,
     config: selectedConfig.value || undefined,
   })
 }

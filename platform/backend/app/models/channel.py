@@ -29,7 +29,8 @@ class ActiveSession(Base, UUIDMixin, TimestampMixin):
     active_pipeline_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("pipelines.id", ondelete="SET NULL"), nullable=True
     )
-    preferred_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    preferred_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    preferred_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class ChannelIdentity(Base, UUIDMixin, TimestampMixin):
@@ -73,3 +74,6 @@ class OmniInstance(Base, UUIDMixin, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Multi-LLM override per instancia (ex: WhatsApp usa Gemini Flash, web usa Opus)
+    preferred_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    preferred_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

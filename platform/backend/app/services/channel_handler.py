@@ -163,13 +163,25 @@ class ChannelMessageHandler:
             await self._send(instance_id, sender_jid, MSG_NO_PIPELINE)
             return
 
-        model = session.preferred_model or _DEFAULT_MODEL
+        # Resolucao multi-provider: session > omni_instance > company default
+        # session.preferred_model/provider tem precedencia sobre channel-level
+        omni_instance = await self._get_omni_instance(instance_id)
+        provider = (
+            session.preferred_provider
+            or (omni_instance.preferred_provider if omni_instance else None)
+        )
+        model = (
+            session.preferred_model
+            or (omni_instance.preferred_model if omni_instance else None)
+            or _DEFAULT_MODEL
+        )
         reply = await self._process_with_llm(
             user=user,
             pipeline=pipeline,
             thread_id=session.active_thread_id,
             text=text,
             model_override=model,
+            provider_override=provider,
         )
 
         # 6. Salvar resposta
@@ -362,6 +374,7 @@ class ChannelMessageHandler:
         self, user: User, pipeline: Pipeline,
         thread_id: uuid.UUID, text: str,
         model_override: str = "sonnet",
+        provider_override: str | None = None,
     ) -> str:
         """Processa mensagem com LLMOrchestrator e retorna resposta completa."""
         orchestrator = LLMOrchestrator(self.db, user.company_id, user.name or "usuario")
@@ -386,6 +399,7 @@ class ChannelMessageHandler:
                 pipeline_job_id=pipeline.databricks_job_id or 0,
                 conversation_history=history[:-1],
                 model_override=model_override,
+                provider_override=provider_override,
             ):
                 if event["type"] == "token":
                     full_response += event["content"]
@@ -432,6 +446,15 @@ class ChannelMessageHandler:
     async def _get_pipeline(self, pipeline_id: uuid.UUID) -> Pipeline | None:
         result = await self.db.execute(
             select(Pipeline).where(Pipeline.id == pipeline_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_omni_instance(self, omni_id: str):
+        """Lookup OmniInstance pelo omni_instance_id (string do Omni gateway)."""
+        from app.models.channel import OmniInstance
+
+        result = await self.db.execute(
+            select(OmniInstance).where(OmniInstance.omni_instance_id == omni_id)
         )
         return result.scalar_one_or_none()
 

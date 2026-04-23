@@ -114,6 +114,8 @@ def _ensure_providers_loaded():
             import observer.providers.anthropic_provider  # noqa: F401
         with contextlib.suppress(ImportError):
             import observer.providers.openai_provider  # noqa: F401
+        with contextlib.suppress(ImportError):
+            import observer.providers.google_provider  # noqa: F401
     if not _git_registry:
         with contextlib.suppress(ImportError):
             import observer.providers.github_provider  # noqa: F401

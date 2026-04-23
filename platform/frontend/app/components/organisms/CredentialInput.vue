@@ -49,6 +49,9 @@ const DEFAULT_PLACEHOLDERS: Record<string, string> = {
   github_repo: "owner/repo",
   aws_region: "us-east-2",
   databricks_host: "https://<workspace>.cloud.databricks.com",
+  databricks_account_id: "00000000-0000-0000-0000-000000000000",
+  databricks_oauth_client_id: "00000000-0000-0000-0000-000000000000",
+  databricks_oauth_secret: "dosed1d9b69...",
 }
 
 const effectivePlaceholder = computed(

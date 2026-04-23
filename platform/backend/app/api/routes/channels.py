@@ -231,6 +231,32 @@ async def get_channel_qr(
     )
 
 
+@router.patch("/{instance_id}/llm", response_model=OmniInstanceResponse)
+async def update_channel_llm(
+    instance_id: uuid.UUID,
+    data: dict,
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atualiza preferred_provider/model per canal Omni.
+
+    Vazio nos campos = limpa override (volta default da empresa).
+    """
+    instance = await _load_owned(db, instance_id, auth.company_id)
+    provider = data.get("provider", "")
+    model = data.get("model", "")
+    if provider and provider not in {"anthropic", "openai", "google"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provider invalido",
+        )
+    instance.preferred_provider = provider or None
+    instance.preferred_model = model or None
+    await db.commit()
+    await db.refresh(instance)
+    return _serialize(instance)
+
+
 @router.delete("/{instance_id}", status_code=204)
 async def disconnect_channel(
     instance_id: uuid.UUID,
@@ -327,4 +353,6 @@ def _serialize(instance: OmniInstance) -> dict:
         "last_error": instance.last_error,
         "created_at": instance.created_at,
         "updated_at": instance.updated_at,
+        "preferred_provider": instance.preferred_provider,
+        "preferred_model": instance.preferred_model,
     }

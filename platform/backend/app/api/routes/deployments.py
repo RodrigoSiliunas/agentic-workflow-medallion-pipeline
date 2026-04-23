@@ -171,6 +171,16 @@ async def create_deployment(
             merged_env["admin_email"] = adv.admin_email
         if adv.metastore_id:
             merged_env["databricks_metastore_id"] = adv.metastore_id
+        if adv.cluster_node_type:
+            merged_env["cluster_node_type"] = adv.cluster_node_type
+        if adv.cluster_num_workers is not None:
+            merged_env["cluster_num_workers"] = str(adv.cluster_num_workers)
+        if adv.cluster_spark_version:
+            merged_env["cluster_spark_version"] = adv.cluster_spark_version
+        if adv.observer_llm_provider:
+            merged_env["observer_llm_provider"] = adv.observer_llm_provider
+        if adv.observer_llm_model:
+            merged_env["observer_llm_model"] = adv.observer_llm_model
 
     deployment = Deployment(
         company_id=auth.company_id,

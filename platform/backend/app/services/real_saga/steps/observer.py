@@ -34,6 +34,9 @@ class ObserverStep:
         catalog = env.get("catalog", "medallion")
         scope = env.get("secret_scope", "medallion-pipeline")
         admin_email = env.get("admin_email", "administrator@idlehub.com.br")
+        # Multi-LLM: override per-pipeline ou default empresa
+        llm_provider = env.get("observer_llm_provider", "anthropic")
+        llm_model = env.get("observer_llm_model", "")
 
         repo_path = ctx.shared.repo_path
         if not repo_path:
@@ -59,7 +62,8 @@ class ObserverStep:
                         "source_job_id": "",
                         "source_job_name": "",
                         "failed_tasks": "[]",
-                        "llm_provider": "anthropic",
+                        "llm_provider": llm_provider,
+                        "llm_model": llm_model,
                         "git_provider": "github",
                         "dedup_window_hours": "24",
                         "dry_run": "false",

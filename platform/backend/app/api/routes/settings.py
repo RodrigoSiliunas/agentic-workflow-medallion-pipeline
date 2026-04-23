@@ -77,6 +77,7 @@ async def get_settings(
 
     return CompanySettingsResponse(
         preferred_model=company.preferred_model,
+        preferred_provider=company.preferred_provider,
         credentials=credentials,
     )
 
@@ -114,17 +115,25 @@ async def test_credential(
     return TestCredentialResponse(**result)
 
 
+_VALID_PROVIDERS = {"anthropic", "openai", "google"}
+
+
 @router.put("/preferred-model")
 async def update_preferred_model(
     data: UpdatePreferredModelRequest,
     auth: AuthContext = Depends(require_permission("manage_settings")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Atualiza modelo LLM preferido da empresa (sonnet/opus)."""
-    if data.model not in ("sonnet", "opus"):
+    """Atualiza model LLM preferido da empresa.
+
+    Aceita qualquer string (model IDs novos: claude-opus-4-7, gpt-5,
+    gemini-2.5-pro, etc). Validacao de combinacao provider/model fica
+    no orchestrator (factory raises se model nao existir no provider).
+    """
+    if not data.model or len(data.model) > 100:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Modelo deve ser 'sonnet' ou 'opus'",
+            detail="Model id invalido",
         )
 
     result = await db.execute(select(Company).where(Company.id == auth.company_id))
@@ -133,3 +142,23 @@ async def update_preferred_model(
     await db.flush()
 
     return {"status": "updated", "preferred_model": data.model}
+
+
+@router.put("/preferred-provider")
+async def update_preferred_provider(
+    data: dict,
+    auth: AuthContext = Depends(require_permission("manage_settings")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atualiza provider LLM padrao da empresa (anthropic/openai/google)."""
+    provider = data.get("provider", "")
+    if provider not in _VALID_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Provider deve ser um de: {sorted(_VALID_PROVIDERS)}",
+        )
+    result = await db.execute(select(Company).where(Company.id == auth.company_id))
+    company = result.scalar_one()
+    company.preferred_provider = provider
+    await db.flush()
+    return {"status": "updated", "preferred_provider": provider}

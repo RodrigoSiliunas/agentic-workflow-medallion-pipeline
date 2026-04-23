@@ -30,6 +30,15 @@ class OmniInstanceResponse(BaseModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
+    preferred_provider: str | None = None
+    preferred_model: str | None = None
+
+
+class UpdateChannelLLMRequest(BaseModel):
+    """PATCH endpoint pra trocar LLM provider/model do canal."""
+
+    provider: str | None = None  # vazio limpa override (volta default empresa)
+    model: str | None = None
 
 
 class QRCodeResponse(BaseModel):

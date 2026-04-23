@@ -27,7 +27,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.company import Company
 from app.services.context_engine import ContextEngine
-from app.services.credential_service import CredentialService
+from app.services.credential_service import (
+    PROVIDER_CREDENTIAL_MAP,
+    CredentialService,
+)
 from app.services.databricks_service import DatabricksService
 from app.services.github_service import GitHubService
 from app.services.tools import (
@@ -48,10 +51,26 @@ CONFIRMATION_REQUIRED = confirmation_required_tools()
 
 
 class LLMOrchestrator:
-    MODEL_MAP = {
-        "sonnet": "claude-sonnet-4-20250514",
-        "opus": "claude-opus-4-20250514",
-        "haiku": "claude-haiku-4-5-20251001",
+    """Orchestrator multi-provider — provider e model resolvidos dinamicamente.
+
+    Resolucao em ordem de precedencia:
+      1. override explicito (model_override + provider_override)
+      2. session.preferred_provider/model (per-sessao chat)
+      3. channel.preferred_provider/model (per-canal Omni)
+      4. company.preferred_provider/model (default empresa)
+
+    Provider valido: "anthropic" | "openai" | "google".
+    Model: literal aceito pela API daquele provider (ex: claude-opus-4-7,
+    gpt-5, gemini-2.5-pro). Backward compat: aliases curtos
+    "sonnet"/"opus"/"haiku" mapeiam pra claude-* atual.
+    """
+
+    # Aliases legacy → model IDs atuais. Mantidos pra compat com migrations
+    # antigas que setaram preferred_model="sonnet" antes do refactor.
+    _LEGACY_MODEL_ALIASES = {
+        "sonnet": "claude-sonnet-4-6",
+        "opus": "claude-opus-4-7",
+        "haiku": "claude-haiku-4-5",
     }
 
     def __init__(
@@ -65,22 +84,44 @@ class LLMOrchestrator:
         self.context_engine = ContextEngine(db, company_id)
         self._cred_service = CredentialService(db)
 
-    async def _get_chat_provider(self) -> ChatLLMProvider:
-        api_key = await self._cred_service.get_decrypted(
-            self.company_id, "anthropic_api_key"
-        )
+    async def _get_chat_provider(
+        self, provider_override: str | None = None
+    ) -> tuple[ChatLLMProvider, str]:
+        """Resolve provider name + cria ChatLLMProvider via factory.
+
+        Retorna tuple (provider, provider_name) — caller usa name pra logs.
+        """
+        provider_name = provider_override or await self._resolve_company_provider()
+        cred_type = PROVIDER_CREDENTIAL_MAP.get(provider_name)
+        if not cred_type:
+            raise ValueError(
+                f"Provider '{provider_name}' nao suportado. "
+                f"Validos: {list(PROVIDER_CREDENTIAL_MAP.keys())}"
+            )
+        api_key = await self._cred_service.get_decrypted(self.company_id, cred_type)
         if not api_key:
-            raise ValueError("Anthropic API key nao configurada para esta empresa")
-        return create_chat_provider("anthropic", api_key=api_key)
+            raise ValueError(
+                f"API key '{cred_type}' nao configurada — "
+                f"abra /settings e preencha pra usar provider '{provider_name}'"
+            )
+        return create_chat_provider(provider_name, api_key=api_key), provider_name
+
+    async def _resolve_company_provider(self) -> str:
+        """Le preferred_provider da empresa, default 'anthropic'."""
+        result = await self.db.execute(
+            select(Company.preferred_provider).where(Company.id == self.company_id)
+        )
+        return result.scalar_one_or_none() or "anthropic"
 
     async def _get_model(self, override: str | None = None) -> str:
-        if override and override in self.MODEL_MAP:
-            return self.MODEL_MAP[override]
+        """Resolve model id. Aliases legacy convertidos."""
+        if override:
+            return self._LEGACY_MODEL_ALIASES.get(override, override)
         result = await self.db.execute(
             select(Company.preferred_model).where(Company.id == self.company_id)
         )
-        pref = result.scalar_one_or_none() or "sonnet"
-        return self.MODEL_MAP.get(pref, self.MODEL_MAP["sonnet"])
+        pref = result.scalar_one_or_none() or "claude-sonnet-4-6"
+        return self._LEGACY_MODEL_ALIASES.get(pref, pref)
 
     def _tool_context(self) -> ToolContext:
         return ToolContext(
@@ -96,10 +137,17 @@ class LLMOrchestrator:
         pipeline_job_id: int,
         conversation_history: list[dict],
         model_override: str | None = None,
+        provider_override: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Processa mensagem do usuário. Yields SSE events."""
-        provider = await self._get_chat_provider()
+        provider, provider_name = await self._get_chat_provider(provider_override)
         model = await self._get_model(model_override)
+        logger.info(
+            "chat process_message",
+            provider=provider_name,
+            model=model,
+            company_id=str(self.company_id),
+        )
 
         context = await self.context_engine.assemble(
             pipeline_job_id=pipeline_job_id,
@@ -137,7 +185,12 @@ class LLMOrchestrator:
                     return
 
             if not collected_tool_calls:
-                yield {"type": "done", "model": model, "tokens": total_tokens}
+                yield {
+                    "type": "done",
+                    "model": model,
+                    "provider": provider_name,
+                    "tokens": total_tokens,
+                }
                 return
 
             tool_results = []

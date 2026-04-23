@@ -51,8 +51,14 @@ def list_chat_providers() -> list[str]:
 def _ensure_loaded() -> None:
     """Lazy import dos módulos de provider pra popular o registry.
 
-    Segue mesmo padrão do `observer.providers._ensure_providers_loaded`.
+    Cada `ImportError` eh suprimido individualmente — provider sem SDK
+    instalado eh skipped, outros continuam disponiveis. Segue mesmo padrao
+    do `observer.providers._ensure_providers_loaded`.
     """
     if not CHAT_PROVIDER_REGISTRY:
         with contextlib.suppress(ImportError):
             import observer.chat.anthropic  # noqa: F401
+        with contextlib.suppress(ImportError):
+            import observer.chat.openai  # noqa: F401
+        with contextlib.suppress(ImportError):
+            import observer.chat.google  # noqa: F401

@@ -30,7 +30,17 @@
       </div>
     </div>
 
-    <div class="flex items-center gap-1 flex-shrink-0">
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <!-- Model picker compacto -->
+      <div class="hidden md:block min-w-[280px]">
+        <LLMPicker
+          :model-value-provider="modelValueProvider"
+          :model-value-model="modelValueModel"
+          allow-default
+          @change="(p, m) => $emit('change-llm', p, m)"
+        />
+      </div>
+
       <AppButton
         variant="ghost"
         size="sm"
@@ -90,11 +100,14 @@ const props = defineProps<{
   pipeline: Pipeline | null
   threadTitle?: string
   threadId?: string
+  modelValueProvider?: string
+  modelValueModel?: string
 }>()
 
 defineEmits<{
   refresh: []
   clear: []
+  "change-llm": [provider: string, model: string]
 }>()
 
 const showMenu = ref(false)

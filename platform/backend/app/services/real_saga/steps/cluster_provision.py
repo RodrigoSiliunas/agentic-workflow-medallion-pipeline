@@ -47,7 +47,22 @@ class ClusterProvisionStep:
         scope = env.get("secret_scope", "medallion-pipeline")
         region = ctx.credentials.aws_region or "us-east-2"
 
-        cluster_id = await self._ensure_cluster(ctx, w, scope, region, admin_email)
+        # Cluster sizing — defaults conservadores, override via wizard advanced
+        node_type = (env.get("cluster_node_type") or "m5d.large").strip()
+        try:
+            num_workers = int(env.get("cluster_num_workers") or 2)
+        except (TypeError, ValueError):
+            num_workers = 2
+        spark_version = (
+            env.get("cluster_spark_version") or "15.4.x-scala2.12"
+        ).strip()
+
+        cluster_id = await self._ensure_cluster(
+            ctx, w, scope, region, admin_email,
+            node_type=node_type,
+            num_workers=num_workers,
+            spark_version=spark_version,
+        )
         ctx.shared.databricks_cluster_id = cluster_id
         await ctx.success(f"Cluster pronto: {cluster_id}")
 
@@ -58,6 +73,9 @@ class ClusterProvisionStep:
         scope: str,
         region: str,
         admin_email: str,
+        node_type: str = "m5d.large",
+        num_workers: int = 2,
+        spark_version: str = "15.4.x-scala2.12",
     ) -> str:
         def _find() -> str:
             for c in w.clusters.list():
@@ -70,7 +88,10 @@ class ClusterProvisionStep:
             await ctx.info(f"Cluster {_CLUSTER_NAME} ja existe: {existing}")
             return existing
 
-        await ctx.info(f"Criando cluster {_CLUSTER_NAME} (m5d.large, 2 workers)")
+        await ctx.info(
+            f"Criando cluster {_CLUSTER_NAME} ({node_type}, "
+            f"{num_workers} workers, DBR {spark_version})"
+        )
 
         def _create() -> str:
             # Spark S3A config via secret scope refs — cluster sem instance
@@ -82,9 +103,9 @@ class ClusterProvisionStep:
             }
             resp = w.clusters.create(
                 cluster_name=_CLUSTER_NAME,
-                spark_version="15.4.x-scala2.12",
-                node_type_id="m5d.large",
-                num_workers=2,
+                spark_version=spark_version,
+                node_type_id=node_type,
+                num_workers=num_workers,
                 autotermination_minutes=30,
                 data_security_mode=DataSecurityMode.SINGLE_USER,
                 single_user_name=admin_email,

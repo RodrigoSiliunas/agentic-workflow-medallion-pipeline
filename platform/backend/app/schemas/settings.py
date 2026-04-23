@@ -23,8 +23,13 @@ class TestCredentialResponse(BaseModel):
 
 class CompanySettingsResponse(BaseModel):
     preferred_model: str
+    preferred_provider: str = "anthropic"
     credentials: dict[str, dict]
 
 
 class UpdatePreferredModelRequest(BaseModel):
-    model: str  # "sonnet" ou "opus"
+    model: str  # ID literal aceito pelo provider (ex: "claude-opus-4-7")
+
+
+class UpdatePreferredProviderRequest(BaseModel):
+    provider: str  # "anthropic" | "openai" | "google"

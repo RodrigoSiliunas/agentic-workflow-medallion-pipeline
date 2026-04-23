@@ -261,7 +261,10 @@ class WorkflowStep:
                         "catalog": catalog,
                         "scope": scope,
                         "observer_job_id": str(observer_job_id),
-                        "llm_provider": "anthropic",
+                        "llm_provider": ctx.env_vars().get(
+                            "observer_llm_provider", "anthropic"
+                        ),
+                        "llm_model": ctx.env_vars().get("observer_llm_model", ""),
                         "git_provider": "github",
                         "observer_config_path": observer_config_path,
                     },

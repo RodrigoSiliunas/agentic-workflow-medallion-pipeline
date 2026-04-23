@@ -14,12 +14,22 @@ class WorkspaceAdvancedConfig(BaseModel):
     - network_cidr: default 10.0.0.0/16
     - admin_email: default administrator@idlehub.com.br
     - metastore_id: default = auto-discover por regiao via Account API
+    - cluster_node_type: default m5d.large (ver useClusterTypes catalog)
+    - cluster_num_workers: default 2
+    - cluster_spark_version: default 15.4 LTS
     """
 
     root_bucket: str | None = None
     network_cidr: str | None = None
     admin_email: str | None = None
     metastore_id: str | None = None
+    cluster_node_type: str | None = None
+    cluster_num_workers: int | None = None
+    cluster_spark_version: str | None = None
+    # Observer Agent LLM override (per-pipeline). Sem isso, usa default
+    # da empresa (company.preferred_provider/model).
+    observer_llm_provider: str | None = None
+    observer_llm_model: str | None = None
 
 
 class DeploymentConfigIn(BaseModel):

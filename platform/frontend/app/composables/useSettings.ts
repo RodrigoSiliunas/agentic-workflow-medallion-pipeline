@@ -1,10 +1,17 @@
 /**
- * Composable para settings — credenciais + model selection.
+ * Composable para settings — credenciais + provider/model selection.
  */
+interface CompanySettings {
+  preferred_model: string
+  preferred_provider: string
+  credentials: Record<string, { is_configured?: boolean; is_valid?: boolean }>
+}
+
 export function useSettings() {
   const api = useApiClient()
-  const settings = ref<{ preferred_model: string; credentials: Record<string, unknown> }>({
-    preferred_model: "sonnet",
+  const settings = ref<CompanySettings>({
+    preferred_model: "claude-sonnet-4-6",
+    preferred_provider: "anthropic",
     credentials: {},
   })
   const loading = ref(false)
@@ -12,7 +19,7 @@ export function useSettings() {
   async function load() {
     loading.value = true
     try {
-      settings.value = await api.get("/settings")
+      settings.value = await api.get<CompanySettings>("/settings")
     } catch {
       // silently fail
     } finally {
@@ -25,7 +32,9 @@ export function useSettings() {
     await load()
   }
 
-  async function testCredential(type: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  async function testCredential(
+    type: string,
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
     return api.post(`/settings/credentials/${type}/test`)
   }
 
@@ -34,7 +43,20 @@ export function useSettings() {
     settings.value.preferred_model = model
   }
 
+  async function updateProvider(provider: string) {
+    await api.put("/settings/preferred-provider", { provider })
+    settings.value.preferred_provider = provider
+  }
+
   onMounted(load)
 
-  return { settings, loading, load, saveCredential, testCredential, updateModel }
+  return {
+    settings,
+    loading,
+    load,
+    saveCredential,
+    testCredential,
+    updateModel,
+    updateProvider,
+  }
 }

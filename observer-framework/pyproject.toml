@@ -39,6 +39,7 @@ dependencies = [
 # LLM providers — instale o(s) que voce pretende usar
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.50"]
+google = ["google-genai>=0.5"]
 
 # Git providers
 github = ["PyGithub>=2.3"]
@@ -58,6 +59,7 @@ dev = [
 all = [
     "anthropic>=0.40",
     "openai>=1.50",
+    "google-genai>=0.5",
     "PyGithub>=2.3",
 ]
 

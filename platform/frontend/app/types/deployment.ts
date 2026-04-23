@@ -26,6 +26,16 @@ export interface WorkspaceAdvancedConfig {
   networkCidr?: string
   adminEmail?: string
   metastoreId?: string
+  /** Node type AWS (ex m5d.large, m5d.xlarge). Default backend = m5d.large. */
+  clusterNodeType?: string
+  /** Numero de workers fixos. Default = 2. */
+  clusterNumWorkers?: number
+  /** Versao Databricks Runtime (ex 15.4.x-scala2.12). Default = 15.4 LTS. */
+  clusterSparkVersion?: string
+  /** Observer Agent LLM provider (anthropic/openai/google). Vazio = default empresa. */
+  observerLlmProvider?: string
+  /** Observer Agent model id literal (ex claude-opus-4-7). Vazio = default empresa. */
+  observerLlmModel?: string
 }
 
 /** Credenciais conhecidas pre-preenchidas no wizard. Outras keys aceitas via index. */

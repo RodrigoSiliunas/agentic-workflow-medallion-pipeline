@@ -4,8 +4,11 @@
       :pipeline="activePipeline"
       :thread-title="thread?.title"
       :thread-id="props.threadId"
+      :model-value-provider="selectedProvider"
+      :model-value-model="selectedModel"
       @refresh="refreshMessages"
       @clear="clearThread"
+      @change-llm="onChangeLlm"
     />
 
     <MessageList :messages="messages" :is-streaming="isStreaming" />
@@ -29,13 +32,24 @@ const activePipeline = computed(() => {
 })
 
 const isStreaming = ref(false)
-const selectedModel = ref("sonnet")
+const selectedProvider = ref("")
+const selectedModel = ref("")
+
+function onChangeLlm(provider: string, model: string) {
+  selectedProvider.value = provider
+  selectedModel.value = model
+}
 
 async function handleSend(content: string) {
   if (isStreaming.value || !thread.value) return
   isStreaming.value = true
   try {
-    await threadsStore.streamAssistantReply(props.threadId, content, selectedModel.value)
+    await threadsStore.streamAssistantReply(
+      props.threadId,
+      content,
+      selectedModel.value || undefined,
+      selectedProvider.value || undefined,
+    )
   } finally {
     isStreaming.value = false
   }

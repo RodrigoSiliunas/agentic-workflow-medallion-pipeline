@@ -44,7 +44,7 @@ async def test_single_round_no_tool_yields_token_then_done():
         yield ChatEndEvent(content_blocks=[], output_tokens=15)
 
     mock_provider.stream_with_tools = fake_stream
-    orch._get_chat_provider = AsyncMock(return_value=mock_provider)
+    orch._get_chat_provider = AsyncMock(return_value=(mock_provider, "anthropic"))
 
     events = await _collect_events(orch.process_message(
         user_message="hi",
@@ -79,7 +79,7 @@ async def test_tool_use_round_executes_tool_then_finalizes():
 
     mock_provider = MagicMock()
     mock_provider.stream_with_tools = fake_stream
-    orch._get_chat_provider = AsyncMock(return_value=mock_provider)
+    orch._get_chat_provider = AsyncMock(return_value=(mock_provider, "anthropic"))
 
     events = await _collect_events(orch.process_message(
         user_message="list jobs",
@@ -109,7 +109,7 @@ async def test_chat_error_propagates_as_sse_error():
 
     mock_provider = MagicMock()
     mock_provider.stream_with_tools = fake_stream
-    orch._get_chat_provider = AsyncMock(return_value=mock_provider)
+    orch._get_chat_provider = AsyncMock(return_value=(mock_provider, "anthropic"))
 
     events = await _collect_events(orch.process_message(
         user_message="x",
@@ -136,7 +136,7 @@ async def test_max_rounds_reached_emits_error():
 
     mock_provider = MagicMock()
     mock_provider.stream_with_tools = fake_stream
-    orch._get_chat_provider = AsyncMock(return_value=mock_provider)
+    orch._get_chat_provider = AsyncMock(return_value=(mock_provider, "anthropic"))
 
     events = await _collect_events(orch.process_message(
         user_message="x",

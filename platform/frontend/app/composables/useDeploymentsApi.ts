@@ -172,6 +172,11 @@ export function useDeploymentsApi() {
           network_cidr: config.advanced.networkCidr,
           admin_email: config.advanced.adminEmail,
           metastore_id: config.advanced.metastoreId,
+          cluster_node_type: config.advanced.clusterNodeType,
+          cluster_num_workers: config.advanced.clusterNumWorkers,
+          cluster_spark_version: config.advanced.clusterSparkVersion,
+          observer_llm_provider: config.advanced.observerLlmProvider,
+          observer_llm_model: config.advanced.observerLlmModel,
         }
       : undefined
     const data = await api.post<DeploymentApiDTO>("/deployments", {

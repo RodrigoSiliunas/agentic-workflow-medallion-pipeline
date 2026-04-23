@@ -179,7 +179,7 @@
             </button>
             <div
               v-if="advancedOpen"
-              class="border-t px-3 py-3 space-y-3"
+              class="border-t px-3 py-3 space-y-4"
               :style="{ borderColor: 'var(--border)' }"
             >
               <AppInput
@@ -192,6 +192,41 @@
                 :helper="envVar.helper"
                 @update:model-value="(v: string) => (config.envVars[envVar.key] = v)"
               />
+
+              <!-- Cluster sizing -->
+              <div
+                class="pt-3 border-t"
+                :style="{ borderColor: 'var(--border)' }"
+              >
+                <h4 class="text-xs font-semibold mb-2" :style="{ color: 'var(--text-primary)' }">
+                  Cluster do pipeline (driver + workers)
+                </h4>
+                <ClusterPicker
+                  :initial-node-type="config.advanced?.clusterNodeType"
+                  :initial-num-workers="config.advanced?.clusterNumWorkers"
+                  :initial-spark-version="config.advanced?.clusterSparkVersion"
+                  @update:state="onClusterState"
+                />
+              </div>
+
+              <!-- Observer LLM override -->
+              <div
+                class="pt-3 border-t"
+                :style="{ borderColor: 'var(--border)' }"
+              >
+                <h4 class="text-xs font-semibold mb-1" :style="{ color: 'var(--text-primary)' }">
+                  LLM do Observer Agent
+                </h4>
+                <p class="text-[11px] mb-2" :style="{ color: 'var(--text-tertiary)' }">
+                  Override per-pipeline. Vazio = usa provider/modelo padrao da empresa.
+                </p>
+                <LLMPicker
+                  :model-value-provider="config.advanced?.observerLlmProvider"
+                  :model-value-model="config.advanced?.observerLlmModel"
+                  allow-default
+                  @change="onObserverLlmChange"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -405,9 +440,33 @@ interface WorkspacePickerEvent {
   mode: "existing" | "new"
   workspaceId?: string
   workspaceName?: string
+  workspaceHost?: string
   config?: {
     root_bucket_name?: string | null
     aws_region?: string | null
+  }
+}
+
+interface ClusterStateEvent {
+  nodeType: string
+  numWorkers: number
+  sparkVersion: string
+}
+
+function onClusterState(state: ClusterStateEvent) {
+  config.advanced = {
+    ...(config.advanced || {}),
+    clusterNodeType: state.nodeType,
+    clusterNumWorkers: state.numWorkers,
+    clusterSparkVersion: state.sparkVersion,
+  }
+}
+
+function onObserverLlmChange(provider: string, model: string) {
+  config.advanced = {
+    ...(config.advanced || {}),
+    observerLlmProvider: provider || undefined,
+    observerLlmModel: model || undefined,
   }
 }
 
@@ -415,6 +474,12 @@ function onWorkspaceState(state: WorkspacePickerEvent) {
   config.workspaceMode = state.mode
   config.workspaceId = state.workspaceId
   config.workspaceName = state.workspaceName
+  // Se host manual foi digitado (modo existing sem OAuth), propaga via
+  // credentials override pra databricks_host. Backend usa esse host pra
+  // workspace API direto, sem precisar OAuth M2M Account-level.
+  if (state.workspaceHost) {
+    config.credentials.databricks_host = state.workspaceHost
+  }
   // Auto-fill: se selecionou workspace existente com root bucket, popula
   // o campo advanced.rootBucket pra usuario ver de onde veio.
   if (state.mode === "existing" && state.config?.root_bucket_name) {

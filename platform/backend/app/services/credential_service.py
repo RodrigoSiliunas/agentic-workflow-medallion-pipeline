@@ -11,11 +11,17 @@ from app.models.credential import CompanyCredential
 from app.services.encryption import EncryptionService
 
 CREDENTIAL_TYPES = {
+    # LLM providers (multi-provider — configura uma ou mais)
     "anthropic_api_key",
+    "openai_api_key",
+    "google_api_key",
+    # Channels (Omni-managed)
     "discord_bot_token",
     "telegram_bot_token",
+    # GitHub
     "github_token",
     "github_repo",
+    # Databricks workspace-level
     "databricks_host",
     "databricks_token",
     # Account API OAuth M2M — usado pra criar workspace/network/storage configs
@@ -27,6 +33,13 @@ CREDENTIAL_TYPES = {
     "aws_access_key_id",
     "aws_secret_access_key",
     "aws_region",
+}
+
+# Mapeamento provider -> credential type (orchestrator usa pra resolver api_key)
+PROVIDER_CREDENTIAL_MAP = {
+    "anthropic": "anthropic_api_key",
+    "openai": "openai_api_key",
+    "google": "google_api_key",
 }
 
 # Credenciais que o wizard pode pre-preencher/sobrescrever por deploy.

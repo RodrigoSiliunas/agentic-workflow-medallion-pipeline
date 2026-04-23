@@ -31,6 +31,25 @@ class ToolSpec:
             "input_schema": self.input_schema,
         }
 
+    def to_openai_dict(self) -> dict[str, Any]:
+        """Formato OpenAI Responses/Chat Completions tools[]."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.input_schema,
+            },
+        }
+
+    def to_gemini_dict(self) -> dict[str, Any]:
+        """Formato Google google-genai FunctionDeclaration."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.input_schema,
+        }
+
 
 # ---------------------------------------------------------------------------
 # ChatEvent — tagged union dos eventos emitidos pelo stream
