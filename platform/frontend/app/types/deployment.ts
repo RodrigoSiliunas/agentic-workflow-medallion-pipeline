@@ -21,12 +21,37 @@ export interface LogEntry {
   step?: string
 }
 
+export interface WorkspaceAdvancedConfig {
+  rootBucket?: string
+  networkCidr?: string
+  adminEmail?: string
+  metastoreId?: string
+}
+
+/** Credenciais conhecidas pre-preenchidas no wizard. Outras keys aceitas via index. */
+export interface DeploymentCredentialsMap {
+  aws_access_key_id: string
+  aws_secret_access_key: string
+  aws_region: string
+  databricks_host: string
+  databricks_token: string
+  github_token: string
+  [key: string]: string
+}
+
 export interface DeploymentConfig {
   name: string
   environment: "dev" | "staging" | "prod"
   tags: Record<string, string>
-  credentials: Record<string, string>
+  credentials: DeploymentCredentialsMap
   envVars: Record<string, string>
+  /** "existing" reusa workspace alvo (skip provisioning). "new" cria do zero. */
+  workspaceMode?: "existing" | "new"
+  /** workspaceMode=existing: id do workspace alvo (Databricks Account API). */
+  workspaceId?: string
+  /** workspaceMode=new: nome customizado do workspace (override do auto). */
+  workspaceName?: string
+  advanced?: WorkspaceAdvancedConfig
 }
 
 export interface Deployment {

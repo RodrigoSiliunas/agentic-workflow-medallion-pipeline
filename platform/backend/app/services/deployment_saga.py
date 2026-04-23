@@ -33,12 +33,40 @@ SAGA_BLUEPRINT: list[dict[str, str]] = [
     },
     {
         "id": "s3",
-        "name": "Create AWS S3 bucket",
-        "description": "terraform apply no modulo 02-datalake com tags multi-tenant",
+        "name": "Create AWS S3 buckets",
+        "description": "Datalake bucket + workspace root bucket com policy Databricks",
+    },
+    {
+        "id": "network",
+        "name": "Provision AWS network (VPC + NAT)",
+        "description": (
+            "VPC + 2 private subnets + NAT Gateway + SG self-ref + "
+            "Databricks network config"
+        ),
+    },
+    {
+        "id": "workspace_credential",
+        "name": "Create cross-account IAM role",
+        "description": "Role pra Databricks lancar EC2 + Account API credentials registration",
+    },
+    {
+        "id": "storage_configuration",
+        "name": "Register storage configuration",
+        "description": "POST Account API vinculando root bucket ao workspace setup",
+    },
+    {
+        "id": "workspace_provision",
+        "name": "Provision Databricks workspace",
+        "description": "POST workspace + polling RUNNING + admin SCIM + PAT generation",
+    },
+    {
+        "id": "metastore_assign",
+        "name": "Attach Unity Catalog metastore",
+        "description": "PUT workspace -> metastore (regional) + default catalog",
     },
     {
         "id": "iam",
-        "name": "Provision IAM role for Databricks",
+        "name": "Provision IAM role for Unity Catalog",
         "description": "Role + policy de acesso ao bucket + trust relationship",
     },
     {
@@ -50,6 +78,11 @@ SAGA_BLUEPRINT: list[dict[str, str]] = [
         "id": "catalog",
         "name": "Setup Unity Catalog",
         "description": "Catalog + schemas bronze/silver/gold + grants",
+    },
+    {
+        "id": "cluster_provision",
+        "name": "Provision Databricks cluster",
+        "description": "Cluster ETL m5d.large com instance profile + libs",
     },
     {
         "id": "upload",

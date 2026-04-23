@@ -3,15 +3,22 @@
 Terceiro step novo da saga completa. Cria workspace apontando pra
 network_id + credentials_id + storage_configuration_id dos steps anteriores.
 
-Fluxo:
+Fluxo (workspace_mode=new ou ausente):
 1. POST /api/2.0/accounts/{id}/workspaces (201 PROVISIONING)
 2. Polling ate workspace_status=RUNNING (max 10min)
 3. SCIM: add admin user + put em admins group
 4. Gera PAT via OAuth bearer token
 5. Retorna workspace_host + pat em shared state
 
-Requer: network_id, credentials_id, storage_configuration_id ja criados.
-Se workspace_name ja existe, reutiliza.
+Fluxo (workspace_mode=existing):
+1. GET workspace por id, hidrata ctx.shared (network_id, credentials_id, etc)
+2. Pula creation flow inteiro
+3. Tenta gerar PAT novo via OAuth ou usa o que veio do wizard
+
+Requer (modo new): network_id, credentials_id, storage_configuration_id
+ja criados pelos steps anteriores. Nome customizado via env_vars["workspace_name"]
+ou derivado do company_id.
+Requer (modo existing): env_vars["workspace_id"] do workspace alvo.
 """
 
 from __future__ import annotations
@@ -33,13 +40,34 @@ class WorkspaceProvisionStep:
         account_id = env.get("databricks_account_id", "")
         oauth_client_id = env.get("databricks_oauth_client_id", "")
         oauth_secret = env.get("databricks_oauth_secret", "")
-        storage_config_id = env.get("databricks_storage_config_id", "")
+        # storage_config_id: precedencia shared (step storage_configuration) > env legado
+        storage_config_id = (
+            ctx.shared.databricks_storage_config_id
+            or env.get("databricks_storage_config_id", "")
+        )
 
         network_id = ctx.shared.databricks_network_id
         credentials_id = ctx.shared.databricks_credentials_id
 
+        # Modo existing: pega config completa do workspace ja existente
+        # via Account API, popula shared state. Depois disso skip todo
+        # o resto (creation flow).
+        if env.get("workspace_mode") == "existing":
+            ws_id = env.get("workspace_id", "")
+            if not ws_id:
+                raise RuntimeError(
+                    "workspace_mode=existing exige workspace_id no env_vars"
+                )
+            await self._adopt_existing_workspace(
+                ctx, account_id, oauth_client_id, oauth_secret, ws_id,
+            )
+            return
+
         if not all([account_id, oauth_client_id, oauth_secret, storage_config_id]):
-            await ctx.warn("Skipping workspace_provision — Account API config ausente")
+            await ctx.warn(
+                "Skipping workspace_provision — Account API config OU "
+                "storage_config_id ausente. Rode storage_configuration antes."
+            )
             return
         if not network_id or not credentials_id:
             raise RuntimeError(
@@ -48,8 +76,13 @@ class WorkspaceProvisionStep:
             )
 
         project = env.get("project_name", "medallion-pipeline")
-        company_suffix = str(ctx.company_id).split("-")[0]
-        workspace_name = f"{project}-{company_suffix}"
+        # Nome customizado do advanced > derivado company_id
+        custom_name = (env.get("workspace_name") or "").strip()
+        if custom_name:
+            workspace_name = custom_name
+        else:
+            company_suffix = str(ctx.company_id).split("-")[0]
+            workspace_name = f"{project}-{company_suffix}"
         region = ctx.credentials.require("aws_region")
         admin_email = env.get("admin_email", "administrator@idlehub.com.br")
 
@@ -137,6 +170,64 @@ class WorkspaceProvisionStep:
             ctx.credentials.databricks_token = pat
 
             await ctx.success(f"Workspace {workspace_name} pronto + admin + PAT")
+
+    async def _adopt_existing_workspace(
+        self,
+        ctx: StepContext,
+        account_id: str,
+        client_id: str,
+        secret: str,
+        workspace_id: str,
+    ) -> None:
+        """Hidrata ctx.shared a partir de workspace ja existente.
+
+        Usado quando usuario seleciona workspace_mode=existing no wizard.
+        Pula creation flow inteiro — assume infra AWS + UC ja em ordem.
+        """
+        async with httpx.AsyncClient(timeout=60.0) as c:
+            token = await self._get_oauth_token(c, account_id, client_id, secret)
+            ws_resp = await c.get(
+                f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/workspaces/{workspace_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            ws_resp.raise_for_status()
+            ws = ws_resp.json()
+            if ws.get("workspace_status") != "RUNNING":
+                raise RuntimeError(
+                    f"Workspace {workspace_id} status={ws.get('workspace_status')} — "
+                    "so RUNNING pode ser adotado"
+                )
+
+            host = f"https://{ws['workspace_fqdn']}"
+            ctx.shared.databricks_workspace_id = ws["workspace_id"]
+            ctx.shared.databricks_workspace_host = host
+            ctx.shared.databricks_network_id = ws.get("network_id")
+            ctx.shared.databricks_credentials_id = ws.get("credentials_id")
+            ctx.shared.databricks_storage_config_id = ws.get("storage_configuration_id")
+            ctx.credentials.databricks_host = host
+
+            # PAT existente passado via credentials override no wizard,
+            # OU gerado agora se OAuth permitir (workspace pode aceitar
+            # OAuth token diretamente sem precisar de PAT pra alguns endpoints).
+            existing_pat = ctx.credentials.databricks_token
+            if not existing_pat:
+                pat_resp = await c.post(
+                    f"{host}/api/2.0/token/create",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"lifetime_seconds": 0, "comment": "flowertex-deploy-saga"},
+                )
+                if pat_resp.status_code == 200:
+                    ctx.credentials.databricks_token = pat_resp.json()["token_value"]
+                    await ctx.info("PAT gerado via OAuth no workspace existente")
+                else:
+                    await ctx.warn(
+                        f"Nao foi possivel gerar PAT via OAuth (HTTP {pat_resp.status_code}). "
+                        "Steps subsequentes podem falhar — passe databricks_token no wizard."
+                    )
+
+            await ctx.success(
+                f"Workspace existente adotado: {host} (id={workspace_id})"
+            )
 
     @staticmethod
     async def _get_oauth_token(c, account_id, client_id, secret) -> str:

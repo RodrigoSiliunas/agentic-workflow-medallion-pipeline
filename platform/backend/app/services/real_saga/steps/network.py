@@ -33,6 +33,15 @@ class NetworkStep:
         account_id = env.get("databricks_account_id", "")
         oauth_client_id = env.get("databricks_oauth_client_id", "")
         oauth_secret = env.get("databricks_oauth_secret", "")
+
+        # Modo existing: VPC + network config ja existem, hidrata via
+        # workspace_provision. Network nao tem nada pra fazer aqui.
+        if env.get("workspace_mode") == "existing":
+            await ctx.info(
+                "workspace_mode=existing — pulando criacao de VPC + network config"
+            )
+            return
+
         if not all([account_id, oauth_client_id, oauth_secret]):
             await ctx.warn(
                 "Skipping network step — Databricks Account OAuth nao configurado. "
@@ -166,9 +175,10 @@ class NetworkStep:
 
         # Private subnets (2 AZs pra HA)
         priv_subs = []
-        for idx, (cidr, az_suffix) in enumerate([
-            ("10.0.1.0/24", "a"), ("10.0.2.0/24", "b"),
-        ]):
+        for cidr, az_suffix in [
+            ("10.0.1.0/24", "a"),
+            ("10.0.2.0/24", "b"),
+        ]:
             s = ec2.create_subnet(
                 VpcId=vpc_id, CidrBlock=cidr,
                 AvailabilityZone=f"{region}{az_suffix}",

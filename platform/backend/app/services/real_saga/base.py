@@ -72,6 +72,7 @@ class SharedSagaState:
 
     s3_bucket: str | None = None
     s3_bucket_url: str | None = None
+    workspace_root_bucket: str | None = None
     databricks_role_arn: str | None = None
     databricks_external_id: str | None = None
     databricks_storage_credential: str | None = None
@@ -82,6 +83,8 @@ class SharedSagaState:
     aws_security_group_id: str | None = None
     databricks_network_id: str | None = None
     databricks_credentials_id: str | None = None
+    databricks_storage_config_id: str | None = None
+    databricks_metastore_id: str | None = None
     databricks_xaccount_role_arn: str | None = None
     databricks_workspace_id: int | None = None
     databricks_workspace_host: str | None = None

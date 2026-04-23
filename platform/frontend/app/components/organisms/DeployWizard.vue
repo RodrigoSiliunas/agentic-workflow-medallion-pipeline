@@ -138,8 +138,13 @@
           <p class="text-xs mb-4" :style="{ color: 'var(--text-secondary)' }">
             Variáveis de ambiente específicas deste template.
           </p>
+
+          <!-- Workspace selection (radio existing/new) — pre-empts main fields -->
+          <WorkspacePicker @update:state="onWorkspaceState" />
+
+          <!-- Main fields -->
           <AppInput
-            v-for="envVar in template.envSchema"
+            v-for="envVar in mainFields"
             :key="envVar.key"
             :model-value="config.envVars[envVar.key] ?? envVar.default ?? ''"
             :label="envVar.label + (envVar.required ? ' *' : '')"
@@ -148,6 +153,47 @@
             :helper="envVar.helper"
             @update:model-value="(v: string) => (config.envVars[envVar.key] = v)"
           />
+
+          <!-- Advanced accordion (collapsed por default) -->
+          <div
+            v-if="advancedFields.length"
+            class="rounded-[var(--radius-md)] border"
+            :style="{ borderColor: 'var(--border)' }"
+          >
+            <button
+              type="button"
+              class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium"
+              :style="{ color: 'var(--text-secondary)' }"
+              @click="advancedOpen = !advancedOpen"
+            >
+              <span class="flex items-center gap-2">
+                <AppIcon
+                  :name="advancedOpen ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+                  size="xs"
+                />
+                Avançado (opcional)
+              </span>
+              <span class="text-[10px]" :style="{ color: 'var(--text-tertiary)' }">
+                {{ advancedFields.length }} {{ advancedFields.length === 1 ? "campo" : "campos" }}
+              </span>
+            </button>
+            <div
+              v-if="advancedOpen"
+              class="border-t px-3 py-3 space-y-3"
+              :style="{ borderColor: 'var(--border)' }"
+            >
+              <AppInput
+                v-for="envVar in advancedFields"
+                :key="envVar.key"
+                :model-value="config.envVars[envVar.key] ?? envVar.default ?? ''"
+                :label="envVar.label + (envVar.required ? ' *' : '')"
+                :type="envVar.type === 'password' ? 'password' : 'text'"
+                :placeholder="envVar.placeholder"
+                :helper="envVar.helper"
+                @update:model-value="(v: string) => (config.envVars[envVar.key] = v)"
+              />
+            </div>
+          </div>
         </div>
 
         <!-- Step 4: Review -->
@@ -325,6 +371,7 @@ const environments: Array<{ value: "dev" | "staging" | "prod"; label: string }> 
 const currentStep = ref(0)
 const confirmed = ref(false)
 const tagsText = ref("team=data-platform,company=flowertex")
+const advancedOpen = ref(false)
 
 const config = reactive<DeploymentConfig>({
   name: `${props.template.slug}-prod`,
@@ -339,7 +386,45 @@ const config = reactive<DeploymentConfig>({
     github_token: "",
   },
   envVars: {},
+  workspaceMode: "new",
+  workspaceId: undefined,
+  workspaceName: undefined,
+  advanced: undefined,
 })
+
+// Particiona envSchema entre main + advanced. Default group="main" pra
+// retro-compat com templates antigos sem essa metadata.
+const mainFields = computed(() =>
+  props.template.envSchema.filter((e) => (e.group ?? "main") !== "advanced"),
+)
+const advancedFields = computed(() =>
+  props.template.envSchema.filter((e) => e.group === "advanced"),
+)
+
+interface WorkspacePickerEvent {
+  mode: "existing" | "new"
+  workspaceId?: string
+  workspaceName?: string
+  config?: {
+    root_bucket_name?: string | null
+    aws_region?: string | null
+  }
+}
+
+function onWorkspaceState(state: WorkspacePickerEvent) {
+  config.workspaceMode = state.mode
+  config.workspaceId = state.workspaceId
+  config.workspaceName = state.workspaceName
+  // Auto-fill: se selecionou workspace existente com root bucket, popula
+  // o campo advanced.rootBucket pra usuario ver de onde veio.
+  if (state.mode === "existing" && state.config?.root_bucket_name) {
+    config.advanced = {
+      ...(config.advanced || {}),
+      rootBucket: state.config.root_bucket_name,
+    }
+    advancedOpen.value = true
+  }
+}
 
 // Busca credenciais ja configuradas em /settings pra permitir pre-fill
 // + override per-deploy. O backend NAO retorna os valores (so o status),
@@ -418,10 +503,16 @@ async function handleDeploy() {
     if (value && value.trim()) overrideCreds[key] = value.trim()
   }
 
+  // Cast em credentials pra DeploymentCredentialsMap — overrideCreds eh
+  // sparse Record<string, string>, mas a interface aceita extra keys via index.
   const deployment = await deploymentsStore.createDeployment(
     props.template.slug,
     props.template.name,
-    { ...config, credentials: overrideCreds, envVars: { ...config.envVars } },
+    {
+      ...config,
+      credentials: overrideCreds as DeploymentConfig["credentials"],
+      envVars: { ...config.envVars },
+    },
   )
 
   navigateTo(`/deployments/${deployment.id}`)

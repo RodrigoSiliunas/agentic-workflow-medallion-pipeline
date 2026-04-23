@@ -6,12 +6,36 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class WorkspaceAdvancedConfig(BaseModel):
+    """Config opcional do workspace exposta na aba "Avançado" do wizard.
+
+    Campos default-derivados — usuario casual nao precisa preencher nada:
+    - root_bucket: default `{s3_bucket}-root`
+    - network_cidr: default 10.0.0.0/16
+    - admin_email: default administrator@idlehub.com.br
+    - metastore_id: default = auto-discover por regiao via Account API
+    """
+
+    root_bucket: str | None = None
+    network_cidr: str | None = None
+    admin_email: str | None = None
+    metastore_id: str | None = None
+
+
 class DeploymentConfigIn(BaseModel):
     name: str
     environment: Literal["dev", "staging", "prod"] = "prod"
     tags: dict[str, str] = Field(default_factory=dict)
     credentials: dict[str, str] = Field(default_factory=dict)
     env_vars: dict[str, str] = Field(default_factory=dict)
+    # Workspace selection: existing (skip provisioning) ou new (full saga).
+    # Se ausente, default = "new" pra preservar compat com wizard antigo.
+    workspace_mode: Literal["existing", "new"] = "new"
+    # Modo existing: id do workspace alvo (Databricks Account API)
+    workspace_id: str | None = None
+    # Modo new: nome customizado do workspace (override do auto company-suffix)
+    workspace_name: str | None = None
+    advanced: WorkspaceAdvancedConfig | None = None
 
 
 class DeploymentCreateRequest(BaseModel):

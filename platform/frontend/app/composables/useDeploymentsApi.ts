@@ -91,7 +91,9 @@ function deploymentFromApi(dto: DeploymentApiDTO): Deployment {
       name: dto.name,
       environment: dto.environment as DeploymentConfig["environment"],
       tags: (dto.config?.tags as Record<string, string>) ?? {},
-      credentials: (dto.config?.credentials as Record<string, string>) ?? {},
+      credentials: (dto.config?.credentials as DeploymentConfig["credentials"]) ?? (
+        {} as DeploymentConfig["credentials"]
+      ),
       envVars: (dto.config?.env_vars as Record<string, string>) ?? {},
     },
     status: dto.status as Deployment["status"],
@@ -115,7 +117,7 @@ function summaryFromApi(dto: DeploymentListItemDTO): Deployment {
       name: dto.name,
       environment: dto.environment as DeploymentConfig["environment"],
       tags: {},
-      credentials: {},
+      credentials: {} as DeploymentConfig["credentials"],
       envVars: {},
     },
     status: dto.status as Deployment["status"],
@@ -164,6 +166,14 @@ export function useDeploymentsApi() {
     if (isMock) {
       return createDeploymentLocalMock(templateSlug, `Template ${templateSlug}`, config)
     }
+    const advancedPayload = config.advanced
+      ? {
+          root_bucket: config.advanced.rootBucket,
+          network_cidr: config.advanced.networkCidr,
+          admin_email: config.advanced.adminEmail,
+          metastore_id: config.advanced.metastoreId,
+        }
+      : undefined
     const data = await api.post<DeploymentApiDTO>("/deployments", {
       template_slug: templateSlug,
       config: {
@@ -172,6 +182,10 @@ export function useDeploymentsApi() {
         tags: config.tags,
         credentials: config.credentials,
         env_vars: config.envVars,
+        workspace_mode: config.workspaceMode ?? "new",
+        workspace_id: config.workspaceId,
+        workspace_name: config.workspaceName,
+        advanced: advancedPayload,
       },
     })
     return deploymentFromApi(data)

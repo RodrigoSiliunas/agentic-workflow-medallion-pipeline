@@ -93,10 +93,11 @@ class TestMultiTenantNaming:
             # Retorna external_id gerado pelo Databricks
             return "dbx-generated-external-id"
 
-        async def _fake_loc(ctx, w, loc_name, cred_name, bucket):
+        async def _fake_loc(ctx, w, loc_name, cred_name, bucket, prefix=""):
             captured["loc_name"] = loc_name
             captured["loc_cred_name"] = cred_name
             captured["bucket"] = bucket
+            captured["prefix"] = prefix
 
         async def _fake_catalog(ctx, w, catalog, managed_location=None):
             captured["catalog"] = catalog
@@ -139,15 +140,19 @@ class TestMultiTenantNaming:
         )
         await step.execute(ctx)
 
-        assert captured["cred_name"] == "acme-insurance-s3-credential"
-        assert captured["loc_name"] == "acme-insurance-datalake"
-        assert captured["loc_cred_name"] == "acme-insurance-s3-credential"
+        # Nomes incluem company_suffix (primeiros 8 chars do UUID company_id)
+        company_suffix = str(ctx.company_id).split("-")[0]
+        expected_cred = f"acme-insurance-{company_suffix}-s3-credential"
+        expected_loc = f"acme-insurance-{company_suffix}-datalake"
+        assert captured["cred_name"] == expected_cred
+        assert captured["loc_name"] == expected_loc
+        assert captured["loc_cred_name"] == expected_cred
         assert captured["bucket"] == "acme-insurance-datalake"
         # Trust policy atualizada com external_id retornado pelo Databricks
         assert captured["trust_external_id"] == "dbx-generated-external-id"
         assert ctx.shared.databricks_external_id == "dbx-generated-external-id"
-        assert ctx.shared.databricks_storage_credential == "acme-insurance-s3-credential"
-        assert ctx.shared.databricks_external_location == "acme-insurance-datalake"
+        assert ctx.shared.databricks_storage_credential == expected_cred
+        assert ctx.shared.databricks_external_location == expected_loc
 
     @pytest.mark.asyncio
     async def test_execute_skips_uc_when_no_role_or_bucket(self, monkeypatch):
@@ -198,8 +203,13 @@ class TestMultiTenantNaming:
 
 
 def _make_ctx(env, shared=None):
+    import uuid as _uuid
+
     ctx = MagicMock()
     ctx.env_vars.return_value = env
+    # company_id deterministico — eh usado pra prefixar nomes UC
+    # multi-tenant em catalog.py, MagicMock auto-attr quebra str()
+    ctx.company_id = _uuid.UUID("acedface-1234-5678-9abc-def012345678")
     ctx.credentials = DeploymentCredentials(
         aws_access_key_id="AKIA",
         aws_secret_access_key="sec",

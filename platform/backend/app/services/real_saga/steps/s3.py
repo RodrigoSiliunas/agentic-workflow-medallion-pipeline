@@ -1,4 +1,10 @@
-"""Step `s3` — verifica ou cria o bucket do datalake.
+"""Step `s3` — verifica ou cria buckets do datalake e do workspace root.
+
+Cria DOIS buckets:
+- **datalake** (nome do wizard, ex: `flowertex-medallion-datalake`): bronze/silver/gold
+- **workspace root** (default `{datalake}-root` ou override do advanced): DBFS root,
+  cluster logs, init scripts compartilhados. Necessario pra customer-managed VPC
+  do Databricks. Recebe bucket policy permitindo Databricks AWS account principal.
 
 Fast path: boto3 `head_bucket`. Se o bucket ja existe, loga e pula.
 Slow path: boto3 `create_bucket` com versionamento + encryption + public access block.
@@ -9,17 +15,23 @@ Nota: a versao anterior usava Terraform pra criar o bucket, mas o modulo
 simples e nao depende de state cross-module.
 
 O nome do bucket vem de `config.env_vars["s3_bucket"]` (preenchido pelo wizard).
+Override do root bucket vem de `env_vars["workspace_root_bucket"]` (advanced).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 
 from botocore.exceptions import ClientError
 
 from app.services.real_saga.aws_client import boto3_session
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.registry import register_saga_step
+
+# Conta AWS oficial do Databricks pro plano commercial. Documentado em
+# https://docs.databricks.com/en/admin/workspace/cross-account-iam.html
+_DATABRICKS_AWS_ACCOUNT = "414351767826"
 
 
 @register_saga_step("s3")
@@ -86,21 +98,34 @@ class S3Step:
     async def execute(self, ctx: StepContext) -> None:
         bucket_name = _resolve_bucket_name(ctx)
         region = ctx.credentials.require("aws_region")
-        await ctx.info(f"Verificando S3 bucket '{bucket_name}' em {region}")
 
+        # Datalake bucket
+        await ctx.info(f"Verificando S3 bucket datalake '{bucket_name}' em {region}")
         if await self._bucket_exists(ctx, bucket_name):
-            await ctx.info("Bucket ja existe — reutilizando.")
-            ctx.shared.s3_bucket = bucket_name
-            ctx.shared.s3_bucket_url = f"s3://{bucket_name}"
-            return
+            await ctx.info("Datalake bucket ja existe — reutilizando.")
+        else:
+            await ctx.info("Datalake bucket nao encontrado — criando via boto3...")
+            await self._create_bucket(ctx, bucket_name, region)
+            await self._upload_sample_data(ctx, bucket_name)
 
-        await ctx.info("Bucket nao encontrado — criando via boto3...")
-        await self._create_bucket(ctx, bucket_name, region)
         ctx.shared.s3_bucket = bucket_name
         ctx.shared.s3_bucket_url = f"s3://{bucket_name}"
 
-        # Upload sample data se existir localmente
-        await self._upload_sample_data(ctx, bucket_name)
+        # Workspace root bucket — default `{datalake}-root` ou override
+        root_bucket = _resolve_root_bucket_name(ctx, bucket_name)
+        await ctx.info(f"Verificando workspace root bucket '{root_bucket}'")
+        if await self._bucket_exists(ctx, root_bucket):
+            await ctx.info("Root bucket ja existe — reutilizando.")
+        else:
+            await ctx.info("Root bucket nao encontrado — criando via boto3...")
+            await self._create_bucket(ctx, root_bucket, region, databricks_root=True)
+
+        # Bucket policy idempotente pra permitir Databricks AWS account
+        await self._apply_databricks_root_policy(ctx, root_bucket)
+        ctx.shared.workspace_root_bucket = root_bucket
+        await ctx.success(
+            f"Buckets prontos: datalake=s3://{bucket_name}, root=s3://{root_bucket}"
+        )
 
     @staticmethod
     async def _bucket_exists(ctx: StepContext, bucket_name: str) -> bool:
@@ -122,7 +147,12 @@ class S3Step:
         return await asyncio.to_thread(_check)
 
     @staticmethod
-    async def _create_bucket(ctx: StepContext, bucket_name: str, region: str) -> None:
+    async def _create_bucket(
+        ctx: StepContext,
+        bucket_name: str,
+        region: str,
+        databricks_root: bool = False,
+    ) -> None:
         session = boto3_session(ctx.credentials)
         s3 = session.client("s3")
 
@@ -167,15 +197,62 @@ class S3Step:
                 },
             )
 
-            # Criar pastas-placeholder (como o Terraform faz)
-            for prefix in ("bronze/", "silver/", "gold/", "pipeline/", "checkpoints/"):
-                s3.put_object(Bucket=bucket_name, Key=prefix, Body=b"")
+            # Datalake recebe pastas medallion. Root bucket so precisa
+            # da raiz limpa — Databricks gerencia DBFS/cluster-logs/init-scripts.
+            if not databricks_root:
+                for prefix in (
+                    "bronze/", "silver/", "gold/", "pipeline/", "checkpoints/",
+                ):
+                    s3.put_object(Bucket=bucket_name, Key=prefix, Body=b"")
 
         await asyncio.to_thread(_create)
+        kind = "root bucket" if databricks_root else "bucket"
         await ctx.success(
-            f"Bucket criado: s3://{bucket_name} "
+            f"{kind.capitalize()} criado: s3://{bucket_name} "
             f"(versioning=on, encryption=AES256, public_access=blocked)"
         )
+
+    @staticmethod
+    async def _apply_databricks_root_policy(
+        ctx: StepContext, bucket_name: str
+    ) -> None:
+        """Aplica bucket policy permitindo Databricks AWS account principal.
+
+        Necessario pro workspace customer-managed VPC funcionar — Databricks
+        precisa Get/Put/List no bucket pra DBFS root + cluster logs.
+        Idempotente: PutBucketPolicy substitui policy existente.
+        """
+        session = boto3_session(ctx.credentials)
+        s3 = session.client("s3")
+
+        policy = {
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Sid": "DatabricksWorkspaceRootAccess",
+                "Effect": "Allow",
+                "Principal": {"AWS": f"arn:aws:iam::{_DATABRICKS_AWS_ACCOUNT}:root"},
+                "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:ListBucket",
+                    "s3:GetBucketLocation",
+                    "s3:ListBucketMultipartUploads",
+                    "s3:AbortMultipartUpload",
+                    "s3:ListMultipartUploadParts",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket_name}",
+                    f"arn:aws:s3:::{bucket_name}/*",
+                ],
+            }],
+        }
+
+        def _put() -> None:
+            s3.put_bucket_policy(Bucket=bucket_name, Policy=json.dumps(policy))
+
+        await asyncio.to_thread(_put)
+        await ctx.info(f"Bucket policy aplicada em '{bucket_name}' (Databricks principal)")
 
 
     @staticmethod
@@ -213,3 +290,16 @@ def _resolve_bucket_name(ctx: StepContext) -> str:
             "S3 bucket nao definido — o wizard/template deve passar `s3_bucket` em env_vars."
         )
     return bucket
+
+
+def _resolve_root_bucket_name(ctx: StepContext, datalake_bucket: str) -> str:
+    """Root bucket name: override do advanced ou derivado `{datalake}-root`.
+
+    Mantem buckets separados (recommended Databricks) sem exigir input extra
+    do usuario casual. Override existe pra naming convention da empresa.
+    """
+    env = ctx.env_vars()
+    override = (env.get("workspace_root_bucket") or "").strip()
+    if override:
+        return override
+    return f"{datalake_bucket}-root"

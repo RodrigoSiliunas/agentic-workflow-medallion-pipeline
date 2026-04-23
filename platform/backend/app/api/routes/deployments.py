@@ -151,6 +151,27 @@ async def create_deployment(
         anthropic_api_key=resolved.get("anthropic_api_key"),
     )
 
+    # Merge env_vars com workspace_mode + advanced — saga steps consomem
+    # tudo via ctx.env_vars(). Mantem os opcionais ausentes fora do dict
+    # pra steps que checam `if env.get("workspace_mode") == "existing"`
+    # nao serem afetados quando o wizard antigo nao envia esses campos.
+    merged_env: dict[str, str] = dict(data.config.env_vars or {})
+    merged_env["workspace_mode"] = data.config.workspace_mode
+    if data.config.workspace_id:
+        merged_env["workspace_id"] = data.config.workspace_id
+    if data.config.workspace_name:
+        merged_env["workspace_name"] = data.config.workspace_name
+    adv = data.config.advanced
+    if adv:
+        if adv.root_bucket:
+            merged_env["workspace_root_bucket"] = adv.root_bucket
+        if adv.network_cidr:
+            merged_env["network_cidr"] = adv.network_cidr
+        if adv.admin_email:
+            merged_env["admin_email"] = adv.admin_email
+        if adv.metastore_id:
+            merged_env["databricks_metastore_id"] = adv.metastore_id
+
     deployment = Deployment(
         company_id=auth.company_id,
         user_id=auth.user_id,
@@ -162,7 +183,8 @@ async def create_deployment(
             "tags": data.config.tags,
             "credentials": {k: "***" for k in override_creds},  # mascarado
             "credential_sources": credential_sources,
-            "env_vars": data.config.env_vars,
+            "env_vars": merged_env,
+            "workspace_mode": data.config.workspace_mode,
         },
         status="pending",
     )

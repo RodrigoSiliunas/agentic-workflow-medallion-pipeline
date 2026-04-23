@@ -18,6 +18,11 @@ CREDENTIAL_TYPES = {
     "github_repo",
     "databricks_host",
     "databricks_token",
+    # Account API OAuth M2M — usado pra criar workspace/network/storage configs
+    # via /api/2.0/accounts/{id}/... endpoints (workspace customer-managed VPC).
+    "databricks_account_id",
+    "databricks_oauth_client_id",
+    "databricks_oauth_secret",
     # AWS — credenciais que o saga usa pra Terraform/boto3
     "aws_access_key_id",
     "aws_secret_access_key",

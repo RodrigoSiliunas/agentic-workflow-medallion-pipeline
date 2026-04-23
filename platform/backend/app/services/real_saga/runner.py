@@ -28,15 +28,21 @@ from app.services.real_saga.base import (
 from app.services.real_saga.registry import STEP_REGISTRY
 from app.services.real_saga.steps import (  # noqa: F401 — import pra popular o registry
     CatalogStep,
+    ClusterProvisionStep,
     IamStep,
+    MetastoreAssignStep,
+    NetworkStep,
     ObserverStep,
     RegisterStep,
     S3Step,
     SecretsStep,
+    StorageConfigurationStep,
     TriggerStep,
     UploadStep,
     ValidateStep,
     WorkflowStep,
+    WorkspaceCredentialStep,
+    WorkspaceProvisionStep,
 )
 
 logger = structlog.get_logger()

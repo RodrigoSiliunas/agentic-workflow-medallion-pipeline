@@ -41,11 +41,32 @@ class WorkspaceCredentialStep:
         account_id = env.get("databricks_account_id", "")
         oauth_client_id = env.get("databricks_oauth_client_id", "")
         oauth_secret = env.get("databricks_oauth_secret", "")
-        root_bucket = env.get("workspace_root_bucket", "")
+
+        # Modo workspace existing: usuario passou IDs prontos no wizard,
+        # nao precisa criar credentials nem role.
+        if env.get("workspace_mode") == "existing":
+            existing_id = env.get("databricks_credentials_id", "")
+            if existing_id:
+                ctx.shared.databricks_credentials_id = existing_id
+                await ctx.info(
+                    f"workspace_mode=existing — reutilizando credentials_id={existing_id}"
+                )
+            else:
+                await ctx.warn(
+                    "workspace_mode=existing sem databricks_credentials_id — "
+                    "workspace_provision vai puxar do workspace_id direto"
+                )
+            return
+
+        # Root bucket vem do step s3 (precedencia: shared > env_var legado)
+        root_bucket = ctx.shared.workspace_root_bucket or env.get(
+            "workspace_root_bucket", ""
+        )
 
         if not all([account_id, oauth_client_id, oauth_secret, root_bucket]):
             await ctx.warn(
-                "Skipping workspace_credential — Account OAuth ou root bucket ausente"
+                "Skipping workspace_credential — Account OAuth ou root bucket ausente "
+                "(passe credenciais OAuth + rode step s3 antes pra popular root_bucket)"
             )
             return
 

@@ -47,14 +47,19 @@ TEMPLATE_SEEDS = [
                 "placeholder": "medallion",
                 "default": "medallion",
                 "helper": "Catalog principal que vai abrigar os schemas bronze/silver/gold",
+                "group": "main",
             },
             {
                 "key": "s3_bucket",
-                "label": "S3 bucket name",
+                "label": "S3 bucket name (datalake)",
                 "type": "text",
                 "required": True,
                 "placeholder": "flowertex-medallion-datalake",
-                "helper": "Bucket que vai receber os parquets ingeridos",
+                "helper": (
+                    "Bucket dos parquets ingeridos. "
+                    "Root bucket sera derivado como '{nome}-root'."
+                ),
+                "group": "main",
             },
             {
                 "key": "schedule_cron",
@@ -64,6 +69,7 @@ TEMPLATE_SEEDS = [
                 "placeholder": "0 6 * * *",
                 "default": "0 6 * * *",
                 "helper": "Cron em timezone America/Sao_Paulo. Vazio = sem schedule",
+                "group": "main",
             },
             {
                 "key": "masking_secret",
@@ -71,6 +77,7 @@ TEMPLATE_SEEDS = [
                 "type": "password",
                 "required": True,
                 "helper": "Chave HMAC usada para mascarar CPF, telefone, email",
+                "group": "main",
             },
             {
                 "key": "cluster_id",
@@ -83,6 +90,62 @@ TEMPLATE_SEEDS = [
                     "Vazio = auto-detect do workspace. "
                     "Necessario porque serverless nao suporta spark.hadoop.fs.s3a.*"
                 ),
+                "group": "advanced",
+                "collapsed": True,
+            },
+            {
+                "key": "workspace_root_bucket",
+                "label": "Workspace root bucket (override)",
+                "type": "text",
+                "required": False,
+                "placeholder": "auto: {s3_bucket}-root",
+                "helper": (
+                    "Bucket interno do Databricks (DBFS root, cluster logs, "
+                    "init scripts). Vazio = derivado automaticamente do datalake. "
+                    "So preencha pra naming convention especifica."
+                ),
+                "group": "advanced",
+                "collapsed": True,
+            },
+            {
+                "key": "network_cidr",
+                "label": "Network CIDR (VPC)",
+                "type": "text",
+                "required": False,
+                "placeholder": "10.0.0.0/16",
+                "default": "10.0.0.0/16",
+                "helper": (
+                    "CIDR /16 da VPC criada pra customer-managed Databricks. "
+                    "So muda se tiver overlap com outra VPC."
+                ),
+                "group": "advanced",
+                "collapsed": True,
+            },
+            {
+                "key": "admin_email",
+                "label": "Admin email (workspace)",
+                "type": "text",
+                "required": False,
+                "placeholder": "administrator@idlehub.com.br",
+                "helper": (
+                    "Email do admin adicionado ao workspace via SCIM "
+                    "durante o provisioning."
+                ),
+                "group": "advanced",
+                "collapsed": True,
+            },
+            {
+                "key": "databricks_metastore_id",
+                "label": "Metastore ID (opcional)",
+                "type": "text",
+                "required": False,
+                "placeholder": "auto-discover",
+                "helper": (
+                    "Vazio = auto-discover por regiao. So preencha se a conta "
+                    "tiver multiplos metastores na mesma regiao."
+                ),
+                "group": "advanced",
+                "collapsed": True,
             },
         ],
         "changelog": [

@@ -14,8 +14,13 @@ from app.services.deployment_saga import (
 
 
 def test_saga_blueprint_structure():
-    """Blueprint deve ter 10 etapas com id/name/description."""
-    assert len(SAGA_BLUEPRINT) == 10
+    """Blueprint deve ter 16 etapas com id/name/description.
+
+    Inclui os 10 originais + 6 novos do workspace setup from-scratch:
+    network, workspace_credential, storage_configuration,
+    workspace_provision, metastore_assign, cluster_provision.
+    """
+    assert len(SAGA_BLUEPRINT) == 16
     for step in SAGA_BLUEPRINT:
         assert "id" in step and step["id"]
         assert "name" in step and step["name"]
@@ -23,6 +28,12 @@ def test_saga_blueprint_structure():
 
     ids = [s["id"] for s in SAGA_BLUEPRINT]
     assert len(ids) == len(set(ids)), "step ids devem ser unicos"
+    # Sanity check dos novos steps
+    expected = {
+        "network", "workspace_credential", "storage_configuration",
+        "workspace_provision", "metastore_assign", "cluster_provision",
+    }
+    assert expected.issubset(set(ids))
 
 
 def test_step_logs_cobrem_todos_os_steps():

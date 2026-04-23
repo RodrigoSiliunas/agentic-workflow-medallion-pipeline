@@ -9,6 +9,10 @@ export interface EnvVarSchema {
   helper?: string
   default?: string
   options?: string[]
+  /** Grupo de exibicao no wizard. "main" = Configuracao default, "advanced" = aba opcional. */
+  group?: "main" | "advanced"
+  /** Se true, comeca colapsado dentro do grupo Avancado. */
+  collapsed?: boolean
 }
 
 export interface TemplateChangelog {
