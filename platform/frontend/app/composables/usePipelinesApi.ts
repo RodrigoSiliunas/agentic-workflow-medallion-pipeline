@@ -2,7 +2,7 @@
  * API client wrapper for /api/v1/pipelines endpoints.
  * Single decision point para mock vs real — stores nunca fazem branching.
  */
-import type { Pipeline } from "~/types/pipeline"
+import type { Pipeline, PipelineStatus } from "~/types/pipeline"
 import { MOCK_PIPELINES } from "~/composables/mock/pipelines"
 
 interface PipelineApiDTO {
@@ -11,15 +11,20 @@ interface PipelineApiDTO {
   description: string | null
   databricks_job_id: number | null
   github_repo: string | null
-  config: Record<string, unknown> | null
+  status?: string
+  config?: Record<string, unknown> | null
 }
 
+const VALID_STATUSES: PipelineStatus[] = ["SUCCESS", "FAILED", "RUNNING", "IDLE", "RECOVERED"]
+
 function fromApi(dto: PipelineApiDTO): Pipeline {
+  const apiStatus = dto.status && VALID_STATUSES.includes(dto.status as PipelineStatus)
+    ? (dto.status as PipelineStatus)
+    : dto.databricks_job_id ? "SUCCESS" : "IDLE"
   return {
     id: dto.id,
     name: dto.name,
-    // Pipeline com job Databricks configurado = ativo (deployado com sucesso)
-    status: dto.databricks_job_id ? "SUCCESS" : "IDLE",
+    status: apiStatus,
     lastRunAt: null,
     nextRunAt: null,
     threadCount: 0,

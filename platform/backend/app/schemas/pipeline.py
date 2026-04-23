@@ -18,6 +18,7 @@ class PipelineResponse(BaseModel):
     description: str | None
     databricks_job_id: int | None
     github_repo: str | None
+    status: str = "IDLE"
 
     model_config = ConfigDict(from_attributes=True)
 

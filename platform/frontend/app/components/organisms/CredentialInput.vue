@@ -24,7 +24,7 @@
       <UInput
         v-model="value"
         :type="showValue ? 'text' : 'password'"
-        :placeholder="isConfigured ? '••••••••' : 'Cole sua chave aqui'"
+        :placeholder="isConfigured ? '••••••••' : effectivePlaceholder"
         class="flex-1"
         size="sm"
       />
@@ -36,12 +36,24 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   label: string
   type: string
   isConfigured?: boolean
   isValid?: boolean
+  placeholder?: string
 }>()
+
+// Placeholder padrão por tipo — evita "Cole sua chave aqui" em campos que não são chave
+const DEFAULT_PLACEHOLDERS: Record<string, string> = {
+  github_repo: "owner/repo",
+  aws_region: "us-east-2",
+  databricks_host: "https://<workspace>.cloud.databricks.com",
+}
+
+const effectivePlaceholder = computed(
+  () => props.placeholder ?? DEFAULT_PLACEHOLDERS[props.type] ?? "Cole o valor aqui",
+)
 
 defineEmits<{
   save: [value: string]

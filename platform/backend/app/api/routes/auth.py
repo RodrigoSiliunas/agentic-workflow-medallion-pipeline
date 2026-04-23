@@ -29,7 +29,6 @@ from app.core.security import (
 from app.database.session import get_db
 from app.middleware.rate_limiter import rate_limit_auth
 from app.models.company import Company
-from app.models.pipeline import Pipeline
 from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
@@ -117,17 +116,6 @@ async def register_company(
         role="root",
     )
     db.add(user)
-    await db.flush()
-
-    default_pipeline = Pipeline(
-        company_id=company.id,
-        name="Meu primeiro pipeline",
-        description=(
-            "Pipeline placeholder. Conecte um template no marketplace para substituir "
-            "por um pipeline real."
-        ),
-    )
-    db.add(default_pipeline)
     await db.flush()
 
     token_data = {"sub": str(user.id), "company_id": str(company.id), "role": "root"}

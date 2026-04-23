@@ -56,12 +56,8 @@ platform/backend/venv/
 # E2E screenshots (testes locais, nao precisam estar no repo)
 e2e-*.png
 
-# Docs internos / teste tecnico (gitignored por padrao).
-# ADRs sao o canal formal de decisoes arquiteturais — esses ficam tracked.
-# Usa padrao `docs/*` (nao `docs/`) pra permitir negacao recursiva do adr.
-docs/*
-!docs/adr/
-!docs/adr/**
+# Docs internos (gitignored).
+docs/
 conductor/
 
 # Design system repo (submodule/reference)

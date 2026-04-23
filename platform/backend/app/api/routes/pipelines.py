@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_user, require_permission
 from app.database.session import get_db
+from app.models.deployment import Deployment
 from app.models.pipeline import Pipeline
 from app.schemas.pipeline import CreatePipelineRequest, PipelineResponse, PipelineStatusResponse
 from app.services.databricks_service import DatabricksService
@@ -20,11 +21,40 @@ async def list_pipelines(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista pipelines da empresa (todos os roles podem ver)."""
+    """Lista pipelines da empresa (todos os roles podem ver).
+
+    O status do pipeline e derivado do estado de deploy: se existe um deployment
+    com status="success" vinculado, o pipeline e considerado ativo (SUCCESS).
+    Caso contrario (ou se nunca foi deployado), IDLE.
+    """
     result = await db.execute(
         select(Pipeline).where(Pipeline.company_id == auth.company_id).order_by(Pipeline.name)
     )
-    return result.scalars().all()
+    pipelines = result.scalars().all()
+
+    if not pipelines:
+        return []
+
+    pipeline_ids = [p.id for p in pipelines]
+    deploy_result = await db.execute(
+        select(Deployment.pipeline_id).where(
+            Deployment.pipeline_id.in_(pipeline_ids),
+            Deployment.status == "success",
+        )
+    )
+    deployed_ids = {row[0] for row in deploy_result.all()}
+
+    return [
+        PipelineResponse(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            databricks_job_id=p.databricks_job_id,
+            github_repo=p.github_repo,
+            status="SUCCESS" if (p.databricks_job_id or p.id in deployed_ids) else "IDLE",
+        )
+        for p in pipelines
+    ]
 
 
 @router.post("", response_model=PipelineResponse, status_code=201)
