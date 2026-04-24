@@ -20,6 +20,10 @@ class Pipeline(Base, UUIDMixin, TimestampMixin):
     databricks_job_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     github_repo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     config: Mapped[dict | None] = mapped_column(JSONB, default={})
+    # Runtime LLM override per-pipeline (chat agent + Observer)
+    # Vazio = usa default da empresa
+    preferred_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    preferred_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class PipelineContextCache(Base, UUIDMixin, TimestampMixin):

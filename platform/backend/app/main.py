@@ -14,6 +14,7 @@ from app.api.routes import (
     auth,
     channels,
     chat,
+    custom_llm,
     databricks,
     deployments,
     observability,
@@ -135,6 +136,7 @@ app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["deployments"])
 app.include_router(databricks.router, prefix="/api/v1/databricks", tags=["databricks"])
+app.include_router(custom_llm.router, prefix="/api/v1/llm/endpoints", tags=["custom_llm"])
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
 app.include_router(
     observability.router, prefix="/api/v1/observability", tags=["observability"]

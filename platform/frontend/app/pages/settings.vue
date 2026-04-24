@@ -118,6 +118,16 @@
         </div>
       </section>
 
+      <!-- Custom LLM Endpoints (Ollama, vLLM, OpenRouter, etc) -->
+      <section>
+        <h2 class="text-lg font-semibold mb-1">Endpoints LLM customizados</h2>
+        <p class="text-xs mb-3" :style="{ color: 'var(--text-tertiary)' }">
+          Self-hosted LLM ou APIs OpenAI-compatible. Aparece como provider
+          adicional no chat, wizard de pipeline e canais.
+        </p>
+        <CustomEndpointsList />
+      </section>
+
       <!-- Databricks Account-level (OAuth M2M, opcional) -->
       <section>
         <h2 class="text-lg font-semibold mb-1">Databricks Account (OAuth M2M)</h2>
@@ -197,6 +207,11 @@ definePageMeta({ layout: "default", middleware: ["role"], role: "admin" })
 const toast = useToast()
 const { settings, saveCredential, testCredential, updateModel, updateProvider } = useSettings()
 const { providers, findProvider, formatPrice } = useLLMProviders()
+const { endpoints, load: loadEndpoints } = useCustomEndpoints()
+
+onMounted(() => {
+  if (!endpoints.value.length) loadEndpoints()
+})
 
 const aiCredentials = [
   { type: "anthropic_api_key", label: "Anthropic API Key" },
@@ -205,8 +220,31 @@ const aiCredentials = [
 ]
 
 const selectedProviderObj = computed(() => findProvider(settings.value.preferred_provider))
-const selectedProviderLabel = computed(() => selectedProviderObj.value?.label || "?")
-const selectedProviderModels = computed(() => selectedProviderObj.value?.models || [])
+
+const selectedCustomEndpoint = computed(() => {
+  const id = settings.value.preferred_provider
+  if (!id?.startsWith("custom:")) return null
+  return endpoints.value.find((e) => `custom:${e.id}` === id)
+})
+
+const selectedProviderLabel = computed(() =>
+  selectedCustomEndpoint.value
+    ? `Custom: ${selectedCustomEndpoint.value.name}`
+    : selectedProviderObj.value?.label || "?",
+)
+
+const selectedProviderModels = computed(() => {
+  if (selectedCustomEndpoint.value) {
+    return selectedCustomEndpoint.value.models.map((m) => ({
+      id: m.id,
+      label: m.label || m.id,
+      tier: "balanced" as const,
+      pricePer1M: { input: 0, output: 0 },
+      contextWindow: 0,
+    }))
+  }
+  return selectedProviderObj.value?.models || []
+})
 
 function providerCardStyle(id: string): Record<string, string> {
   const isActive = settings.value.preferred_provider === id

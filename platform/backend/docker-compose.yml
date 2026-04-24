@@ -102,9 +102,85 @@ services:
       - omni-net
     restart: unless-stopped
 
+  # ============================================================================
+  # OPCIONAL — Self-hosted LLM via Ollama (profile: gpu)
+  # Requer NVIDIA Container Toolkit + GPU local. Ative com:
+  #   docker compose --profile gpu up
+  # ============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: flowertex-ollama
+    profiles: [gpu]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "30m"        # Manter modelo em VRAM 30min apos ultima request
+      OLLAMA_NUM_PARALLEL: "1"         # 3070 8GB = 1 request por vez
+      OLLAMA_MAX_LOADED_MODELS: "1"    # 1 model em VRAM por vez (swap se trocar)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - flowertex-net
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: flowertex-ollama-init
+    profiles: [gpu]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "ollama pull qwen3.5:9b && ollama pull gemma4:e2b && echo 'init done'"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    networks:
+      - flowertex-net
+    restart: "no"
+
+  # ============================================================================
+  # OPCIONAL — ngrok tunnel pra expor Ollama publicamente (profile: tunnel)
+  # Requer NGROK_AUTHTOKEN no .env. Ative junto com gpu:
+  #   docker compose --profile gpu --profile tunnel up
+  # URL publica visivel em http://localhost:4040
+  # ============================================================================
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: flowertex-ngrok
+    profiles: [tunnel]
+    ports:
+      - "4040:4040"   # ngrok inspector UI
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN in .env}
+    command:
+      - "http"
+      - "ollama:11434"
+      - "--log=stdout"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - flowertex-net
+    restart: unless-stopped
+
 volumes:
   pgdata:
   omnidata:
+  ollama_data:
 
 networks:
   flowertex-net:

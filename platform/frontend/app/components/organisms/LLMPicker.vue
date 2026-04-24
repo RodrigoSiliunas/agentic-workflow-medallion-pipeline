@@ -41,10 +41,11 @@
 </template>
 
 <script setup lang="ts">
-import { useLLMProviders } from "~/composables/useLLMProviders"
+import { useCustomEndpoints } from "~/composables/useCustomEndpoints"
+import { useCombinedProviders, useLLMProviders } from "~/composables/useLLMProviders"
 
 const props = defineProps<{
-  /** Provider id atual (anthropic/openai/google) ou "" pra default */
+  /** Provider id atual (anthropic/openai/google) ou "custom:<uuid>" ou "" pra default */
   modelValueProvider?: string
   /** Model id atual ou "" pra default */
   modelValueModel?: string
@@ -60,7 +61,15 @@ const emit = defineEmits<{
   change: [provider: string, model: string]
 }>()
 
-const { providers, findProvider, findModel, formatPrice } = useLLMProviders()
+const { findModel, formatPrice } = useLLMProviders()
+const { endpoints, load: loadEndpoints } = useCustomEndpoints()
+const { combined, findById } = useCombinedProviders(endpoints)
+
+onMounted(() => {
+  if (!endpoints.value.length) loadEndpoints()
+})
+
+const providers = combined  // dropdown agora inclui custom
 
 const localProvider = ref(props.modelValueProvider || "")
 const localModel = ref(props.modelValueModel || "")
@@ -75,13 +84,17 @@ watch(
 )
 
 const availableModels = computed(() => {
-  const p = findProvider(localProvider.value)
+  const p = findById(localProvider.value)
   return p?.models || []
 })
 
 const selectedModel = computed(() => {
   if (!localProvider.value || !localModel.value) return undefined
-  return findModel(localProvider.value, localModel.value)
+  // Built-in: usa findModel pra ter pricing
+  if (!localProvider.value.startsWith("custom:")) {
+    return findModel(localProvider.value, localModel.value)
+  }
+  return undefined  // custom nao tem pricing standard
 })
 
 const selectStyle = {
@@ -91,11 +104,10 @@ const selectStyle = {
 }
 
 function onProviderChange() {
-  // Auto-pick balanced model do novo provider
-  const p = findProvider(localProvider.value)
-  if (p) {
-    const balanced = p.models.find((m) => m.tier === "balanced") || p.models[0]
-    if (balanced) localModel.value = balanced.id
+  // Auto-pick primeiro model do novo provider (custom ou built-in)
+  const p = findById(localProvider.value)
+  if (p && p.models.length) {
+    localModel.value = p.models[0]?.id || ""
   } else {
     localModel.value = ""
   }

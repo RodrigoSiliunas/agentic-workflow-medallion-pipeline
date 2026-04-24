@@ -400,6 +400,7 @@ class ChannelMessageHandler:
                 conversation_history=history[:-1],
                 model_override=model_override,
                 provider_override=provider_override,
+                pipeline_id=pipeline.id,
             ):
                 if event["type"] == "token":
                     full_response += event["content"]

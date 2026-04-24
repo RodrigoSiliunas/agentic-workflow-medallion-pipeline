@@ -214,6 +214,7 @@ async def send_message(
                 conversation_history=conversation_history[:-1],
                 model_override=data.model,
                 provider_override=getattr(data, "provider", None),
+                pipeline_id=pipeline.id,
             ):
                 if event["type"] == "token":
                     full_response += event["content"]

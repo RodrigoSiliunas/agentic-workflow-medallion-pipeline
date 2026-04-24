@@ -76,6 +76,52 @@ async def create_pipeline(
     return pipeline
 
 
+@router.patch("/{pipeline_id}/llm", response_model=PipelineResponse)
+async def update_pipeline_llm(
+    pipeline_id: uuid.UUID,
+    data: dict,
+    auth: AuthContext = Depends(require_permission("manage_pipelines")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atualiza preferred_provider/model do pipeline em runtime.
+
+    Permite trocar LLM sem redeploy da saga — chat agent + Observer usam
+    a config nova no proximo run. Vazio = limpa override (volta default
+    da empresa).
+    """
+    result = await db.execute(
+        select(Pipeline).where(
+            Pipeline.id == pipeline_id, Pipeline.company_id == auth.company_id
+        )
+    )
+    pipeline = result.scalar_one_or_none()
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline nao encontrado")
+
+    provider = data.get("provider", "")
+    model = data.get("model", "")
+    if provider and not (
+        provider in {"anthropic", "openai", "google"}
+        or provider.startswith("custom:")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provider deve ser anthropic|openai|google|custom:<uuid>",
+        )
+    pipeline.preferred_provider = provider or None
+    pipeline.preferred_model = model or None
+    await db.commit()
+    await db.refresh(pipeline)
+    return PipelineResponse(
+        id=pipeline.id,
+        name=pipeline.name,
+        description=pipeline.description,
+        databricks_job_id=pipeline.databricks_job_id,
+        github_repo=pipeline.github_repo,
+        status="SUCCESS" if pipeline.databricks_job_id else "IDLE",
+    )
+
+
 @router.get("/{pipeline_id}/status", response_model=PipelineStatusResponse)
 async def get_pipeline_status(
     pipeline_id: uuid.UUID,

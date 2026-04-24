@@ -31,6 +31,7 @@ from app.services.credential_service import (
     PROVIDER_CREDENTIAL_MAP,
     CredentialService,
 )
+from app.services.custom_llm_service import CustomLLMService
 from app.services.databricks_service import DatabricksService
 from app.services.github_service import GitHubService
 from app.services.tools import (
@@ -89,14 +90,50 @@ class LLMOrchestrator:
     ) -> tuple[ChatLLMProvider, str]:
         """Resolve provider name + cria ChatLLMProvider via factory.
 
-        Retorna tuple (provider, provider_name) — caller usa name pra logs.
+        Suporta:
+          - "anthropic" | "openai" | "google"  -> built-in (api_key via cred_service)
+          - "custom:<uuid>"                    -> CustomLLMEndpoint do DB
         """
         provider_name = provider_override or await self._resolve_company_provider()
+
+        # Custom endpoint (Ollama, vLLM, OpenRouter, etc)
+        if provider_name.startswith("custom:"):
+            import uuid as _uuid
+
+            endpoint_id = provider_name.removeprefix("custom:")
+            try:
+                endpoint_uuid = _uuid.UUID(endpoint_id)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Provider 'custom:{endpoint_id}' tem UUID invalido"
+                ) from exc
+
+            custom_svc = CustomLLMService(self.db)
+            endpoint = await custom_svc.get(self.company_id, endpoint_uuid)
+            if not endpoint:
+                raise ValueError(
+                    f"Custom endpoint {endpoint_id} nao encontrado pra esta empresa"
+                )
+            if not endpoint.enabled:
+                raise ValueError(
+                    f"Custom endpoint '{endpoint.name}' esta desabilitado"
+                )
+            api_key = custom_svc.decrypt_api_key(endpoint)
+            return (
+                create_chat_provider(
+                    "openai-compatible",
+                    api_key=api_key,
+                    base_url=endpoint.base_url,
+                ),
+                provider_name,
+            )
+
+        # Built-in provider
         cred_type = PROVIDER_CREDENTIAL_MAP.get(provider_name)
         if not cred_type:
             raise ValueError(
                 f"Provider '{provider_name}' nao suportado. "
-                f"Validos: {list(PROVIDER_CREDENTIAL_MAP.keys())}"
+                f"Validos: {list(PROVIDER_CREDENTIAL_MAP.keys())} ou 'custom:<uuid>'"
             )
         api_key = await self._cred_service.get_decrypted(self.company_id, cred_type)
         if not api_key:
@@ -138,14 +175,36 @@ class LLMOrchestrator:
         conversation_history: list[dict],
         model_override: str | None = None,
         provider_override: str | None = None,
+        pipeline_id: uuid.UUID | None = None,
     ) -> AsyncGenerator[dict, None]:
-        """Processa mensagem do usuário. Yields SSE events."""
+        """Processa mensagem do usuário. Yields SSE events.
+
+        Resolution order pra provider/model:
+          1. provider_override / model_override (caller explicit)
+          2. pipeline.preferred_provider/model (per-pipeline runtime)
+          3. company.preferred_provider/model (default empresa)
+        """
+        # Pipeline-level override (so se nao houver explicit)
+        if pipeline_id and (not provider_override or not model_override):
+            from app.models.pipeline import Pipeline as _Pipeline
+            pip_result = await self.db.execute(
+                select(_Pipeline).where(
+                    _Pipeline.id == pipeline_id,
+                    _Pipeline.company_id == self.company_id,
+                )
+            )
+            pip = pip_result.scalar_one_or_none()
+            if pip:
+                provider_override = provider_override or pip.preferred_provider
+                model_override = model_override or pip.preferred_model
+
         provider, provider_name = await self._get_chat_provider(provider_override)
         model = await self._get_model(model_override)
         logger.info(
             "chat process_message",
             provider=provider_name,
             model=model,
+            pipeline_id=str(pipeline_id) if pipeline_id else None,
             company_id=str(self.company_id),
         )
 

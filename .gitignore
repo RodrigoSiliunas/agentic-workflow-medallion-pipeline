@@ -59,6 +59,7 @@ e2e-*.png
 # Docs internos (gitignored).
 docs/*
 !docs/chaos_mode_via_databricks_ui.md
+!docs/self_hosted_llm.md
 conductor/
 
 # Design system repo (submodule/reference)

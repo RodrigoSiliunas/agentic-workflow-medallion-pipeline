@@ -160,3 +160,43 @@ export function useLLMProviders() {
     },
   }
 }
+
+/**
+ * Provider list combinado: built-in + custom endpoints da empresa.
+ * Custom providers tem id "custom:<uuid>" — backend resolve via CustomLLMService.
+ */
+export interface CombinedProvider {
+  id: string
+  label: string
+  isCustom: boolean
+  models: Array<{ id: string; label: string }>
+}
+
+export function useCombinedProviders(customEndpoints: { value: Array<{ id: string; name: string; enabled: boolean; models: Array<{ id: string; label?: string }> }> }) {
+  const combined = computed<CombinedProvider[]>(() => {
+    const builtIn: CombinedProvider[] = LLM_PROVIDERS.map((p) => ({
+      id: p.id,
+      label: p.label,
+      isCustom: false,
+      models: p.models.map((m) => ({ id: m.id, label: m.label })),
+    }))
+    const custom: CombinedProvider[] = (customEndpoints.value || [])
+      .filter((e) => e.enabled)
+      .map((e) => ({
+        id: `custom:${e.id}`,
+        label: `Custom: ${e.name}`,
+        isCustom: true,
+        models: e.models.map((m) => ({
+          id: m.id,
+          label: m.label || m.id,
+        })),
+      }))
+    return [...builtIn, ...custom]
+  })
+
+  function findById(id: string): CombinedProvider | undefined {
+    return combined.value.find((p) => p.id === id)
+  }
+
+  return { combined, findById }
+}

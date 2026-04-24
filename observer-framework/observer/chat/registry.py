@@ -61,4 +61,6 @@ def _ensure_loaded() -> None:
         with contextlib.suppress(ImportError):
             import observer.chat.openai  # noqa: F401
         with contextlib.suppress(ImportError):
+            import observer.chat.openai_compatible  # noqa: F401
+        with contextlib.suppress(ImportError):
             import observer.chat.google  # noqa: F401
