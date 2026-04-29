@@ -11,9 +11,10 @@ rode na pagina, so consegue roubar o access_token (15 min de vida). O refresh
 token fica inacessivel ao JavaScript.
 """
 
+import hmac
 import uuid
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,8 +95,23 @@ async def register_company(
     data: RegisterCompanyRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
+    invite_token: str | None = Header(default=None, alias="X-Invite-Token"),
 ):
-    """Cria empresa + usuario root. Usado no onboarding."""
+    """Cria empresa + usuario root. Usado no onboarding.
+
+    Gating: REGISTRATION_OPEN=True abre self-serve. Senao precisa
+    X-Invite-Token batendo REGISTRATION_INVITE_TOKEN.
+    """
+    if not settings.REGISTRATION_OPEN:
+        expected = settings.REGISTRATION_INVITE_TOKEN
+        if not expected or not invite_token or not hmac.compare_digest(
+            invite_token, expected
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Registro fechado. Solicite um invite token.",
+            )
+
     existing = await db.execute(select(Company).where(Company.slug == data.company_slug))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug ja existe")

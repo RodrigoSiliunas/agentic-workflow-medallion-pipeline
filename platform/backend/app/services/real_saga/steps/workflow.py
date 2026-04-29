@@ -62,75 +62,6 @@ class WorkflowStep:
         except Exception as exc:  # noqa: BLE001
             await ctx.warn(f"compensate(workflow) falhou: {exc}")
 
-    @staticmethod
-    async def _auto_detect_cluster(ctx: StepContext) -> str:
-        """Auto-detecta o primeiro cluster disponivel no workspace.
-
-        Necessario porque serverless nao suporta spark.hadoop.fs.s3a.*
-        que o S3Lake usa pra ler/escrever dados. Se nenhum cluster
-        existir, cria um dedicado m5d.large.
-        """
-        import asyncio
-
-        w = workspace_client(ctx.credentials)
-
-        def _find() -> str:
-            clusters = list(w.clusters.list())
-            if not clusters:
-                return ""
-            pipeline_cluster = next(
-                (c for c in clusters if "pipeline" in (c.cluster_name or "").lower()), None
-            )
-            chosen = pipeline_cluster or clusters[0]
-            return chosen.cluster_id or ""
-
-        cluster_id = await asyncio.to_thread(_find)
-        if cluster_id:
-            await ctx.info(f"Cluster auto-detectado: {cluster_id}")
-            return cluster_id
-
-        # Fallback: cria cluster dedicado
-        await ctx.info("Nenhum cluster encontrado — criando medallion-pipeline m5d.large")
-        user_name = ctx.env_vars().get("admin_email", "administrator@idlehub.com.br")
-
-        def _create() -> str:
-            from databricks.sdk.service.compute import (
-                AwsAttributes,
-                AwsAvailability,
-                DataSecurityMode,
-            )
-
-            scope = ctx.env_vars().get("secret_scope", "medallion-pipeline")
-            region = ctx.credentials.aws_region or "us-east-2"
-            # Spark S3A config via secret scope — cluster precisa dessas
-            # spark.conf pra s3a:// funcionar (sem instance profile).
-            # Databricks resolve {{secrets/...}} em runtime.
-            spark_conf = {
-                "spark.hadoop.fs.s3a.access.key": f"{{{{secrets/{scope}/aws-access-key-id}}}}",
-                "spark.hadoop.fs.s3a.secret.key": f"{{{{secrets/{scope}/aws-secret-access-key}}}}",
-                "spark.hadoop.fs.s3a.endpoint": f"s3.{region}.amazonaws.com",
-            }
-            resp = w.clusters.create(
-                cluster_name="medallion-pipeline",
-                spark_version="15.4.x-scala2.12",
-                node_type_id="m5d.large",
-                num_workers=2,
-                autotermination_minutes=30,
-                data_security_mode=DataSecurityMode.SINGLE_USER,
-                single_user_name=user_name,
-                spark_conf=spark_conf,
-                aws_attributes=AwsAttributes(
-                    first_on_demand=1,
-                    availability=AwsAvailability.ON_DEMAND,
-                    zone_id="auto",
-                ),
-            )
-            return resp.cluster_id or ""
-
-        cluster_id = await asyncio.to_thread(_create)
-        await ctx.info(f"Cluster criado: {cluster_id} (cold start ~2min)")
-        return cluster_id
-
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
         catalog = env.get("catalog", ctx.shared.catalog or "medallion")
@@ -151,11 +82,14 @@ class WorkflowStep:
                 "workflow step sem observer_job_id — step `observer` deve rodar antes"
             )
 
-        # Prefere cluster_id do shared state (cluster_provision step).
-        # Fallback: env var OR auto-detect (backward compat).
+        # cluster_id obrigatorio. Cluster_provision step deve preencher
+        # ctx.shared.databricks_cluster_id antes do workflow rodar.
         cluster_id = ctx.shared.databricks_cluster_id or env.get("cluster_id", "")
         if not cluster_id:
-            cluster_id = await self._auto_detect_cluster(ctx)
+            raise RuntimeError(
+                "workflow step sem cluster_id — step `cluster_provision` deve rodar "
+                "antes ou env_vars['cluster_id'] deve estar setado"
+            )
         pipeline_notebooks = (
             f"{repo_path}/pipelines/pipeline-seguradora-whatsapp/notebooks"
         )

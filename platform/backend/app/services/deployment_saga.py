@@ -6,6 +6,8 @@ via SSE por clientes conectados em `/deployments/{id}/events`.
 """
 
 import asyncio
+import contextlib
+import dataclasses
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -13,13 +15,15 @@ from typing import Any
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.config import settings
 from app.database.session import AsyncSessionLocal
 from app.models.deployment import Deployment, DeploymentLog, DeploymentStep
 from app.models.pipeline import Pipeline
 from app.services.log_emitter import LogEmitter
 from app.services.pubsub_backend import InMemoryPubSub, get_pubsub
-from app.services.real_saga.base import DeploymentCredentials
+from app.services.real_saga.base import DeploymentCredentials, SharedSagaState
 from app.services.saga_runners import MOCK_STEP_LOGS, SagaStepRunner, get_runner
 
 logger = structlog.get_logger()
@@ -175,11 +179,65 @@ async def _publish(deployment_id: str, event: dict[str, Any]) -> None:
     await _fallback_inmem.publish(deployment_id, event)
 
 
-def request_cancel(deployment_id: str) -> None:
-    """Sinaliza cancelamento do saga runner."""
+_CANCEL_KEY_PREFIX = "saga:cancel:"
+_CANCEL_KEY_TTL = 3600  # 1h — saga max duration
+
+
+async def _redis_async():
+    """Async redis client lazy-init. None se Redis indisponivel."""
+    redis_url = getattr(settings, "REDIS_URL", "") or ""
+    if not redis_url:
+        return None
+    try:
+        import redis.asyncio as aredis
+
+        client = aredis.from_url(redis_url, decode_responses=True)
+        await client.ping()
+        return client
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def request_cancel(deployment_id: str) -> None:
+    """Sinaliza cancelamento — local event + Redis key (cross-worker)."""
     event = _cancellations.get(deployment_id)
     if event:
         event.set()
+    client = await _redis_async()
+    if client is not None:
+        with contextlib.suppress(Exception):
+            await client.set(
+                f"{_CANCEL_KEY_PREFIX}{deployment_id}", "1", ex=_CANCEL_KEY_TTL,
+            )
+            await client.aclose()
+
+
+async def _is_cancelled(deployment_id: str, local_event: asyncio.Event) -> bool:
+    """Retorna True se cancelado local OU em Redis (worker que aceitou cancel
+    pode ter sido outro). Logs reflect cross-worker source via prefix."""
+    if local_event.is_set():
+        return True
+    client = await _redis_async()
+    if client is None:
+        return False
+    try:
+        flag = await client.exists(f"{_CANCEL_KEY_PREFIX}{deployment_id}")
+        return bool(flag)
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        with contextlib.suppress(Exception):
+            await client.aclose()
+
+
+async def _clear_cancel(deployment_id: str) -> None:
+    """Remove Redis cancel key (cleanup pos saga)."""
+    client = await _redis_async()
+    if client is None:
+        return
+    with contextlib.suppress(Exception):
+        await client.delete(f"{_CANCEL_KEY_PREFIX}{deployment_id}")
+        await client.aclose()
 
 
 async def run_saga(
@@ -230,7 +288,7 @@ async def run_saga(
             start_ms = _now_ms()
 
             for idx, blueprint in enumerate(SAGA_BLUEPRINT):
-                if cancel_event.is_set():
+                if await _is_cancelled(dep_id_str, cancel_event):
                     await _mark_cancelled(db, deployment)
                     return
 
@@ -288,13 +346,15 @@ async def run_saga(
                     await db.commit()
                     raise
 
-                if cancel_event.is_set():
+                if await _is_cancelled(dep_id_str, cancel_event):
                     await _mark_cancelled(db, deployment)
                     return
 
                 step.status = "success"
                 step.finished_at = datetime.now(UTC)
                 step.duration_ms = _now_ms() - step_start_ms
+                # Persiste SharedSagaState pra recover/inspecao pos-crash.
+                await _persist_shared_state(db, deployment, step_runner, dep_id_str)
                 await db.commit()
                 await _publish(
                     dep_id_str,
@@ -408,6 +468,29 @@ async def run_saga(
                         deployment_id=dep_id_str,
                     )
             _cancellations.pop(dep_id_str, None)
+            await _clear_cancel(dep_id_str)
+
+
+async def _persist_shared_state(
+    db: AsyncSession,
+    deployment: Deployment,
+    step_runner: SagaStepRunner,
+    dep_id_str: str,
+) -> None:
+    """Persiste SharedSagaState do runner em deployment.config['shared_state'].
+
+    Permite inspecionar resources criados via API mesmo apos crash do worker.
+    Tambem habilita compensate idempotente em retries futuros.
+    """
+    if not hasattr(step_runner, "_shared_per_deployment"):
+        return
+    shared: SharedSagaState | None = step_runner._shared_per_deployment.get(dep_id_str)
+    if shared is None:
+        return
+    config = dict(deployment.config or {})
+    config["shared_state"] = dataclasses.asdict(shared)
+    deployment.config = config
+    flag_modified(deployment, "config")
 
 
 async def _run_compensation_safe(step_runner: SagaStepRunner, dep_id_str: str) -> None:

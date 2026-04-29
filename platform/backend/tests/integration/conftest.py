@@ -21,6 +21,9 @@ from app.database.session import get_db
 from app.main import app
 from app.models.base import Base
 
+# Tests run com self-serve aberto — gating eh prod-only.
+settings.REGISTRATION_OPEN = True
+
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
     settings.DATABASE_URL.replace("/flowertex", "/flowertex_test"),

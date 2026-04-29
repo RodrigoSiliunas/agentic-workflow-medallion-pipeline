@@ -73,22 +73,25 @@ class LogEmitter:
     ) -> None:
         """Emite uma linha de log.
 
-        Não faz commit — o orquestrador comita no boundary de step pra
-        reduzir de ~100 commits/deploy pra ~10. `flush()` pega o id
-        do log pra publicar no SSE com timestamp local imediato.
+        Pre-gera id client-side (UUID4) — elimina flush dentro do lock.
+        Commit batched no boundary de step. SSE publica imediato apos
+        liberar o lock pra reduzir contention quando ha logs paralelos
+        (ex: upload com ThreadPoolExecutor).
         """
         if self._cancel_event.is_set():
             return
 
+        log_id = uuid.uuid4()
         async with self._log_lock:
-            log = DeploymentLog(
-                deployment_id=self._deployment_id,
-                level=level,
-                message=message,
-                step_id=step_id,
+            self._db.add(
+                DeploymentLog(
+                    id=log_id,
+                    deployment_id=self._deployment_id,
+                    level=level,
+                    message=message,
+                    step_id=step_id,
+                )
             )
-            self._db.add(log)
-            await self._db.flush()
 
         log_ts = datetime.now(UTC).isoformat()
         dep_id_str = str(self._deployment_id)
@@ -98,7 +101,7 @@ class LogEmitter:
                 "type": "log",
                 "deployment_id": dep_id_str,
                 "data": {
-                    "id": str(log.id),
+                    "id": str(log_id),
                     "level": level,
                     "message": message,
                     "step_id": step_id,

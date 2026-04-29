@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import io
 import tarfile
+import threading
 
 import httpx
 from databricks.sdk.service.workspace import ImportFormat, Language
@@ -21,6 +23,26 @@ from app.services.real_saga.databricks_client import workspace_client
 from app.services.real_saga.registry import register_saga_step
 
 _UPLOAD_BASE = "/Shared/flowertex"
+
+# Allowlist de paths sincronizados pro Databricks workspace. Ordem nao
+# importa — primeiro match basta. Testavel isolado via _is_pipeline_path.
+_ALLOWED_PATH_FRAGMENTS: tuple[tuple[str, ...], ...] = (
+    ("pipelines/", "/notebooks/"),
+    ("observer-framework/notebooks/",),
+    ("pipelines/", "/pipeline_lib/"),
+    ("observer-framework/observer/",),
+    ("pipelines/", "/config/"),
+)
+
+
+def _is_pipeline_path(rel_path: str) -> bool:
+    """True se path deve ser uploaded. Filtro de extensao + allowlist."""
+    if not (rel_path.endswith(".py") or rel_path.endswith(".yaml")):
+        return False
+    return any(
+        all(frag in rel_path for frag in matcher)
+        for matcher in _ALLOWED_PATH_FRAGMENTS
+    )
 
 
 @register_saga_step("upload")
@@ -87,7 +109,7 @@ class UploadStep:
     ) -> int:
         """Extrai tarball + upload cada .py via workspace.import_."""
 
-        # Filtra só .py em pipelines/*/notebooks/ e observer-framework/notebooks/
+        # Filtra paths via _is_pipeline_path (testavel isolado).
         def _walk_tar() -> list[tuple[str, bytes]]:
             files: list[tuple[str, bytes]] = []
             with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:gz") as tar:
@@ -99,28 +121,7 @@ class UploadStep:
                     if len(parts) < 2:
                         continue
                     rel_path = parts[1]
-                    if not (rel_path.endswith(".py") or rel_path.endswith(".yaml")):
-                        continue
-                    pipe_notebook = (
-                        "pipelines/" in rel_path and "/notebooks/" in rel_path
-                    )
-                    observer_notebook = "observer-framework/notebooks/" in rel_path
-                    pipe_lib = (
-                        "pipelines/" in rel_path and "/pipeline_lib/" in rel_path
-                    )
-                    observer_lib = (
-                        "observer-framework/observer/" in rel_path
-                    )
-                    pipe_config = (
-                        "pipelines/" in rel_path and "/config/" in rel_path
-                    )
-                    if not (
-                        pipe_notebook
-                        or observer_notebook
-                        or pipe_lib
-                        or observer_lib
-                        or pipe_config
-                    ):
+                    if not _is_pipeline_path(rel_path):
                         continue
                     f = tar.extractfile(member)
                     if f is None:
@@ -132,12 +133,16 @@ class UploadStep:
         await ctx.info(f"{len(files)} .py relevantes encontrados no tarball")
 
         dirs_created: set[str] = set()
+        dirs_lock = threading.Lock()
 
         def _ensure_dir(workspace_dir: str) -> None:
-            if workspace_dir in dirs_created:
-                return
-            w.workspace.mkdirs(path=workspace_dir)
-            dirs_created.add(workspace_dir)
+            # mkdirs eh idempotente Databricks-side; lock so evita N requests
+            # concorrentes pra mesma dir do mesmo lote.
+            with dirs_lock:
+                if workspace_dir in dirs_created:
+                    return
+                w.workspace.mkdirs(path=workspace_dir)
+                dirs_created.add(workspace_dir)
 
         def _upload_one(rel_path: str, content: bytes) -> None:
             # Pipeline_lib e observer modulos sao Python puro — upload
@@ -175,10 +180,17 @@ class UploadStep:
                 )
 
         def _upload_all() -> int:
-            # mkdirs do base path primeiro
+            # mkdirs do base path primeiro (sequencial — gate de tudo)
             w.workspace.mkdirs(path=workspace_base)
-            for rel_path, content in files:
-                _upload_one(rel_path, content)
+            # ThreadPoolExecutor pra paralelizar I/O HTTP (Databricks SDK usa
+            # requests sync). max_workers=8 = ~10x speedup com tarballs grandes
+            # sem disparar rate limits do workspace.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                futures = [
+                    ex.submit(_upload_one, rp, c) for rp, c in files
+                ]
+                for fut in concurrent.futures.as_completed(futures):
+                    fut.result()  # propaga primeira exception
             return len(files)
 
         return await asyncio.to_thread(_upload_all)

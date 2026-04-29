@@ -26,15 +26,68 @@ import json
 import boto3
 import httpx
 
-from app.services.real_saga.base import StepContext
+from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
 _DATABRICKS_AWS_ACCOUNT = "414351767826"
 
 
 @register_saga_step("workspace_credential")
-class WorkspaceCredentialStep:
+class WorkspaceCredentialStep(SagaStepBase):
     step_id = "workspace_credential"
+
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: delete DB credentials_id + IAM xaccount role se criados."""
+        env = ctx.env_vars()
+        account_id = env.get("databricks_account_id", "")
+        oauth_client_id = env.get("databricks_oauth_client_id", "")
+        oauth_secret = env.get("databricks_oauth_secret", "")
+
+        if (
+            ctx.shared.databricks_credentials_created
+            and ctx.shared.databricks_credentials_id
+            and all([account_id, oauth_client_id, oauth_secret])
+        ):
+            creds_id = ctx.shared.databricks_credentials_id
+
+            async def _del() -> None:
+                async with httpx.AsyncClient(timeout=30.0) as c:
+                    tok_resp = await c.post(
+                        f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
+                        auth=(oauth_client_id, oauth_secret),
+                        data={"grant_type": "client_credentials", "scope": "all-apis"},
+                    )
+                    tok_resp.raise_for_status()
+                    token = tok_resp.json()["access_token"]
+                    await c.delete(
+                        f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/credentials/{creds_id}",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+
+            await self._safe_compensate(
+                ctx, f"db_credentials({creds_id})", _del, sync=False,
+            )
+
+        if ctx.shared.databricks_xaccount_role_arn and getattr(
+            ctx.shared, "databricks_xaccount_role_created", False
+        ):
+            role_arn = ctx.shared.databricks_xaccount_role_arn
+            role_name = role_arn.rsplit("/", 1)[-1]
+            session = boto3.Session(
+                aws_access_key_id=ctx.credentials.aws_access_key_id,
+                aws_secret_access_key=ctx.credentials.aws_secret_access_key,
+                region_name=ctx.credentials.aws_region,
+            )
+            iam = session.client("iam")
+
+            def _del_role() -> None:
+                for pol in iam.list_role_policies(RoleName=role_name).get(
+                    "PolicyNames", []
+                ):
+                    iam.delete_role_policy(RoleName=role_name, PolicyName=pol)
+                iam.delete_role(RoleName=role_name)
+
+            await self._safe_compensate(ctx, f"iam_xaccount_role({role_name})", _del_role)
 
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
@@ -80,21 +133,28 @@ class WorkspaceCredentialStep:
         )
         iam = session.client("iam")
 
-        role_arn = await asyncio.to_thread(
+        role_arn, role_created = await asyncio.to_thread(
             self._ensure_role, iam, role_name, account_id, root_bucket
         )
-        await ctx.info(f"Cross-account role: {role_arn}")
+        await ctx.info(f"Cross-account role: {role_arn} (created={role_created})")
         ctx.shared.databricks_xaccount_role_arn = role_arn
+        if role_created:
+            ctx.shared.databricks_xaccount_role_created = True
 
-        creds_id = await self._register_databricks_credentials(
+        creds_id, creds_created = await self._register_databricks_credentials(
             ctx, account_id, oauth_client_id, oauth_secret,
             f"{project}-credentials", role_arn,
         )
         ctx.shared.databricks_credentials_id = creds_id
-        await ctx.success(f"DB credentials: {creds_id}")
+        if creds_created:
+            ctx.shared.databricks_credentials_created = True
+        await ctx.success(f"DB credentials: {creds_id} (created={creds_created})")
 
     @staticmethod
-    def _ensure_role(iam, role_name: str, account_id: str, root_bucket: str) -> str:
+    def _ensure_role(
+        iam, role_name: str, account_id: str, root_bucket: str
+    ) -> tuple[str, bool]:
+        """Retorna (arn, created_now). created_now=True indica role nova."""
         trust = {
             "Version": "2012-10-17",
             "Statement": [{
@@ -106,10 +166,10 @@ class WorkspaceCredentialStep:
                 "Condition": {"StringEquals": {"sts:ExternalId": account_id}},
             }],
         }
+        created = False
         try:
             r = iam.get_role(RoleName=role_name)
             role_arn = r["Role"]["Arn"]
-            # Update trust
             iam.update_assume_role_policy(
                 RoleName=role_name, PolicyDocument=json.dumps(trust)
             )
@@ -120,6 +180,7 @@ class WorkspaceCredentialStep:
                 AssumeRolePolicyDocument=json.dumps(trust),
             )
             role_arn = r["Role"]["Arn"]
+            created = True
 
         # EC2 + IAM policy (minimal Databricks requirements)
         ec2_pol = {
@@ -167,7 +228,7 @@ class WorkspaceCredentialStep:
             PolicyName="DatabricksS3RootPolicy",
             PolicyDocument=json.dumps(s3_pol),
         )
-        return role_arn
+        return role_arn, created
 
     @staticmethod
     async def _register_databricks_credentials(
@@ -177,7 +238,8 @@ class WorkspaceCredentialStep:
         client_secret: str,
         creds_name: str,
         role_arn: str,
-    ) -> str:
+    ) -> tuple[str, bool]:
+        """Retorna (credentials_id, created_now). created_now indica novo registro."""
         async with httpx.AsyncClient(timeout=30.0) as c:
             token_resp = await c.post(
                 f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
@@ -194,7 +256,7 @@ class WorkspaceCredentialStep:
             list_resp.raise_for_status()
             for cred in list_resp.json() or []:
                 if cred.get("credentials_name") == creds_name:
-                    return cred["credentials_id"]
+                    return cred["credentials_id"], False
 
             create_resp = await c.post(
                 f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/credentials",
@@ -207,4 +269,4 @@ class WorkspaceCredentialStep:
                 },
             )
             create_resp.raise_for_status()
-            return create_resp.json()["credentials_id"]
+            return create_resp.json()["credentials_id"], True

@@ -106,12 +106,6 @@ NO_PIPELINE_SYSTEM_PROMPT = (
     '- "quantas linhas tem na bronze?" -> recusa, mesma instrucao.\n'
     '- "qual a ultima correcao automatica?" -> recusa, mesma instrucao.'
 )
-MSG_SESSION_CREATED = (
-    "Sessao iniciada no pipeline *{pipeline}*.\n"
-    "Pode perguntar o que quiser sobre seus dados!"
-)
-
-
 class ChannelMessageHandler:
     """Processa mensagens de canais externos."""
 
@@ -192,10 +186,10 @@ class ChannelMessageHandler:
             sender=sender_name, channel=channel, text=text[:60],
         )
 
-        # 1. Resolver identidade
-        identity = await self._get_identity(channel, channel_user_id)
+        # 1. Resolver identidade + user em 1 query (JOIN — hot path)
+        pair = await self._get_identity_with_user(channel, channel_user_id)
 
-        if not identity:
+        if not pair:
             # Checar se e resposta de onboarding (email)
             if _email_re.match(text.strip()):
                 await self._try_link_account(
@@ -206,10 +200,7 @@ class ChannelMessageHandler:
                 await self._send(instance_id, sender_jid, MSG_ONBOARDING)
             return
 
-        user = await self._get_user(identity.user_id)
-        if not user:
-            await self._send(instance_id, sender_jid, MSG_ONBOARDING)
-            return
+        identity, user = pair
 
         # 2. Checar slash commands
         if is_slash_command(text):
@@ -307,16 +298,20 @@ class ChannelMessageHandler:
 
     # --- Identidade ---
 
-    async def _get_identity(
+    async def _get_identity_with_user(
         self, channel: str, channel_user_id: str
-    ) -> ChannelIdentity | None:
+    ) -> tuple[ChannelIdentity, User] | None:
+        """1 query JOIN — hot path roda em toda mensagem."""
         result = await self.db.execute(
-            select(ChannelIdentity).where(
+            select(ChannelIdentity, User)
+            .join(User, User.id == ChannelIdentity.user_id)
+            .where(
                 ChannelIdentity.channel == channel,
                 ChannelIdentity.channel_user_id == channel_user_id,
             )
         )
-        return result.scalar_one_or_none()
+        row = result.first()
+        return (row[0], row[1]) if row else None
 
     async def _try_link_account(
         self, channel: str, channel_user_id: str, email: str,
@@ -353,41 +348,44 @@ class ChannelMessageHandler:
     async def _ensure_session(
         self, user: User, channel: str, channel_user_id: str,
     ) -> ActiveSession:
-        """Garante sessao ativa. Sincroniza cross-channel."""
-        session = await self._get_session(user.id, channel)
-        synced = await self._sync_from_sibling(session, user, channel, channel_user_id)
+        """Garante sessao ativa. 1 query traz current + sibling (collapse)."""
+        sessions_result = await self.db.execute(
+            select(ActiveSession)
+            .where(ActiveSession.user_id == user.id)
+            .order_by(ActiveSession.updated_at.desc())
+        )
+        sessions = sessions_result.scalars().all()
+        session = next((s for s in sessions if s.channel == channel), None)
+        sibling = next(
+            (
+                s for s in sessions
+                if s.channel != channel
+                and s.active_thread_id is not None
+                and s.active_pipeline_id is not None
+            ),
+            None,
+        )
+
+        synced = await self._sync_from_sibling(
+            session, sibling, user, channel, channel_user_id,
+        )
         if synced:
             return synced
 
         if session and session.active_thread_id and session.active_pipeline_id:
             return session
 
-        # Sem sibling, sem sessao completa — criar nova
         return await self._create_fresh_session(session, user, channel, channel_user_id)
 
-    async def _get_session(self, user_id: uuid.UUID, channel: str) -> ActiveSession | None:
-        result = await self.db.execute(
-            select(ActiveSession).where(
-                ActiveSession.user_id == user_id,
-                ActiveSession.channel == channel,
-            )
-        )
-        return result.scalar_one_or_none()
-
     async def _sync_from_sibling(
-        self, session: ActiveSession | None, user: User,
-        channel: str, channel_user_id: str,
+        self,
+        session: ActiveSession | None,
+        sibling: ActiveSession | None,
+        user: User,
+        channel: str,
+        channel_user_id: str,
     ) -> ActiveSession | None:
-        """Sincroniza com canal irmao mais recente. Retorna sessao ou None."""
-        sibling_result = await self.db.execute(
-            select(ActiveSession).where(
-                ActiveSession.user_id == user.id,
-                ActiveSession.channel != channel,
-                ActiveSession.active_thread_id.isnot(None),
-                ActiveSession.active_pipeline_id.isnot(None),
-            ).order_by(ActiveSession.updated_at.desc()).limit(1)
-        )
-        sibling = sibling_result.scalar_one_or_none()
+        """Aplica sibling (ja resolvido). Retorna sessao ou None se sem sibling."""
         if not sibling:
             return None
 
@@ -471,6 +469,39 @@ class ChannelMessageHandler:
             await self.db.flush()
         return thread
 
+    async def _stream_llm(
+        self,
+        user: User,
+        text: str,
+        *,
+        pipeline_job_id: int = 0,
+        history: list[dict] | None = None,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+        pipeline_id: uuid.UUID | None = None,
+        system_prompt_override: str | None = None,
+        log_label: str = "channel",
+    ) -> str:
+        """Drena tokens do LLMOrchestrator e retorna texto concatenado."""
+        orchestrator = LLMOrchestrator(self.db, user.company_id, user.name or "usuario")
+        full_response = ""
+        try:
+            async for event in orchestrator.process_message(
+                user_message=text,
+                pipeline_job_id=pipeline_job_id,
+                conversation_history=history or [],
+                model_override=model_override,
+                provider_override=provider_override,
+                pipeline_id=pipeline_id,
+                system_prompt_override=system_prompt_override,
+            ):
+                if event["type"] == "token":
+                    full_response += event["content"]
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"LLM error ({log_label})", error=str(exc))
+            return ""
+        return full_response.strip()
+
     async def _process_with_llm(
         self, user: User, pipeline: Pipeline,
         thread_id: uuid.UUID, text: str,
@@ -478,9 +509,6 @@ class ChannelMessageHandler:
         provider_override: str | None = None,
     ) -> str:
         """Processa mensagem com LLMOrchestrator e retorna resposta completa."""
-        orchestrator = LLMOrchestrator(self.db, user.company_id, user.name or "usuario")
-
-        # Carregar historico recente
         history_result = await self.db.execute(
             select(Message)
             .where(Message.thread_id == thread_id)
@@ -492,24 +520,16 @@ class ChannelMessageHandler:
             for m in reversed(history_result.scalars().all())
             if m.role in ("user", "assistant")
         ]
-
-        full_response = ""
-        try:
-            async for event in orchestrator.process_message(
-                user_message=text,
-                pipeline_job_id=pipeline.databricks_job_id or 0,
-                conversation_history=history[:-1],
-                model_override=model_override,
-                provider_override=provider_override,
-                pipeline_id=pipeline.id,
-            ):
-                if event["type"] == "token":
-                    full_response += event["content"]
-        except Exception as exc:
-            logger.error("LLM processing error", error=str(exc))
-            return ""
-
-        return full_response.strip()
+        return await self._stream_llm(
+            user=user,
+            text=text,
+            pipeline_job_id=pipeline.databricks_job_id or 0,
+            history=history[:-1],
+            model_override=model_override,
+            provider_override=provider_override,
+            pipeline_id=pipeline.id,
+            log_label="with_pipeline",
+        )
 
     async def _handle_no_pipeline(
         self, user: User, text: str, instance_id: str, sender_jid: str,
@@ -536,29 +556,16 @@ class ChannelMessageHandler:
             pipelines_list=pipelines_list
         )
 
-        # Pre-aviso curto (so na primeira mensagem da conversa pode ser util,
-        # mas pra simplicidade enviamos sempre — usuario percebe rapido)
-        # Nao enviamos hint aqui; deixamos LLM responder direto pra fluidez.
-
-        orchestrator = LLMOrchestrator(self.db, user.company_id, user.name or "usuario")
-        full_response = ""
-        try:
-            async for event in orchestrator.process_message(
-                user_message=text,
-                pipeline_job_id=0,
-                conversation_history=[],
-                system_prompt_override=system_prompt,
-            ):
-                if event["type"] == "token":
-                    full_response += event["content"]
-        except Exception as exc:
-            logger.error("LLM no-pipeline error", error=str(exc))
-            full_response = ""
-
-        if not full_response.strip():
+        full_response = await self._stream_llm(
+            user=user,
+            text=text,
+            system_prompt_override=system_prompt,
+            log_label="no_pipeline",
+        )
+        if not full_response:
             full_response = MSG_PIPELINE_HINT.format(pipelines=pipelines_list)
 
-        await self._send(instance_id, sender_jid, full_response.strip())
+        await self._send(instance_id, sender_jid, full_response)
 
     # --- Slash: /model ---
 

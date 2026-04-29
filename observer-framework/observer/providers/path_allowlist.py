@@ -11,9 +11,10 @@ import re
 
 # Paths permitidos (prefixos). Qualquer arquivo fora destes prefixos é
 # rejeitado pelo GitProvider antes do commit.
+# Observer NAO escreve nele mesmo (observer-framework/observer/) — auto-modify
+# permitiria prompt injection esvaziar o validador no proximo run.
 ALLOWED_PATH_PREFIXES: tuple[str, ...] = (
     "pipelines/",
-    "observer-framework/observer/",
     "observer-framework/tests/",
     "platform/backend/app/",
     "platform/backend/tests/",

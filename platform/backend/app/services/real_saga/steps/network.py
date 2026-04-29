@@ -17,16 +17,141 @@ existe, reutiliza.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import boto3
 
-from app.services.real_saga.base import StepContext
+from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
 
 @register_saga_step("network")
-class NetworkStep:
+class NetworkStep(SagaStepBase):
     step_id = "network"
+
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: delete DB network config + tear down VPC/NAT/IGW/SG/subnets.
+
+        So delete recursos que foram CRIADOS nesta saga (flag created=True).
+        Idempotente: ignora "not found" pra suportar retries do compensate.
+        """
+        env = ctx.env_vars()
+        account_id = env.get("databricks_account_id", "")
+        client_id = env.get("databricks_oauth_client_id", "")
+        secret = env.get("databricks_oauth_secret", "")
+
+        if (
+            ctx.shared.databricks_network_created
+            and ctx.shared.databricks_network_id
+            and all([account_id, client_id, secret])
+        ):
+            net_id = ctx.shared.databricks_network_id
+            import httpx
+
+            async def _del_net() -> None:
+                async with httpx.AsyncClient(timeout=30.0) as c:
+                    tok = await c.post(
+                        f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
+                        auth=(client_id, secret),
+                        data={"grant_type": "client_credentials", "scope": "all-apis"},
+                    )
+                    tok.raise_for_status()
+                    token = tok.json()["access_token"]
+                    await c.delete(
+                        f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/networks/{net_id}",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+
+            await self._safe_compensate(
+                ctx, f"db_network({net_id})", _del_net, sync=False,
+            )
+
+        if not ctx.shared.aws_vpc_created or not ctx.shared.aws_vpc_id:
+            return
+        vpc_id = ctx.shared.aws_vpc_id
+
+        session = boto3.Session(
+            aws_access_key_id=ctx.credentials.aws_access_key_id,
+            aws_secret_access_key=ctx.credentials.aws_secret_access_key,
+            region_name=ctx.credentials.aws_region,
+        )
+        ec2 = session.client("ec2")
+
+        await self._safe_compensate(
+            ctx, f"vpc({vpc_id})",
+            lambda: self._tear_down_vpc(ec2, vpc_id),
+        )
+
+    @staticmethod
+    def _tear_down_vpc(ec2, vpc_id: str) -> None:
+        """Tear down VPC + tudo que depende dele. Ordem importa por deps AWS."""
+        # NAT gateways
+        nats = ec2.describe_nat_gateways(
+            Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+        ).get("NatGateways", [])
+        nat_ids = [
+            n["NatGatewayId"] for n in nats if n.get("State") not in ("deleted", "deleting")
+        ]
+        eip_alloc_ids: list[str] = []
+        for n in nats:
+            for addr in n.get("NatGatewayAddresses", []) or []:
+                if addr.get("AllocationId"):
+                    eip_alloc_ids.append(addr["AllocationId"])
+        for nat_id in nat_ids:
+            ec2.delete_nat_gateway(NatGatewayId=nat_id)
+        if nat_ids:
+            ec2.get_waiter("nat_gateway_deleted").wait(NatGatewayIds=nat_ids)
+
+        for alloc_id in set(eip_alloc_ids):
+            with contextlib.suppress(Exception):  # ja released
+                ec2.release_address(AllocationId=alloc_id)
+
+        # IGWs
+        igws = ec2.describe_internet_gateways(
+            Filters=[{"Name": "attachment.vpc-id", "Values": [vpc_id]}]
+        ).get("InternetGateways", [])
+        for igw in igws:
+            iid = igw["InternetGatewayId"]
+            with contextlib.suppress(Exception):
+                ec2.detach_internet_gateway(InternetGatewayId=iid, VpcId=vpc_id)
+            ec2.delete_internet_gateway(InternetGatewayId=iid)
+
+        # Subnets
+        subs = ec2.describe_subnets(
+            Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+        ).get("Subnets", [])
+        for s in subs:
+            with contextlib.suppress(Exception):
+                ec2.delete_subnet(SubnetId=s["SubnetId"])
+
+        # Route tables (skip main)
+        rts = ec2.describe_route_tables(
+            Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+        ).get("RouteTables", [])
+        for rt in rts:
+            assocs = rt.get("Associations", []) or []
+            if any(a.get("Main") for a in assocs):
+                continue
+            for a in assocs:
+                if a.get("RouteTableAssociationId"):
+                    with contextlib.suppress(Exception):
+                        ec2.disassociate_route_table(
+                            AssociationId=a["RouteTableAssociationId"]
+                        )
+            with contextlib.suppress(Exception):
+                ec2.delete_route_table(RouteTableId=rt["RouteTableId"])
+
+        # Security groups (skip default)
+        sgs = ec2.describe_security_groups(
+            Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+        ).get("SecurityGroups", [])
+        for sg in sgs:
+            if sg.get("GroupName") == "default":
+                continue
+            with contextlib.suppress(Exception):
+                ec2.delete_security_group(GroupId=sg["GroupId"])
+
+        ec2.delete_vpc(VpcId=vpc_id)
 
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
@@ -61,31 +186,37 @@ class NetworkStep:
         )
         ec2 = session.client("ec2")
 
-        vpc_id, subnet_ids, sg_id = await asyncio.to_thread(
+        vpc_id, subnet_ids, sg_id, vpc_created = await asyncio.to_thread(
             self._ensure_vpc, ec2, deployment_tag, region
         )
         await ctx.info(
-            f"VPC {vpc_id}, subnets {subnet_ids}, SG {sg_id}"
+            f"VPC {vpc_id}, subnets {subnet_ids}, SG {sg_id} (created={vpc_created})"
         )
 
         ctx.shared.aws_vpc_id = vpc_id
         ctx.shared.aws_subnet_ids = subnet_ids
         ctx.shared.aws_security_group_id = sg_id
+        if vpc_created:
+            ctx.shared.aws_vpc_created = True
 
         # Registrar network config no Databricks Account
-        network_id = await self._register_databricks_network(
+        network_id, network_created = await self._register_databricks_network(
             ctx, account_id, oauth_client_id, oauth_secret,
             deployment_tag, vpc_id, subnet_ids, sg_id,
         )
         ctx.shared.databricks_network_id = network_id
+        if network_created:
+            ctx.shared.databricks_network_created = True
 
         await ctx.success(
             f"Network pronto: vpc={vpc_id} network_id={network_id}"
         )
 
     @staticmethod
-    def _ensure_vpc(ec2, tag: str, region: str) -> tuple[str, list[str], str]:
-        """Cria ou reutiliza VPC + subnets + SG. Retorna (vpc_id, [subnet_ids], sg_id)."""
+    def _ensure_vpc(
+        ec2, tag: str, region: str
+    ) -> tuple[str, list[str], str, bool]:
+        """Cria ou reutiliza VPC + subnets + SG. Retorna (vpc_id, [subnet_ids], sg_id, created)."""
         # Lookup existing via tag
         vpcs = ec2.describe_vpcs(
             Filters=[{"Name": "tag:Name", "Values": [tag]}]
@@ -108,7 +239,7 @@ class NetworkStep:
             )["SecurityGroups"]
             sg_id = sgs[0]["GroupId"] if sgs else ""
             if subnet_ids and sg_id:
-                return vpc_id, subnet_ids, sg_id
+                return vpc_id, subnet_ids, sg_id, False
 
         # Create VPC
         vpc = ec2.create_vpc(
@@ -227,7 +358,7 @@ class NetworkStep:
             }],
         )
 
-        return vpc_id, sorted(priv_subs), sg_id
+        return vpc_id, sorted(priv_subs), sg_id, True
 
     @staticmethod
     async def _register_databricks_network(
@@ -239,11 +370,10 @@ class NetworkStep:
         vpc_id: str,
         subnet_ids: list[str],
         sg_id: str,
-    ) -> str:
+    ) -> tuple[str, bool]:
         import httpx
 
         async with httpx.AsyncClient(timeout=30.0) as c:
-            # Get OAuth token
             token_resp = await c.post(
                 f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
                 auth=(client_id, client_secret),
@@ -252,7 +382,6 @@ class NetworkStep:
             token_resp.raise_for_status()
             token = token_resp.json()["access_token"]
 
-            # Check existing
             list_resp = await c.get(
                 f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/networks",
                 headers={"Authorization": f"Bearer {token}"},
@@ -261,9 +390,8 @@ class NetworkStep:
             for net in list_resp.json() or []:
                 if net.get("network_name") == name:
                     await ctx.info(f"Network {name} ja existe — reutilizando")
-                    return net["network_id"]
+                    return net["network_id"], False
 
-            # Create
             create_resp = await c.post(
                 f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/networks",
                 headers={"Authorization": f"Bearer {token}"},
@@ -275,4 +403,4 @@ class NetworkStep:
                 },
             )
             create_resp.raise_for_status()
-            return create_resp.json()["network_id"]
+            return create_resp.json()["network_id"], True

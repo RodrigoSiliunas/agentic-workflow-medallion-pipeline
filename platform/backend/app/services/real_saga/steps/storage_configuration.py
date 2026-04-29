@@ -14,13 +14,42 @@ from __future__ import annotations
 
 import httpx
 
-from app.services.real_saga.base import StepContext
+from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
 
 @register_saga_step("storage_configuration")
-class StorageConfigurationStep:
+class StorageConfigurationStep(SagaStepBase):
     step_id = "storage_configuration"
+
+    async def compensate(self, ctx: StepContext) -> None:
+        if not ctx.shared.databricks_storage_config_created:
+            return
+        env = ctx.env_vars()
+        account_id = env.get("databricks_account_id", "")
+        oauth_client_id = env.get("databricks_oauth_client_id", "")
+        oauth_secret = env.get("databricks_oauth_secret", "")
+        config_id = ctx.shared.databricks_storage_config_id
+        if not all([account_id, oauth_client_id, oauth_secret, config_id]):
+            return
+
+        async def _del() -> None:
+            async with httpx.AsyncClient(timeout=30.0) as c:
+                tok = await c.post(
+                    f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
+                    auth=(oauth_client_id, oauth_secret),
+                    data={"grant_type": "client_credentials", "scope": "all-apis"},
+                )
+                tok.raise_for_status()
+                token = tok.json()["access_token"]
+                await c.delete(
+                    f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/storage-configurations/{config_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+        await self._safe_compensate(
+            ctx, f"storage_config({config_id})", _del, sync=False,
+        )
 
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
@@ -51,12 +80,14 @@ class StorageConfigurationStep:
             f"Registrando storage configuration '{config_name}' -> s3://{root_bucket}"
         )
 
-        config_id = await self._register(
+        config_id, was_created = await self._register(
             ctx, account_id, oauth_client_id, oauth_secret,
             config_name, root_bucket,
         )
         ctx.shared.databricks_storage_config_id = config_id
-        await ctx.success(f"Storage configuration: {config_id}")
+        if was_created:
+            ctx.shared.databricks_storage_config_created = True
+        await ctx.success(f"Storage configuration: {config_id} (created={was_created})")
 
     @staticmethod
     async def _register(
@@ -66,7 +97,7 @@ class StorageConfigurationStep:
         client_secret: str,
         config_name: str,
         root_bucket: str,
-    ) -> str:
+    ) -> tuple[str, bool]:
         async with httpx.AsyncClient(timeout=30.0) as c:
             token_resp = await c.post(
                 f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
@@ -84,7 +115,7 @@ class StorageConfigurationStep:
             for cfg in list_resp.json() or []:
                 if cfg.get("storage_configuration_name") == config_name:
                     await ctx.info(f"Storage config '{config_name}' ja existe — reutilizando")
-                    return cfg["storage_configuration_id"]
+                    return cfg["storage_configuration_id"], False
 
             create_resp = await c.post(
                 f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/storage-configurations",
@@ -95,4 +126,4 @@ class StorageConfigurationStep:
                 },
             )
             create_resp.raise_for_status()
-            return create_resp.json()["storage_configuration_id"]
+            return create_resp.json()["storage_configuration_id"], True

@@ -164,42 +164,35 @@ async def create_deployment(
         merged_env["workspace_name"] = data.config.workspace_name
     adv = data.config.advanced
     if adv:
-        if adv.root_bucket:
-            merged_env["workspace_root_bucket"] = adv.root_bucket
-        if adv.network_cidr:
-            merged_env["network_cidr"] = adv.network_cidr
-        if adv.admin_email:
-            merged_env["admin_email"] = adv.admin_email
-        if adv.metastore_id:
-            merged_env["databricks_metastore_id"] = adv.metastore_id
-        if adv.cluster_name:
-            merged_env["cluster_name"] = adv.cluster_name
-        if adv.cluster_node_type:
-            merged_env["cluster_node_type"] = adv.cluster_node_type
-        if adv.cluster_driver_node_type:
-            merged_env["cluster_driver_node_type"] = adv.cluster_driver_node_type
-        if adv.cluster_num_workers is not None:
-            merged_env["cluster_num_workers"] = str(adv.cluster_num_workers)
-        if adv.cluster_spark_version:
-            merged_env["cluster_spark_version"] = adv.cluster_spark_version
-        if adv.cluster_autoscale_min is not None:
-            merged_env["cluster_autoscale_min"] = str(adv.cluster_autoscale_min)
-        if adv.cluster_autoscale_max is not None:
-            merged_env["cluster_autoscale_max"] = str(adv.cluster_autoscale_max)
-        if adv.cluster_autotermination_min is not None:
-            merged_env["cluster_autotermination_min"] = str(adv.cluster_autotermination_min)
-        if adv.cluster_policy_id:
-            merged_env["cluster_policy_id"] = adv.cluster_policy_id
-        if adv.cluster_policy_definition:
-            merged_env["cluster_policy_definition"] = adv.cluster_policy_definition
+        # Mapping adv field -> env_var name. cluster_tags tratado a parte
+        # (precisa json.dumps porque env_vars eh flat str).
+        adv_to_env: dict[str, str] = {
+            "root_bucket": "workspace_root_bucket",
+            "network_cidr": "network_cidr",
+            "admin_email": "admin_email",
+            "metastore_id": "databricks_metastore_id",
+            "cluster_name": "cluster_name",
+            "cluster_node_type": "cluster_node_type",
+            "cluster_driver_node_type": "cluster_driver_node_type",
+            "cluster_num_workers": "cluster_num_workers",
+            "cluster_spark_version": "cluster_spark_version",
+            "cluster_autoscale_min": "cluster_autoscale_min",
+            "cluster_autoscale_max": "cluster_autoscale_max",
+            "cluster_autotermination_min": "cluster_autotermination_min",
+            "cluster_policy_id": "cluster_policy_id",
+            "cluster_policy_definition": "cluster_policy_definition",
+            "observer_llm_provider": "observer_llm_provider",
+            "observer_llm_model": "observer_llm_model",
+        }
+        adv_dict = adv.model_dump(exclude_none=True)
+        for adv_key, env_key in adv_to_env.items():
+            value = adv_dict.get(adv_key)
+            # Skip "" e None — preserva semantica do `if adv.X:` original.
+            if value is None or value == "":
+                continue
+            merged_env[env_key] = str(value)
         if adv.cluster_tags:
-            # serializa como JSON pra preservar dict no env_vars (que e flat str)
-            import json
             merged_env["cluster_tags"] = json.dumps(adv.cluster_tags)
-        if adv.observer_llm_provider:
-            merged_env["observer_llm_provider"] = adv.observer_llm_provider
-        if adv.observer_llm_model:
-            merged_env["observer_llm_model"] = adv.observer_llm_model
 
     deployment = Deployment(
         company_id=auth.company_id,
@@ -241,7 +234,7 @@ async def cancel_deployment(
 ):
     """Sinaliza cancelamento da saga."""
     await _load_owned(db, deployment_id, auth.company_id)
-    request_cancel(str(deployment_id))
+    await request_cancel(str(deployment_id))
 
 
 @router.patch("/{deployment_id}")
@@ -274,7 +267,7 @@ async def delete_deployment(
     """
     deployment = await _load_owned(db, deployment_id, auth.company_id)
     if deployment.status in ("pending", "running"):
-        request_cancel(str(deployment_id))
+        await request_cancel(str(deployment_id))
 
     # Pipeline NAO tem FK back-ref no Deployment (pipeline_id e somente forward),
     # entao precisa apagar manualmente. Threads/messages cascateiam via FK ondelete.

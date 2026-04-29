@@ -63,15 +63,42 @@ async def webhook_omni(request: Request, db: AsyncSession = Depends(get_db)):
     if not text or not sender_id:
         return {"status": "ignored", "reason": "no text or sender"}
 
-    # Resolver identidade do usuario
+    # Detectar canal ANTES da lookup — chave (channel, channel_user_id) bate
+    # o unique index e impede leak cross-canal entre tenants distintos.
+    channel = _detect_channel(instance_id, payload)
+
+    # Resolver instancia + tenant antes da identidade. Garante que o webhook
+    # so resolve identity dentro da company_id dona do instance_id.
+    from app.models.channel import OmniInstance
+    instance_result = await db.execute(
+        select(OmniInstance).where(OmniInstance.omni_instance_id == instance_id)
+    )
+    omni_instance = instance_result.scalar_one_or_none()
+    if not omni_instance:
+        logger.warning("Webhook de instancia desconhecida", instance_id=instance_id)
+        return {"status": "ignored", "reason": "unknown_instance"}
+    company_id = omni_instance.company_id
+
+    # Identidade vinculada DENTRO da mesma company. Cross-tenant impossivel.
+    from app.models.user import User
     identity_result = await db.execute(
-        select(ChannelIdentity).where(ChannelIdentity.channel_user_id == sender_id)
+        select(ChannelIdentity)
+        .join(User, User.id == ChannelIdentity.user_id)
+        .where(
+            ChannelIdentity.channel == channel,
+            ChannelIdentity.channel_user_id == sender_id,
+            User.company_id == company_id,
+        )
     )
     identity = identity_result.scalar_one_or_none()
 
     if not identity:
-        logger.warning("Identidade nao vinculada", sender_id=sender_id)
-        # Responder pedindo para vincular conta
+        logger.warning(
+            "Identidade nao vinculada",
+            sender_id=sender_id,
+            channel=channel,
+            company_id=str(company_id),
+        )
         omni = OmniService()
         await omni.send_message(
             instance_id, sender_id,
@@ -80,15 +107,8 @@ async def webhook_omni(request: Request, db: AsyncSession = Depends(get_db)):
         return {"status": "unlinked_user"}
 
     user_id = identity.user_id
-
-    # Determinar empresa do usuario
-    from app.models.user import User
     user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalar_one()
-    company_id = user.company_id
-
-    # Detectar canal
-    channel = _detect_channel(instance_id, payload)
 
     # Verificar se e slash command
     if is_slash_command(text):

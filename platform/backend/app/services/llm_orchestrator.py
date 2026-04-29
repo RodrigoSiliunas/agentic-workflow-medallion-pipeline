@@ -38,17 +38,11 @@ from app.services.tools import (
     TOOL_REGISTRY,
     ToolContext,
     all_tool_specs,
-    confirmation_required_tools,
 )
 
 logger = structlog.get_logger()
 
 MAX_TOOL_ROUNDS = 10
-
-# Retrocompat — código legado pode importar `TOOLS` e `CONFIRMATION_REQUIRED`.
-# Fonte de verdade agora é `TOOL_REGISTRY`.
-TOOLS = [spec.to_anthropic_dict() for spec in all_tool_specs()]
-CONFIRMATION_REQUIRED = confirmation_required_tools()
 
 
 class LLMOrchestrator:

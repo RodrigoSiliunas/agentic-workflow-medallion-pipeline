@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -108,6 +109,9 @@ class SharedSagaState:
     databricks_credentials_created: bool = False
     databricks_storage_config_created: bool = False
     databricks_workspace_created: bool = False
+    databricks_xaccount_role_created: bool = False
+    databricks_metastore_assigned: bool = False
+    aws_vpc_created: bool = False
     databricks_secret_scope_created: bool = False
     databricks_catalog_created: bool = False
     databricks_cluster_policy_created: bool = False
@@ -185,3 +189,27 @@ class SagaStepBase:
         await ctx.info(
             f"compensate({self.step_id}): no-op (step idempotente)"
         )
+
+    @staticmethod
+    async def _safe_compensate(
+        ctx: StepContext,
+        label: str,
+        action: Callable[[], object],
+        *,
+        sync: bool = True,
+    ) -> None:
+        """Wrapper try/log pra compensate calls. sync=True roda em to_thread.
+
+        - Catch generico (boto/sdk/httpx erros heterogeneos) — compensate
+          nunca deve raise pra nao bloquear o restante do rollback.
+        - "Resource not found" eh sucesso semantico. Nao distingue codes
+          aqui — quem precisa skip especifico passa try interno proprio.
+        """
+        try:
+            if sync:
+                await asyncio.to_thread(action)
+            else:
+                await action()  # type: ignore[misc]
+            await ctx.info(f"compensate({label}): ok")
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate({label}) falhou: {exc}")

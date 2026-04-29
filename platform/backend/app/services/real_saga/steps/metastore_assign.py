@@ -19,13 +19,23 @@ from __future__ import annotations
 
 import httpx
 
-from app.services.real_saga.base import StepContext
+from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
 
 @register_saga_step("metastore_assign")
-class MetastoreAssignStep:
+class MetastoreAssignStep(SagaStepBase):
     step_id = "metastore_assign"
+
+    async def compensate(self, ctx: StepContext) -> None:
+        """No-op: detach do metastore orfa o catalog + dados subjacentes.
+
+        Workspace sera deletado pelo workspace_provision.compensate de
+        qualquer forma (delete cascata o detach automatico Account-side).
+        """
+        await ctx.info(
+            "compensate(metastore_assign): no-op (detach risca data loss)"
+        )
 
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
@@ -94,6 +104,7 @@ class MetastoreAssignStep:
             )
             put_resp.raise_for_status()
             ctx.shared.databricks_metastore_id = metastore_id
+            ctx.shared.databricks_metastore_assigned = True
             await ctx.success(
                 f"Workspace {workspace_id} attached ao metastore {metastore_id}"
             )

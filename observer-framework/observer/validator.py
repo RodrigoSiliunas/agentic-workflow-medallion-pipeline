@@ -50,6 +50,15 @@ FORBIDDEN_IMPORTS: frozenset[str] = frozenset(
         "pickle",
         "marshal",
         "shutil",  # rm -rf / copytree em paths arbitrários
+        # Network egress — fix nao deve fazer chamadas HTTP externas (data
+        # exfil, calls C2). Codigo legitimo do pipeline ja tem clients;
+        # fix do Observer nao precisa abrir socket novo.
+        "requests",
+        "urllib",
+        "urllib3",
+        "httpx",
+        "http",  # http.client, http.server
+        "aiohttp",
     }
 )
 

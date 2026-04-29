@@ -13,6 +13,14 @@ from app.core.config import settings
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Fail-fast: SECRET_KEY default sentinel = JWT forjavel via brute-force.
+if settings.SECRET_KEY == "change-me-in-production":
+    raise RuntimeError(
+        "SECRET_KEY nao configurada. Gere uma com:\n"
+        '  python -c "import secrets; print(secrets.token_hex(64))"\n'
+        "e salve no .env do backend."
+    )
+
 # Fernet encryption (SEPARADA do JWT — para credenciais de empresa).
 # Fail-fast: se a key for o default sentinel, credenciais encriptadas
 # ficariam irrecuperaveis no proximo restart (Fernet.generate_key() gera

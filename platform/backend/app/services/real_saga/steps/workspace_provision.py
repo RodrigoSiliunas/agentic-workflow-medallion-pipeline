@@ -27,13 +27,49 @@ import asyncio
 
 import httpx
 
-from app.services.real_saga.base import StepContext
+from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
 
 @register_saga_step("workspace_provision")
-class WorkspaceProvisionStep:
+class WorkspaceProvisionStep(SagaStepBase):
     step_id = "workspace_provision"
+
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: delete workspace se foi CRIADO nesta saga.
+
+        Skip se workspace_mode=existing (nunca deve deletar workspace adotado).
+        """
+        env = ctx.env_vars()
+        if env.get("workspace_mode") == "existing":
+            return
+        if not ctx.shared.databricks_workspace_created:
+            return
+        ws_id = ctx.shared.databricks_workspace_id
+        if not ws_id:
+            return
+
+        account_id = env.get("databricks_account_id", "")
+        client_id = env.get("databricks_oauth_client_id", "")
+        secret = env.get("databricks_oauth_secret", "")
+        if not all([account_id, client_id, secret]):
+            return
+
+        async def _del() -> None:
+            async with httpx.AsyncClient(timeout=120.0) as c:
+                tok = await c.post(
+                    f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
+                    auth=(client_id, secret),
+                    data={"grant_type": "client_credentials", "scope": "all-apis"},
+                )
+                tok.raise_for_status()
+                token = tok.json()["access_token"]
+                await c.delete(
+                    f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/workspaces/{ws_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+        await self._safe_compensate(ctx, f"workspace({ws_id})", _del, sync=False)
 
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
@@ -152,6 +188,7 @@ class WorkspaceProvisionStep:
                 )
                 create_resp.raise_for_status()
                 workspace = create_resp.json()
+                ctx.shared.databricks_workspace_created = True
                 await ctx.info(f"Workspace PROVISIONING: {workspace['deployment_name']}")
 
                 # Poll RUNNING

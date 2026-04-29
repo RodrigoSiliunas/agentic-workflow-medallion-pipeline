@@ -6,6 +6,7 @@
 - Nivel 3 (completo): ~35k tokens — codigo de notebooks, logs detalhados
 """
 
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -140,11 +141,13 @@ class ContextEngine:
     ) -> AssembledContext:
         """Monta contexto para o LLM.
 
+        Calls a APIs externas (Databricks, GitHub) rodam em paralelo via
+        asyncio.gather — latencia total = max(N) ao inves de sum(N).
+
         detail_level: 0=auto (classifica intent), 1=resumo, 2=detalhes, 3=completo
         """
         intent = classify_intent(user_message)
         if detail_level == 0:
-            # Auto-select baseado no intent
             level_map = {"error_diagnosis": 3, "fix_request": 3, "change_request": 2}
             detail_level = level_map.get(intent, 1)
 
@@ -153,75 +156,83 @@ class ContextEngine:
         priorities = INTENT_PRIORITIES.get(intent, INTENT_PRIORITIES["general"])
         available = MAX_CONTEXT_TOKENS - RESERVED_CONVERSATION - RESERVED_SYSTEM
 
-        blocks: list[ContextBlock] = []
-
-        # Nivel 1: Resumo (sempre incluso)
-        try:
-            summary = await self.databricks.get_pipeline_summary(pipeline_job_id)
+        async def _summary_block() -> ContextBlock | None:
+            try:
+                summary = await self.databricks.get_pipeline_summary(pipeline_job_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Falha ao obter pipeline summary", error=str(e))
+                return None
             block_text = f"Pipeline Status: {json.dumps(summary, indent=2, default=str)}"
-            blocks.append(ContextBlock(
+            return ContextBlock(
                 type="pipeline_state",
                 content=block_text,
                 token_estimate=estimate_tokens(block_text),
                 priority=priorities.get("pipeline_state", 5),
-            ))
-        except Exception as e:
-            logger.warning("Falha ao obter pipeline summary", error=str(e))
+            )
 
-        # Nivel 2: Detalhes (se detail_level >= 2)
-        if detail_level >= 2:
+        async def _schemas_block() -> ContextBlock | None:
             try:
                 schemas = await self.databricks.get_table_schemas()
-                block_text = f"Table Schemas:\n{json.dumps(schemas, indent=2)}"
-                blocks.append(ContextBlock(
-                    type="table_schemas",
-                    content=block_text,
-                    token_estimate=estimate_tokens(block_text),
-                    priority=priorities.get("table_schemas", 5),
-                ))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Falha ao obter schemas", error=str(e))
+                return None
+            block_text = f"Table Schemas:\n{json.dumps(schemas, indent=2)}"
+            return ContextBlock(
+                type="table_schemas",
+                content=block_text,
+                token_estimate=estimate_tokens(block_text),
+                priority=priorities.get("table_schemas", 5),
+            )
 
+        async def _runs_block() -> ContextBlock | None:
             try:
                 runs = await self.databricks.list_runs(pipeline_job_id, limit=5)
-                block_text = f"Run History (last 5):\n{json.dumps(runs, indent=2, default=str)}"
-                blocks.append(ContextBlock(
-                    type="run_history",
-                    content=block_text,
-                    token_estimate=estimate_tokens(block_text),
-                    priority=priorities.get("run_history", 4),
-                ))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Falha ao obter historico de runs", error=str(e))
+                return None
+            block_text = f"Run History (last 5):\n{json.dumps(runs, indent=2, default=str)}"
+            return ContextBlock(
+                type="run_history",
+                content=block_text,
+                token_estimate=estimate_tokens(block_text),
+                priority=priorities.get("run_history", 4),
+            )
 
+        async def _prs_block() -> ContextBlock | None:
             try:
                 prs = await self.github.list_recent_prs(limit=5)
-                block_text = f"Recent PRs:\n{json.dumps(prs, indent=2)}"
-                blocks.append(ContextBlock(
-                    type="recent_prs",
-                    content=block_text,
-                    token_estimate=estimate_tokens(block_text),
-                    priority=priorities.get("recent_prs", 3),
-                ))
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                return None
+            block_text = f"Recent PRs:\n{json.dumps(prs, indent=2)}"
+            return ContextBlock(
+                type="recent_prs",
+                content=block_text,
+                token_estimate=estimate_tokens(block_text),
+                priority=priorities.get("recent_prs", 3),
+            )
 
-        # Nivel 3: Completo (se detail_level >= 3)
+        async def _notebook_block(nb_path: str) -> ContextBlock | None:
+            try:
+                code = await self.github.read_file(nb_path)
+            except Exception:  # noqa: BLE001
+                return None
+            block_text = f"Notebook {nb_path}:\n```python\n{code}\n```"
+            return ContextBlock(
+                type="notebook_code",
+                content=block_text,
+                token_estimate=estimate_tokens(block_text),
+                priority=priorities.get("notebook_code", 4),
+            )
+
+        tasks: list = [_summary_block()]
+        if detail_level >= 2:
+            tasks.extend([_schemas_block(), _runs_block(), _prs_block()])
         if detail_level >= 3:
-            # Ler codigo de notebooks relevantes ao intent
-            relevant_notebooks = self._select_relevant_notebooks(intent)
-            for nb_path in relevant_notebooks:
-                try:
-                    code = await self.github.read_file(nb_path)
-                    block_text = f"Notebook {nb_path}:\n```python\n{code}\n```"
-                    blocks.append(ContextBlock(
-                        type="notebook_code",
-                        content=block_text,
-                        token_estimate=estimate_tokens(block_text),
-                        priority=priorities.get("notebook_code", 4),
-                    ))
-                except Exception:
-                    pass
+            for nb_path in self._select_relevant_notebooks(intent):
+                tasks.append(_notebook_block(nb_path))
+
+        results = await asyncio.gather(*tasks)
+        blocks: list[ContextBlock] = [b for b in results if b is not None]
 
         # Ranquear e cortar pelo budget
         blocks.sort(key=lambda b: b.priority, reverse=True)

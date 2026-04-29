@@ -38,7 +38,8 @@ async def test_emits_log_persists_and_publishes():
     await emitter("info", "hello world", "s3")
 
     db.add.assert_called_once()
-    db.flush.assert_awaited_once()
+    # flush removido do hot path — commit batched no boundary do step
+    db.flush.assert_not_called()
     publish.assert_awaited_once()
     args = publish.await_args.args
     dep_id_str, event = args
@@ -48,6 +49,8 @@ async def test_emits_log_persists_and_publishes():
     assert event["data"]["message"] == "hello world"
     assert event["data"]["step_id"] == "s3"
     assert "timestamp" in event["data"]
+    # id pre-assigned client-side — UUID4 valido
+    uuid.UUID(event["data"]["id"])
 
 
 @pytest.mark.asyncio
@@ -85,9 +88,9 @@ async def test_lock_serializes_concurrent_emits():
 
 
 @pytest.mark.asyncio
-async def test_propagates_flush_exception():
+async def test_propagates_db_add_exception():
     emitter, _, db, _ = _make_emitter()
-    db.flush = AsyncMock(side_effect=RuntimeError("db boom"))
+    db.add = MagicMock(side_effect=RuntimeError("db boom"))
 
     with pytest.raises(RuntimeError, match="db boom"):
         await emitter("error", "msg")

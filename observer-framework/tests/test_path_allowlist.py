@@ -14,7 +14,6 @@ from observer.providers.path_allowlist import (
 
 ALLOWED_SAMPLES = [
     "pipelines/pipeline-seguradora-whatsapp/notebooks/bronze/ingest.py",
-    "observer-framework/observer/providers/anthropic_provider.py",
     "observer-framework/tests/test_foo.py",
     "platform/backend/app/services/saga.py",
     "platform/frontend/app/components/atoms/Button.vue",
@@ -26,6 +25,8 @@ DENIED_SAMPLES = [
     "deploy/production.sh",
     "platform/backend/app/services/secret_reader.py",
     "platform/backend/app/secrets.py",
+    # Observer nao escreve nele mesmo (auto-modify = bypass do validador).
+    "observer-framework/observer/providers/anthropic_provider.py",
     "observer-framework/observer/secrets_config.py",
     ".env",
     ".env.prod",
@@ -61,9 +62,9 @@ class TestValidatePath:
     def test_backslash_normalized(self):
         # Allowlist deve aceitar paths com separadores Windows também
         normalized = validate_path(
-            "observer-framework\\observer\\providers\\base.py"
+            "observer-framework\\tests\\test_foo.py"
         )
-        assert normalized.startswith("observer-framework/observer/")
+        assert normalized.startswith("observer-framework/tests/")
 
     def test_leading_slash_stripped(self):
         assert validate_path("/pipelines/foo/bar.py").startswith("pipelines/")

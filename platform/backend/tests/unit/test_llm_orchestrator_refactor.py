@@ -181,20 +181,37 @@ class TestExecuteTool:
             assert result == {"error": "api down"}
 
 
-class TestBackwardCompat:
-    def test_tools_list_populated_from_registry(self):
-        from app.services.llm_orchestrator import TOOLS
+@pytest.mark.anyio
+async def test_system_prompt_override_skips_context_engine():
+    """system_prompt_override -> context_engine.assemble nao e chamado."""
+    orch = _make_orchestrator()
+    orch._get_model = AsyncMock(return_value="model")
+    orch.context_engine.assemble = AsyncMock(return_value=_FakeContext())
 
-        names = {t["name"] for t in TOOLS}
-        assert "list_databricks_jobs" in names
-        assert "create_pull_request" in names
+    captured: dict = {}
 
-    def test_confirmation_required_set_populated(self):
-        from app.services.llm_orchestrator import CONFIRMATION_REQUIRED
+    async def fake_stream(**kwargs):
+        captured["system"] = kwargs.get("system", "")
+        yield ChatTokenEvent(text="ok")
+        yield ChatEndEvent(content_blocks=[], output_tokens=1)
 
-        assert "update_job_schedule" in CONFIRMATION_REQUIRED
-        assert "create_pull_request" in CONFIRMATION_REQUIRED
-        assert "list_databricks_jobs" not in CONFIRMATION_REQUIRED
+    mock_provider = MagicMock()
+    mock_provider.stream_with_tools = fake_stream
+    orch._get_chat_provider = AsyncMock(return_value=(mock_provider, "anthropic"))
+
+    events = await _collect_events(orch.process_message(
+        user_message="qualquer pergunta",
+        pipeline_job_id=0,
+        conversation_history=[],
+        system_prompt_override="MEU PROMPT CUSTOM",
+    ))
+
+    # Assemble nao foi chamado — pulamos o context engine
+    orch.context_engine.assemble.assert_not_awaited()
+    # System contem o override
+    assert "MEU PROMPT CUSTOM" in captured["system"]
+    types = [e["type"] for e in events]
+    assert "token" in types
 
 
 def test_no_direct_anthropic_import():

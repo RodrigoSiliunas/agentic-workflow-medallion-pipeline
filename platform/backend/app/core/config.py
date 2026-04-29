@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_AUTH_PER_MINUTE: int = 5
 
+    # Registration gating — fechado por default (anti tenant-squatting).
+    # Em dev/test seta True. Em prod com self-serve seta False + token.
+    REGISTRATION_OPEN: bool = False
+    REGISTRATION_INVITE_TOKEN: str = ""
+
     # Security headers (T2 Phase 3).
     # CSP None = middleware usa default (prod ou dev) conforme DEBUG.
     SECURITY_HEADERS_CSP: str | None = None
