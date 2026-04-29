@@ -101,11 +101,12 @@ class TestConfigureSparkS3:
         lake = _make_lake(spark=spark)
 
         lake.configure_spark_s3()
+        snapshot = dict(spark.conf.settings)
         lake.configure_spark_s3()
         lake.configure_spark_s3()
 
-        # Apenas 3 chaves configuradas (access, secret, endpoint)
-        assert len(spark.conf.settings) == 3
+        # Idempotente: settings apos N chamadas = settings apos 1 chamada.
+        assert spark.conf.settings == snapshot
 
     def test_noop_when_spark_is_none(self):
         lake = _make_lake(spark=None)

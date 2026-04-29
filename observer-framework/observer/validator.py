@@ -240,8 +240,19 @@ def _run_ruff(code: str, file_path: str) -> tuple[bool, list[str]] | None:
             temp_path = handle.name
 
         try:
+            # Validador foca em CORRETUDE, nao estilo. Pyflakes (F) cobre:
+            # nomes indefinidos, imports nao usados, variaveis redefinidas,
+            # erros logicos. Estilo (I=isort, N=naming, E=pycodestyle, etc)
+            # rejeitaria fixes do agente que sao logicamente corretos mas
+            # divergem da convencao do projeto — ruim pra DX do agente.
+            # `--isolated` ignora pyproject.toml, garante mesmo
+            # comportamento independente de cwd (test, CI ou Databricks).
             proc = subprocess.run(  # noqa: S603 — subprocess controlado
-                ["ruff", "check", "--output-format=json", temp_path],
+                [
+                    "ruff", "check", "--isolated",
+                    "--select", "F",
+                    "--output-format=json", temp_path,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=RUFF_TIMEOUT_SECONDS,

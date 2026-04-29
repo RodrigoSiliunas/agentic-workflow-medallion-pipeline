@@ -55,7 +55,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install ruff pytest pydantic databricks-sdk
+          pip install ruff pytest pydantic pyyaml databricks-sdk
           # Deps usadas pelo pipeline_lib (storage S3)
           pip install boto3 pandas pyarrow
 

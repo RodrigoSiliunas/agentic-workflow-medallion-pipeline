@@ -40,6 +40,7 @@ export function isSafeUrl(url: string): boolean {
   if (!trimmed) return false
   // Caracteres de controle/whitespace dentro da URL são um smell
   // clássico de bypass (ex: `java\tscript:...`).
+  // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(trimmed)) return false
 
   if (SAFE_SCHEME.test(trimmed)) return true

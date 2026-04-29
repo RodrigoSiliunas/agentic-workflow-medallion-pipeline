@@ -574,14 +574,14 @@ function addTag() {
 }
 
 function removeTag(key: string) {
-  delete tags[key]
+  Reflect.deleteProperty(tags, key)
   emitState()
 }
 
 function renameTagKey(oldKey: string, newKey: string) {
   if (!newKey || newKey === oldKey || tags[newKey] !== undefined) return
   tags[newKey] = tags[oldKey]
-  delete tags[oldKey]
+  Reflect.deleteProperty(tags, oldKey)
   emitState()
 }
 

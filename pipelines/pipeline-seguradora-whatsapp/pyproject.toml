@@ -12,6 +12,7 @@ authors = [
 # notebook do observer-framework via path (nao via import Python).
 dependencies = [
     "pydantic>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
