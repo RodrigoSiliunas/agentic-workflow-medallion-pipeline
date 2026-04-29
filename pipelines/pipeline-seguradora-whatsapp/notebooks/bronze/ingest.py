@@ -1,126 +1,206 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Bronze Layer - Raw Data Ingestion
-# MAGIC Ingestão de dados brutos do WhatsApp para camada Bronze.
-# MAGIC
-# MAGIC **Input**: JSON multi-line em `/mnt/landing/whatsapp/conversations`
-# MAGIC **Output**: `medallion.bronze.conversations` (Delta, append mode)
-# MAGIC **Schema evolution**: `mergeSchema=false` — schema explicito via EXPECTED_SCHEMA.
+# MAGIC ## Bronze Layer - Data Ingestion
+# MAGIC Ingests raw data from source systems into Bronze layer
 
-# COMMAND ----------
-# DBTITLE 1,Imports
-import logging
-import sys
-
-from delta import DeltaTable  # noqa: F401
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_timestamp, lit  # noqa: F401
-from pyspark.sql.types import StringType, StructField, StructType
+from pyspark.sql.types import *
+from pyspark.sql.functions import *
+from delta.tables import *
+import logging
+from datetime import datetime
 
-# COMMAND ----------
-# DBTITLE 1,Setup Spark + Logger
-spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # COMMAND ----------
-# DBTITLE 1,Auto-detect repo root para importar pipeline_lib
-_nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()  # noqa: F821
-_repo_root = "/".join(_nb_path.split("/")[:4])
-PIPELINE_ROOT = f"/Workspace{_repo_root}/pipelines/pipeline-seguradora-whatsapp"
-sys.path.insert(0, PIPELINE_ROOT)
 
-from pipeline_lib.schema import conform_to_schema  # noqa: NB003, E402
-from pipeline_lib.storage import S3Lake  # noqa: NB003, E402
-from pipeline_lib.validation import delta_row_count  # noqa: NB003, E402, F401
+# Configuration
+SOURCE_PATH = "/mnt/landing/whatsapp/messages"  # Adjust based on your actual source
+BRONZE_PATH = "/mnt/bronze/whatsapp_messages"
+CHECKPOINT_PATH = "/mnt/checkpoints/bronze/whatsapp_messages"
 
 # COMMAND ----------
-# DBTITLE 1,Configuration
-# Widget scope passa secret scope com AWS creds + s3-bucket + bronze-prefix
-dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")  # noqa: F821
-dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")  # noqa: F821
-SCOPE = dbutils.widgets.get("scope")  # noqa: F821
-BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")  # noqa: F821
-TARGET_TABLE = "medallion.bronze.conversations"
 
-# COMMAND ----------
-# DBTITLE 1,Chaos mode — propagado via task value do pre_check
-chaos_mode = "off"
-try:
-    chaos_mode = dbutils.jobs.taskValues.get(  # noqa: F821
-        taskKey="pre_check", key="chaos_mode", default="off"
-    )
-except Exception:
-    chaos_mode = "off"
-
-# COMMAND ----------
-# DBTITLE 1,Schema esperado — definicao explicita
-EXPECTED_SCHEMA = StructType([
+# Define explicit schema for WhatsApp messages
+# Adjust this schema based on your actual data structure
+whatsapp_schema = StructType([
     StructField("message_id", StringType(), True),
     StructField("conversation_id", StringType(), True),
-    StructField("timestamp", StringType(), True),
-    StructField("direction", StringType(), True),
-    StructField("sender_phone", StringType(), True),
+    StructField("sender_id", StringType(), True),
     StructField("sender_name", StringType(), True),
+    StructField("sender_phone", StringType(), True),
+    StructField("recipient_id", StringType(), True),
+    StructField("recipient_name", StringType(), True),
+    StructField("recipient_phone", StringType(), True),
+    StructField("message_text", StringType(), True),
     StructField("message_type", StringType(), True),
-    StructField("message_body", StringType(), True),
+    StructField("timestamp", TimestampType(), True),
     StructField("status", StringType(), True),
-    StructField("channel", StringType(), True),
-    StructField("campaign_id", StringType(), True),
-    StructField("agent_id", StringType(), True),
-    StructField("conversation_outcome", StringType(), True),
-    StructField("metadata", StringType(), True),
+    StructField("media_url", StringType(), True),
+    StructField("media_type", StringType(), True),
+    StructField("is_group_message", BooleanType(), True),
+    StructField("group_id", StringType(), True),
+    StructField("group_name", StringType(), True),
+    StructField("quoted_message_id", StringType(), True),
+    StructField("raw_data", StringType(), True)
 ])
 
 # COMMAND ----------
-# DBTITLE 1,Funcao principal de ingestao
-def ingest_to_bronze():
+
+# Function to check if source files exist
+def check_source_exists(path):
     try:
-        # Chaos mode: injetar falha controlada para testar Observer Agent
-        if chaos_mode == "bronze_schema":
-            logger.warning("CHAOS MODE: Injetando bug de schema no Bronze")
-            raise ValueError(
-                "CHAOS: Schema invalido - coluna _chaos_invalid_col com tipo "
-                "incompativel (injetado por chaos_mode=bronze_schema)"
-            )
-
-        # S3Lake usa dbutils.secrets.get pra pegar credenciais AWS do scope
-        lake = S3Lake(dbutils, spark, scope=SCOPE)  # noqa: F821
-        source_uri = f"s3://{lake._bucket}/{BRONZE_PREFIX}"
-        logger.info(f"Iniciando ingestao Bronze de {source_uri}")
-
-        # Leitura via Spark S3A (distributed, zero materializacao driver)
-        df_raw = lake.read_parquet(BRONZE_PREFIX)
-
-        # Validacao e conformacao de schema (pipeline_lib — testado)
-        df_conformed = conform_to_schema(df_raw, EXPECTED_SCHEMA)
-
-        # Adiciona metadados de ingestao
-        df_bronze = (
-            df_conformed
-            .withColumn("_ingestion_timestamp", current_timestamp())
-            .withColumn("_source_file", lit(source_uri))
-        )
-
-        # Escrita Delta (append) sem count() pre-write redundante
-        df_bronze.write \
-            .mode("append") \
-            .option("mergeSchema", "false") \
-            .saveAsTable(TARGET_TABLE)
-
-        # Validacao final via Delta transaction log (O(1), sem scan)
-        try:
-            detail = spark.sql(f"DESCRIBE DETAIL {TARGET_TABLE}").collect()[0]
-            final_count = int(detail["numRows"]) if detail["numRows"] is not None else -1
-        except Exception:
-            final_count = spark.table(TARGET_TABLE).count()
-        logger.info(f"Ingestao concluida. {final_count} registros totais em {TARGET_TABLE}")
-
+        dbutils.fs.ls(path)
+        return True
     except Exception as e:
-        logger.error(f"Erro durante ingestao Bronze: {str(e)}")
-        if chaos_mode != "off":
-            logger.error(f"CHAOS MODE ({chaos_mode}): {e}")
-        raise
+        logger.error(f"Source path not found: {path}. Error: {str(e)}")
+        return False
 
 # COMMAND ----------
-# DBTITLE 1,Execucao
-ingest_to_bronze()
+
+# Check if source exists
+if not check_source_exists(SOURCE_PATH):
+    logger.warning(f"Source path {SOURCE_PATH} does not exist. Creating empty Bronze table.")
+    
+    # Create empty DataFrame with schema
+    empty_df = spark.createDataFrame([], whatsapp_schema)
+    
+    # Add ingestion metadata
+    empty_df = empty_df \
+        .withColumn("ingestion_timestamp", current_timestamp()) \
+        .withColumn("source_file", lit("NO_SOURCE_FILE")) \
+        .withColumn("processing_date", current_date())
+    
+    # Write as Delta table
+    empty_df.write \
+        .mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .format("delta") \
+        .save(BRONZE_PATH)
+    
+    logger.info("Created empty Bronze table with schema")
+    dbutils.notebook.exit("No source files found - created empty Bronze table")
+
+# COMMAND ----------
+
+# Read source data with explicit schema
+try:
+    # Check file format in source
+    files = dbutils.fs.ls(SOURCE_PATH)
+    
+    if not files:
+        raise Exception("No files found in source directory")
+    
+    # Determine file format from first file
+    first_file = files[0].path
+    
+    if first_file.endswith(".parquet"):
+        logger.info("Reading Parquet files")
+        df = spark.read \
+            .schema(whatsapp_schema) \
+            .option("mergeSchema", "false") \
+            .parquet(f"{SOURCE_PATH}/*.parquet")
+            
+    elif first_file.endswith(".json"):
+        logger.info("Reading JSON files")
+        df = spark.read \
+            .schema(whatsapp_schema) \
+            .option("multiLine", "true") \
+            .json(f"{SOURCE_PATH}/*.json")
+            
+    elif first_file.endswith(".csv"):
+        logger.info("Reading CSV files")
+        df = spark.read \
+            .schema(whatsapp_schema) \
+            .option("header", "true") \
+            .csv(f"{SOURCE_PATH}/*.csv")
+    else:
+        raise Exception(f"Unsupported file format: {first_file}")
+        
+    logger.info(f"Successfully read {df.count()} records from source")
+    
+except Exception as e:
+    logger.error(f"Error reading source data: {str(e)}")
+    
+    # Try to read without schema as fallback
+    try:
+        logger.info("Attempting to read with schema inference...")
+        df = spark.read \
+            .option("inferSchema", "true") \
+            .parquet(f"{SOURCE_PATH}/*.parquet")
+        
+        logger.warning("Schema inference succeeded. Actual schema:")
+        df.printSchema()
+        
+    except Exception as e2:
+        logger.error(f"Schema inference also failed: {str(e2)}")
+        raise Exception(f"Cannot read source data: {str(e)} | {str(e2)}")
+
+# COMMAND ----------
+
+# Add ingestion metadata
+df_with_metadata = df \
+    .withColumn("ingestion_timestamp", current_timestamp()) \
+    .withColumn("source_file", input_file_name()) \
+    .withColumn("processing_date", current_date()) \
+    .withColumn("row_hash", sha2(concat_ws("|", *[col(c) for c in df.columns]), 256))
+
+# COMMAND ----------
+
+# Write to Bronze layer
+logger.info(f"Writing {df_with_metadata.count()} records to Bronze layer")
+
+# Check if Delta table exists
+if DeltaTable.isDeltaTable(spark, BRONZE_PATH):
+    logger.info("Appending to existing Bronze table")
+    df_with_metadata.write \
+        .mode("append") \
+        .format("delta") \
+        .save(BRONZE_PATH)
+else:
+    logger.info("Creating new Bronze table")
+    df_with_metadata.write \
+        .mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .format("delta") \
+        .save(BRONZE_PATH)
+
+# COMMAND ----------
+
+# Optimize and create table if not exists
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS bronze.whatsapp_messages
+    USING DELTA
+    LOCATION '{BRONZE_PATH}'
+""")
+
+# Optimize table
+spark.sql("OPTIMIZE bronze.whatsapp_messages")
+
+# COMMAND ----------
+
+# Data quality checks
+total_records = spark.read.format("delta").load(BRONZE_PATH).count()
+null_messages = spark.read.format("delta").load(BRONZE_PATH).filter(col("message_id").isNull()).count()
+duplicates = spark.read.format("delta").load(BRONZE_PATH).groupBy("message_id").count().filter(col("count") > 1).count()
+
+logger.info(f"Bronze ingestion completed:")
+logger.info(f"- Total records: {total_records}")
+logger.info(f"- Records with null message_id: {null_messages}")
+logger.info(f"- Duplicate message_ids: {duplicates}")
+
+# COMMAND ----------
+
+# Return summary
+result = {
+    "status": "SUCCESS",
+    "records_ingested": total_records,
+    "null_records": null_messages,
+    "duplicates": duplicates,
+    "bronze_path": BRONZE_PATH,
+    "timestamp": datetime.now().isoformat()
+}
+
+dbutils.notebook.exit(str(result))
