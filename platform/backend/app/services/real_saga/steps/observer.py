@@ -29,6 +29,19 @@ OBSERVER_JOB_NAME = "workflow_observer_agent"
 class ObserverStep:
     step_id = "observer"
 
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: deleta observer job se foi criado nesta saga."""
+        job_id = ctx.shared.observer_job_id
+        if not job_id:
+            await ctx.info("compensate(observer): job nao foi criado — skip")
+            return
+        w = workspace_client(ctx.credentials)
+        try:
+            await asyncio.to_thread(lambda: w.jobs.delete(job_id=job_id))
+            await ctx.info(f"compensate(observer): job {job_id} removido")
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate(observer) falhou: {exc}")
+
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
         catalog = env.get("catalog", "medallion")
@@ -117,20 +130,29 @@ async def _upsert_job(w, name: str, settings: dict, owner_email: str | None = No
         created = w.jobs.create(**settings)
         job_id = created.job_id
 
+        # Owner transfer so faz sentido se:
+        # 1. owner_email foi explicitamente fornecido
+        # 2. quem criou (current_user) e DIFERENTE do alvo (admin/owner)
+        # 3. current_user e Service Principal (tem application_id), nao user humano
+        # Caso contrario o job ja foi criado com owner correto e PUT geraria
+        # "must have exactly one owner" (duplicacao ou principal inexistente).
         if owner_email and job_id:
-            # SP que criou perde IS_OWNER — readd como CAN_MANAGE pra saga
-            # continuar gerenciando (update_trust, run-now, etc).
-            sp_id = w.current_user.me().user_name
-            w.api_client.do(
-                "PUT",
-                f"/api/2.0/permissions/jobs/{job_id}",
-                body={
-                    "access_control_list": [
-                        {"user_name": owner_email, "permission_level": "IS_OWNER"},
-                        {"service_principal_name": sp_id, "permission_level": "CAN_MANAGE"},
-                    ]
-                },
-            )
+            me = w.current_user.me()
+            current_user_name = me.user_name or ""
+            # SDK marca SP via application_id (UUID). User humano nao tem.
+            sp_app_id = getattr(me, "application_id", None)
+            same_principal = current_user_name.lower() == owner_email.lower()
+            if not same_principal and sp_app_id:
+                w.api_client.do(
+                    "PUT",
+                    f"/api/2.0/permissions/jobs/{job_id}",
+                    body={
+                        "access_control_list": [
+                            {"user_name": owner_email, "permission_level": "IS_OWNER"},
+                            {"service_principal_name": sp_app_id, "permission_level": "CAN_MANAGE"},
+                        ]
+                    },
+                )
 
         return job_id
 

@@ -15,10 +15,10 @@
 export interface ClusterType {
   /** AWS instance type id (vai pro Databricks API node_type_id) */
   id: string
-  /** Label curto na UI (Small/Medium/Large) */
+  /** Label curto na UI (Micro/Small/Medium/Large) */
   label: string
-  /** Categoria visual (general/memory/compute/storage) */
-  category: "general" | "memory" | "compute" | "storage"
+  /** Categoria visual (micro/general/memory/compute/storage) */
+  category: "micro" | "general" | "memory" | "compute" | "storage"
   /** RAM em GB */
   ramGb: number
   /** vCPU cores */
@@ -31,11 +31,25 @@ export interface ClusterType {
   dbuPerHr: number
   /** Use case suggestion */
   useCase: string
+  /** Warning text — mostrado se tier tem caveat (ex: micro burstable). */
+  warning?: string
 }
 
 const DBU_RATE_USD = 0.15 // Premium Jobs Compute
 
 export const CLUSTER_TYPES: ClusterType[] = [
+  {
+    id: "m5.large",
+    label: "Eco",
+    category: "micro",
+    ramGb: 8,
+    vcpu: 2,
+    localSsdGb: 0,
+    instancePricePerHr: 0.096,
+    dbuPerHr: 0.75,
+    useCase: "Smallest viavel Databricks, sem SSD (shuffle via EBS — mais lento)",
+    warning: "Sem local SSD — shuffle/cache vai pra EBS, ~30% mais lento que Small em JOINs grandes.",
+  },
   {
     id: "m5d.large",
     label: "Small",
@@ -122,18 +136,58 @@ export const SPARK_VERSIONS = [
   { id: "16.1.x-scala2.12", label: "16.1 (latest, nao LTS)" },
 ]
 
+export interface CostEstimateInput {
+  driver: ClusterType
+  worker: ClusterType
+  /** Modo Fixo: numero de workers. Ignorado se autoscale set. */
+  numWorkers?: number
+  /** Modo autoscale: min workers. */
+  autoscaleMin?: number
+  /** Modo autoscale: max workers. */
+  autoscaleMax?: number
+}
+
+export interface CostEstimateOutput {
+  ec2MaxPerHr: number
+  dbuMaxPerHr: number
+  totalMaxPerHr: number
+  /** So preenchido em autoscale: medio (min+max)/2 estimado. */
+  totalAvgPerHr?: number
+  totalDbuMax: number
+}
+
 export function useClusterTypes() {
   return {
     clusterTypes: CLUSTER_TYPES,
     sparkVersions: SPARK_VERSIONS,
     dbuRate: DBU_RATE_USD,
-    /** Calcula custo estimado por hora pra (driver + workers). */
-    estimateHourlyCost(node: ClusterType, numWorkers: number): number {
-      // 1 driver + N workers
-      const totalNodes = 1 + numWorkers
-      const ec2 = node.instancePricePerHr * totalNodes
-      const dbu = node.dbuPerHr * totalNodes * DBU_RATE_USD
-      return ec2 + dbu
+    /** Calcula custo estimado por hora — driver + workers + autoscale-aware. */
+    estimateHourlyCost(input: CostEstimateInput): CostEstimateOutput {
+      const isAutoscale = input.autoscaleMin != null && input.autoscaleMax != null
+      const maxWorkers = isAutoscale ? input.autoscaleMax! : (input.numWorkers ?? 0)
+      const minWorkers = isAutoscale ? input.autoscaleMin! : (input.numWorkers ?? 0)
+
+      const driverEc2 = input.driver.instancePricePerHr
+      const driverDbu = input.driver.dbuPerHr
+      const workerEc2 = input.worker.instancePricePerHr * maxWorkers
+      const workerDbu = input.worker.dbuPerHr * maxWorkers
+      const ec2Max = driverEc2 + workerEc2
+      const dbuMax = driverDbu + workerDbu
+      const totalMax = ec2Max + dbuMax * DBU_RATE_USD
+      let totalAvg: number | undefined
+      if (isAutoscale) {
+        const avgWorkers = (minWorkers + maxWorkers) / 2
+        const avgEc2 = driverEc2 + input.worker.instancePricePerHr * avgWorkers
+        const avgDbu = driverDbu + input.worker.dbuPerHr * avgWorkers
+        totalAvg = avgEc2 + avgDbu * DBU_RATE_USD
+      }
+      return {
+        ec2MaxPerHr: ec2Max,
+        dbuMaxPerHr: dbuMax * DBU_RATE_USD,
+        totalMaxPerHr: totalMax,
+        totalAvgPerHr: totalAvg,
+        totalDbuMax: dbuMax,
+      }
     },
     /** Custo formatado USD/h tipo "$0.85/h" */
     formatCost(value: number): string {

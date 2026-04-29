@@ -68,7 +68,12 @@ class CredentialMissingError(Exception):
 @dataclass
 class SharedSagaState:
     """Estado compartilhado entre steps do mesmo deploy — tipado pra eliminar
-    isinstance guards e stringly-typed keys nos steps."""
+    isinstance guards e stringly-typed keys nos steps.
+
+    Campos `*_created` flagam recursos que foram CRIADOS neste deploy
+    (vs adotados/preexistentes). Compensate so deleta se created=True,
+    pra nao remover recursos compartilhados de outros pipelines.
+    """
 
     s3_bucket: str | None = None
     s3_bucket_url: str | None = None
@@ -89,12 +94,26 @@ class SharedSagaState:
     databricks_workspace_id: int | None = None
     databricks_workspace_host: str | None = None
     databricks_cluster_id: str | None = None
+    databricks_cluster_policy_id: str | None = None
     secret_scope: str | None = None
     catalog: str | None = None
     repo_path: str | None = None
     observer_job_id: int | None = None
     workflow_job_id: int | None = None
     run_id: int | None = None
+    # Tracking — quais resources foram CRIADOS neste deploy (vs adopted)
+    s3_buckets_created: list[str] = field(default_factory=list)
+    aws_iam_role_created: str | None = None
+    databricks_network_created: bool = False
+    databricks_credentials_created: bool = False
+    databricks_storage_config_created: bool = False
+    databricks_workspace_created: bool = False
+    databricks_secret_scope_created: bool = False
+    databricks_catalog_created: bool = False
+    databricks_cluster_policy_created: bool = False
+    databricks_cluster_created: bool = False
+    databricks_repo_created: bool = False
+    flowertex_pipeline_id: str | None = None
 
 
 @dataclass

@@ -144,8 +144,20 @@ services:
       ollama:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
+    # qwen3.5:9b = primario (sweet spot 8GB VRAM).
+    # gemma4 fallback pra gemma3:4b se Ollama image cached for antiga.
+    # Echo 'init done' sempre executa pra container exit limpo.
     command:
-      - "ollama pull qwen3.5:9b && ollama pull gemma4:e2b && echo 'init done'"
+      - |
+        set +e
+        echo '== pulling qwen3.5:9b =='
+        ollama pull qwen3.5:9b
+        echo '== pulling gemma4:e2b (try newer) =='
+        if ! ollama pull gemma4:e2b; then
+          echo '!! gemma4:e2b falhou — ollama image desatualizada. Fallback gemma3:4b'
+          ollama pull gemma3:4b || echo '!! gemma3 tambem falhou — pule manual depois'
+        fi
+        echo 'init done'
     environment:
       OLLAMA_HOST: http://ollama:11434
     networks:

@@ -42,21 +42,59 @@
             color: 'var(--text-secondary)',
           }"
         >
-          OAuth M2M nao configurado em
+          OAuth M2M Account-level nao configurado em
           <NuxtLink to="/settings" class="underline" :style="{ color: 'var(--brand-400)' }">
             /settings
           </NuxtLink>
-          — autofill desabilitado. Preencha workspace_id + host manualmente abaixo
-          (encontre no Account Console em <code>accounts.cloud.databricks.com</code>).
+          — sem listagem automatica de workspaces.
+          {{ hostFromSettings ? "URL vem do /settings, so falta o Workspace ID." : "Preencha workspace_id + host manualmente." }}
         </div>
         <AppInput
           v-model="manualWorkspaceId"
           label="Workspace ID *"
-          placeholder="7474653776574327"
-          helper="Numero inteiro listado no Account Console > Workspaces"
+          placeholder="7474660770649881"
+          helper="Numero inteiro que sufixa nomes de recursos no Account Console (ex: compute-credential-{ID}, storage-config-{ID}). Tambem aparece como ?o={ID} na URL ao abrir o workspace."
           @update:model-value="emitState"
         />
+        <!-- Host preenchido via /settings — toggle pra override pontual neste deploy -->
+        <div v-if="hostFromSettings" class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">
+              Workspace Host (FQDN)
+            </label>
+            <button
+              type="button"
+              class="text-[10px] underline"
+              :style="{ color: 'var(--brand-400)' }"
+              @click="overrideHost = !overrideHost"
+            >
+              {{ overrideHost ? "Cancelar override" : "Sobrescrever neste deploy" }}
+            </button>
+          </div>
+          <div
+            v-if="!overrideHost"
+            class="px-3 py-2 rounded-[var(--radius-md)] border text-xs flex items-center gap-2"
+            :style="{
+              borderColor: 'var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text-tertiary)',
+            }"
+          >
+            <span>{{ "{databricks_host de /settings}" }}</span>
+            <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full" :style="{ background: 'rgba(34,197,94,0.15)', color: 'rgb(34,197,94)' }">
+              configurado
+            </span>
+          </div>
+          <AppInput
+            v-else
+            v-model="manualWorkspaceHost"
+            placeholder="https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+            helper="Override apenas neste deploy. /settings continua intacto."
+            @update:model-value="emitState"
+          />
+        </div>
         <AppInput
+          v-else
           v-model="manualWorkspaceHost"
           label="Workspace Host (FQDN) *"
           placeholder="https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
@@ -167,6 +205,12 @@ interface WorkspacePickerState {
   config?: DatabricksWorkspaceConfig
 }
 
+const props = defineProps<{
+  /** True quando databricks_host ja esta configurado em /settings.
+   * Esconde input manual de host + sinaliza pro backend usar credential da empresa. */
+  hostFromSettings?: boolean
+}>()
+
 const emit = defineEmits<{
   "update:state": [state: WorkspacePickerState]
 }>()
@@ -179,6 +223,8 @@ const loadingConfig = ref(false)
 // Inputs manuais usados quando OAuth M2M nao esta configurado
 const manualWorkspaceId = ref<string>("")
 const manualWorkspaceHost = ref<string>("")
+// User pode forcar override do host vindo de /settings
+const overrideHost = ref<boolean>(false)
 
 const {
   workspaces,
@@ -193,6 +239,10 @@ onMounted(() => {
   loadWorkspaces()
   emitState()
 })
+
+// Quando user toggle override (hostFromSettings = sim), reemit state pra
+// backend trocar entre "usar credential da empresa" vs "usar manual host"
+watch(overrideHost, () => emitState())
 
 function selectMode(value: "existing" | "new") {
   mode.value = value
@@ -230,8 +280,18 @@ function emitState() {
           ? manualWorkspaceId.value
           : selectedWorkspaceId.value) || undefined
       : undefined
-  const resolvedWorkspaceHost =
-    mode.value === "existing" && oauthConfigured.value === false
+  // Host override:
+  //  - hostFromSettings=true + overrideHost=false: NAO emite host, backend usa credential empresa
+  //  - hostFromSettings=true + overrideHost=true: emite manualWorkspaceHost
+  //  - hostFromSettings=false: sempre emite manualWorkspaceHost (input visivel)
+  const shouldUseSettingsHost =
+    mode.value === "existing" &&
+    oauthConfigured.value === false &&
+    props.hostFromSettings &&
+    !overrideHost.value
+  const resolvedWorkspaceHost = shouldUseSettingsHost
+    ? undefined
+    : mode.value === "existing" && oauthConfigured.value === false
       ? manualWorkspaceHost.value || undefined
       : undefined
   emit("update:state", {

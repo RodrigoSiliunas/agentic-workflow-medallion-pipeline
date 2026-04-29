@@ -37,11 +37,34 @@ _SECRETS_FROM_ENV_VARS: dict[str, str] = {
 class SecretsStep:
     step_id = "secrets"
 
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: deleta secret scope SE foi criado nesta saga.
+
+        Skip se adopted (existia antes — outros pipelines podem usar).
+        """
+        if not ctx.shared.databricks_secret_scope_created:
+            await ctx.info("compensate(secrets): scope nao foi criado nesta saga — skip")
+            return
+        scope = ctx.shared.secret_scope
+        if not scope:
+            return
+        w = workspace_client(ctx.credentials)
+        try:
+            await asyncio.to_thread(lambda: w.secrets.delete_scope(scope=scope))
+            await ctx.info(f"compensate(secrets): scope {scope} removido")
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate(secrets) falhou: {exc}")
+
     async def execute(self, ctx: StepContext) -> None:
         scope_name = ctx.env_vars().get("secret_scope", "medallion-pipeline")
         w = workspace_client(ctx.credentials)
 
         await ctx.info(f"Garantindo secret scope '{scope_name}' no workspace")
+
+        def _scope_exists() -> bool:
+            return any(s.name == scope_name for s in w.secrets.list_scopes())
+
+        scope_pre_exists = await asyncio.to_thread(_scope_exists)
 
         def _ensure_scope() -> None:
             with contextlib.suppress(ResourceAlreadyExists):
@@ -51,6 +74,8 @@ class SecretsStep:
                 )
 
         await asyncio.to_thread(_ensure_scope)
+        if not scope_pre_exists:
+            ctx.shared.databricks_secret_scope_created = True
         await ctx.info("Scope ok — enviando secrets")
 
         env_vars = ctx.env_vars()

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Instruções para AI assistants (Claude Code, Codex, etc.) trabalhando neste repositório.
+Instruções para AI assistants (Claude Code, Codex, etc.) neste repo.
 
 ## Monorepo Structure
 
@@ -59,15 +59,15 @@ docs/                            — Análise arquitetural, specs
 
 ## Zero interdependência entre Observer Framework e Pipeline
 
-O `observer-framework/` e o `pipelines/pipeline-seguradora-whatsapp/` são **dois projetos Python independentes**:
+`observer-framework/` e `pipelines/pipeline-seguradora-whatsapp/` = **dois projetos Python independentes**:
 
-- O pipeline **não importa nada** do framework (nenhum `from observer import ...`)
-- O framework **não importa nada** do pipeline
-- O único ponto de contato é o workflow YAML: `deploy/create_workflow.py` adiciona uma task `observer_trigger` que referencia o notebook `observer-framework/notebooks/trigger_sentinel` via path absoluto no Databricks Repo
-- No cluster, os notebooks do observer-framework adicionam `/Workspace{repo_root}/observer-framework` ao `sys.path` para importar `observer`. Os notebooks do pipeline adicionam `/Workspace{repo_root}/pipelines/pipeline-seguradora-whatsapp` ao `sys.path` para importar `pipeline_lib`
-- **Nunca** adicione `from observer import ...` em código do pipeline. **Nunca** adicione lógica específica de seguro/WhatsApp no observer-framework
+- Pipeline **não importa nada** do framework (nenhum `from observer import ...`)
+- Framework **não importa nada** do pipeline
+- Único ponto de contato = workflow YAML: `deploy/create_workflow.py` adiciona task `observer_trigger` referenciando notebook `observer-framework/notebooks/trigger_sentinel` via path absoluto no Databricks Repo
+- No cluster, notebooks do observer-framework adicionam `/Workspace{repo_root}/observer-framework` ao `sys.path` para importar `observer`. Notebooks do pipeline adicionam `/Workspace{repo_root}/pipelines/pipeline-seguradora-whatsapp` ao `sys.path` para importar `pipeline_lib`
+- **Nunca** `from observer import ...` em código do pipeline. **Nunca** lógica específica de seguro/WhatsApp no observer-framework
 
-Isso permite extrair o `observer-framework/` como repositório Git standalone no futuro (o repo privado `RodrigoSiliunas/observer` já existe como placeholder).
+Permite extrair `observer-framework/` como repo Git standalone no futuro (repo privado `RodrigoSiliunas/observer` já existe como placeholder).
 
 ## Pipeline seguradora WhatsApp (pipelines/pipeline-seguradora-whatsapp/)
 
@@ -75,16 +75,16 @@ Pipeline Medallion autônomo: Bronze → Silver → Gold sobre conversas WhatsAp
 
 - **Plataforma**: Databricks Trial (AWS), Unity Catalog, Delta Lake
 - **Engine**: PySpark em cluster dedicado (m5d.large) — NÃO serverless
-- **Workspace**: Configurado via env var `DATABRICKS_HOST`
-- **Cluster ID**: Configurado via env var ou deploy script
+- **Workspace**: Via env var `DATABRICKS_HOST`
+- **Cluster ID**: Via env var ou deploy script
 - **Testes**: 91 testes (pytest), ruff lint
 - **Deploy**: Scripts em `pipelines/pipeline-seguradora-whatsapp/deploy/` usando `databricks-sdk`
 
 ### Arquitetura ETL
 
-O pipeline ETL é **puro** — zero lógica de agente/AI nos notebooks de dados.
-Cada camada faz **overwrite idempotente** — Delta Lake garante atomicidade, não há rollback.
-O Observer Agent é um **framework genérico separado** que funciona com qualquer workflow.
+Pipeline ETL **puro** — zero lógica de agente/AI nos notebooks de dados.
+Cada camada faz **overwrite idempotente** — Delta Lake garante atomicidade, sem rollback.
+Observer Agent = **framework genérico separado** que funciona com qualquer workflow.
 
 ```
 S3 (Parquet) → [pre_check] → [Bronze] → [Silver x3] → [Gold x12] → [Validation] → [observer_trigger*]
@@ -111,21 +111,21 @@ Via `dbutils.jobs.taskValues.set/get`. Widgets compartilhados: `catalog`, `scope
 
 - **Catalog**: `medallion` (schemas: bronze, silver, gold)
 - Cada notebook faz `overwrite` atômico via Delta Lake
-- **Sem rollback Delta** — como é overwrite idempotente, rodar de novo resolve qualquer falha parcial
-- `observer_trigger` dispara o `workflow_observer_agent` em caso de falha real no ETL
-- O Observer analisa o código, propõe correção e abre PR no GitHub — rollback não é necessário
+- **Sem rollback Delta** — overwrite idempotente, rodar de novo resolve falha parcial
+- `observer_trigger` dispara `workflow_observer_agent` em falha real no ETL
+- Observer analisa código, propõe correção, abre PR no GitHub — rollback desnecessário
 
 ### S3Lake
 
 Client S3 in-memory (`pipelines/pipeline-seguradora-whatsapp/pipeline_lib/storage/s3_client.py`):
-- Usa `dbutils.secrets` para credenciais AWS (multi-tenant ready)
+- `dbutils.secrets` para credenciais AWS (multi-tenant ready)
 - Leitura: S3 → BytesIO → pandas → Spark DataFrame
 - Escrita particionada em chunks de 50k linhas (evita OOM no driver)
 - NÃO usa DBFS (desabilitado em serverless)
 
 ## Observer Framework (observer-framework/)
 
-Framework genérico de observabilidade para qualquer workflow Databricks. Pacote Python `observer`, 113 testes, documentação completa em `observer-framework/docs/`. Para detalhes técnicos ver `observer-framework/README.md` e `observer-framework/docs/ARCHITECTURE.md`.
+Framework genérico de observabilidade para qualquer workflow Databricks. Pacote Python `observer`, 113 testes, docs completas em `observer-framework/docs/`. Detalhes técnicos em `observer-framework/README.md` e `observer-framework/docs/ARCHITECTURE.md`.
 
 ### Factory Pattern
 
@@ -140,7 +140,7 @@ from observer.providers import (
 - **LLM Providers**: AnthropicProvider (Claude Opus, streaming), OpenAIProvider (GPT-4o)
 - **Git Providers**: GitHubProvider (cria branch `fix/agent-auto-*` + PR para `dev`)
 - Registry via decorators: `@register_llm_provider("nome")`, `@register_git_provider("nome")`
-- Retry com exponential backoff (`@with_retry`) em todas as chamadas externas
+- Retry com exponential backoff (`@with_retry`) em todas chamadas externas
 
 ### WorkflowObserver
 
@@ -148,7 +148,7 @@ from observer.providers import (
 - `build_failure_from_run()` — extrai detalhes (triggered mode)
 - `collect_notebook_code()` — lê código via Workspace API (`w.workspace.export`)
 - `collect_schema_info()` — lê schema via Unity Catalog API (auto-discover schemas)
-- `build_context()` — monta contexto completo para o LLM
+- `build_context()` — monta contexto completo para LLM
 
 ## Platform Frontend (platform/frontend/)
 
@@ -178,13 +178,13 @@ from observer.providers import (
 ## CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): roda ruff + pytest em dois jobs separados — `observer-framework` e `pipeline-seguradora-whatsapp`. Job extra `validate-agent-pr` para branches `fix/*` e `feat/*` rodando ambos.
-- **CD** (`.github/workflows/cd.yml`): sincroniza o Databricks Repo com `main` automaticamente. Paths monitorados: `observer-framework/**` e `pipelines/**`. O Repo Databricks espelha o repo inteiro, então observer-framework e pipelines são atualizados atomicamente.
-- **Observer Feedback** (`.github/workflows/observer-feedback.yml`): GitHub Action chamada quando PRs `fix/agent-auto-*` são mergeados/fechados — executa `observer-framework/scripts/update_pr_feedback.py`.
+- **CD** (`.github/workflows/cd.yml`): sincroniza Databricks Repo com `main` automaticamente. Paths monitorados: `observer-framework/**` e `pipelines/**`. Repo Databricks espelha repo inteiro, observer-framework e pipelines atualizados atomicamente.
+- **Observer Feedback** (`.github/workflows/observer-feedback.yml`): GitHub Action chamada quando PRs `fix/agent-auto-*` mergeados/fechados — executa `observer-framework/scripts/update_pr_feedback.py`.
 - **Fluxo**: Observer cria PR para `dev` → CI valida → humano revisa → merge → dev → PR para main → CD deploya.
 
 ## Chaos Testing
 
-Injeção controlada de falhas para testar o agente AI end-to-end:
+Injeção controlada de falhas para testar agente AI end-to-end:
 
 ```bash
 python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema|silver_null|gold_divide_zero|validation_strict
@@ -207,7 +207,7 @@ Widget `chaos_mode` propagado via task values. Cada notebook ETL tem bloco condi
 
 ### Padrão de Notebooks Databricks
 
-1. **Header markdown** como primeira célula (`# MAGIC %md` com título, descrição, camada, output, data)
+1. **Header markdown** primeira célula (`# MAGIC %md` com título, descrição, camada, output, data)
 2. **DBTITLE** em TODA célula de código (`# DBTITLE 1,Nome`), NÃO em células %md separadas
 3. **Imports** na primeira célula de código: `from...import` primeiro (alfabético), depois `import` (alfabético)
 4. **SEM inline imports** — tudo no topo do notebook
@@ -243,33 +243,33 @@ Widget `chaos_mode` propagado via task values. Cada notebook ETL tem bloco condi
 
 ## Roadmap — Melhorias Aprovadas
 
-### Observer Agent (8 melhorias, em ordem de prioridade)
+### Observer Agent (8 melhorias, ordem de prioridade)
 
-1. **Trigger automático** — Webhook/task final do Databricks dispara Observer imediatamente ao invés de polling
+1. **Trigger automático** — Webhook/task final do Databricks dispara Observer na hora ao invés de polling
 2. **Observabilidade** — Tabela `observer.diagnostics` com timestamp, provider, modelo, tokens, confiança, PR URL, tempo de resolução + Dashboard SQL
 3. **Deduplicação de diagnósticos** — Cache via tabela Delta (hash do error message), evita PRs duplicados e gasto de tokens
-4. **Modo dry-run** — Widget `dry_run=true` que diagnostica mas NÃO cria PR, apenas loga
+4. **Modo dry-run** — Widget `dry_run=true` diagnostica mas NÃO cria PR, só loga
 5. **Configuração como código** — YAML/JSON no repo ao invés de widgets (llm_provider, model, git_provider, max_retries, etc.)
 6. **Validação pré-PR** — Rodar ruff + pytest no fix ANTES de criar PR, rejeitar fixes inválidos
 7. **Multi-file fixes** — LLM pode propor changes em N arquivos (GitProvider aceita lista de file_path/code)
-8. **Feedback loop** — Webhook do GitHub notifica quando PR é mergeado/fechado, atualiza tabela de diagnósticos
+8. **Feedback loop** — Webhook GitHub notifica quando PR mergeado/fechado, atualiza tabela de diagnósticos
 
 ### Confiança do Agente AI
 
-O nível de confiança atual é auto-avaliado pelo LLM (heurística).
+Nível de confiança atual = auto-avaliado pelo LLM (heurística).
 Melhoria futura: pipeline de validação pós-diagnóstico que roda testes unitários no fix antes de atribuir score numérico.
 
 ### Visão de Produto — One-Click Deploy
 
-O projeto evoluiu de teste técnico para produto real. Visão:
+Projeto evoluiu de teste técnico para produto real. Visão:
 - **Marketplace** de pipeline templates (WhatsApp seguros, SAP, CRM, ERP...)
 - **Deploy one-click**: conecta AWS + Databricks, escolhe template, configura envs, clica "Deploy"
-- **Terraform programático** + **Databricks SDK** criam toda a infra automaticamente
+- **Terraform programático** + **Databricks SDK** criam toda infra automaticamente
 - **Princípios**: atomicidade (saga pattern), idempotência (IF NOT EXISTS), versionamento de templates, multi-empresa
-- **Execução**: Celery async + SSE para progresso em tempo real no frontend
+- **Execução**: Celery async + SSE para progresso tempo real no frontend
 - **Tagging**: AWS + Databricks tags para governança e custos por pipeline/empresa/time
 
 ## GitHub
 
 - **Repo**: `RodrigoSiliunas/agentic-workflow-medallion-pipeline`
-- **Admin email**: Configurado no deploy
+- **Admin email**: Via deploy

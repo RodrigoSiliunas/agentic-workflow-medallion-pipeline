@@ -28,6 +28,23 @@ _UPLOAD_BASE = "/Shared/flowertex"
 class UploadStep:
     step_id = "upload"
 
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: deleta workspace path criado pelo upload (recursive)."""
+        if not ctx.shared.databricks_repo_created:
+            await ctx.info("compensate(upload): nada uploaded nesta saga — skip")
+            return
+        path = ctx.shared.repo_path
+        if not path:
+            return
+        w = workspace_client(ctx.credentials)
+        try:
+            await asyncio.to_thread(
+                lambda: w.workspace.delete(path=path, recursive=True)
+            )
+            await ctx.info(f"compensate(upload): {path} removido")
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate(upload) falhou: {exc}")
+
     async def execute(self, ctx: StepContext) -> None:
         github_repo = ctx.credentials.github_repo
         if not github_repo:
@@ -51,6 +68,7 @@ class UploadStep:
             f"Notebooks sincronizados: {count} arquivos em {workspace_path}"
         )
         ctx.shared.repo_path = workspace_path
+        ctx.shared.databricks_repo_created = True
 
     @staticmethod
     async def _fetch_tarball(repo: str, branch: str, token: str) -> bytes:
@@ -82,28 +100,27 @@ class UploadStep:
                     if len(parts) < 2:
                         continue
                     rel_path = parts[1]
-                    if not rel_path.endswith(".py"):
+                    if not (rel_path.endswith(".py") or rel_path.endswith(".yaml")):
                         continue
-                    # Apenas notebooks relevantes
-                    # Pipeline notebooks (executados pelo workflow)
                     pipe_notebook = (
                         "pipelines/" in rel_path and "/notebooks/" in rel_path
                     )
-                    # Observer notebooks
                     observer_notebook = "observer-framework/notebooks/" in rel_path
-                    # pipeline_lib/ (imported by pipeline notebooks via sys.path)
                     pipe_lib = (
                         "pipelines/" in rel_path and "/pipeline_lib/" in rel_path
                     )
-                    # observer/ module (imported by observer notebooks)
                     observer_lib = (
                         "observer-framework/observer/" in rel_path
+                    )
+                    pipe_config = (
+                        "pipelines/" in rel_path and "/config/" in rel_path
                     )
                     if not (
                         pipe_notebook
                         or observer_notebook
                         or pipe_lib
                         or observer_lib
+                        or pipe_config
                     ):
                         continue
                     f = tar.extractfile(member)
@@ -128,8 +145,12 @@ class UploadStep:
             # preserva .py pra Python import(). Notebooks executaveis
             # (com header '# Databricks notebook source') viram notebooks
             # sem extension.
-            is_module = "/pipeline_lib/" in rel_path or "/observer/" in rel_path
-            if is_module:
+            is_raw = (
+                "/pipeline_lib/" in rel_path
+                or "/observer/" in rel_path
+                or rel_path.endswith(".yaml")
+            )
+            if is_raw:
                 # Files API preserva .py + trata como raw file
                 ws_path = f"{workspace_base}/{rel_path}"
                 ws_dir = ws_path.rsplit("/", 1)[0]

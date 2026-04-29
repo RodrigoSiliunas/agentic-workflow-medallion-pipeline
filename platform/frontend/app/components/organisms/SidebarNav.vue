@@ -6,9 +6,10 @@
       borderColor: 'var(--border)',
     }"
   >
-    <!-- Workspace header -->
-    <div
-      class="px-4 py-4 flex items-center gap-2.5 border-b"
+    <!-- Workspace header — clicar leva pra /chat -->
+    <NuxtLink
+      to="/chat"
+      class="px-4 py-4 flex items-center gap-2.5 border-b transition-colors hover:bg-[var(--surface-elevated)]"
       :style="{ borderColor: 'var(--border)' }"
     >
       <SafaLogo variant="icon" :size="28" />
@@ -20,7 +21,7 @@
           Pipeline agent platform
         </p>
       </div>
-    </div>
+    </NuxtLink>
 
     <!-- Module switcher -->
     <div class="px-3 pt-3">

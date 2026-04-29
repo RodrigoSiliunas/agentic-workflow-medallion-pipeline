@@ -83,17 +83,21 @@ export const useDeploymentsStore = defineStore("deployments", () => {
   }
 
   // runSaga mantem isMock branching: SSE real e mock sao fluxos totalmente distintos.
+  // Status running = ja rodando na backend (ex: F5 da pagina) — nao kicka saga
+  // de novo, mas AINDA conecta SSE pra ver progress real.
   async function runSaga(deploymentId: string): Promise<void> {
     const deployment = getById(deploymentId)
     if (!deployment) return
-    if (deployment.status === "running" || deployment.status === "success") return
+    if (deployment.status === "success" || deployment.status === "failed" || deployment.status === "cancelled") return
 
     if (isMock.value) {
+      if (deployment.status === "running") return // mock nao tem reattach
       await runSagaMock(deployment)
       return
     }
 
-    // Backend real: connect SSE e atualiza state conforme os eventos chegam
+    // Backend real: connect SSE e atualiza state conforme os eventos chegam.
+    // Idempotente — se ja subscrito, skip (mas mantem subscriber ativo).
     const api = useDeploymentsApi()
     if (subscribers.has(deploymentId)) return // ja subscrito
 

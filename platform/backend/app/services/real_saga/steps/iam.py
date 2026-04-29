@@ -71,13 +71,14 @@ class IamStep:
     async def compensate(self, ctx: StepContext) -> None:
         """Rollback: deleta a role + inline policy se criadas nesta saga.
 
-        Tolera role ja ausente. NAO deleta role que foi reutilizada
-        (shared.databricks_role_arn setado sem passar pelo create path
-        se role ja existia — neste caso compensate faz skip).
+        Skip se aws_iam_role_created nao foi setado — significa que a role
+        ja existia antes (adopted) e nao deve ser removida.
         """
-        project_name = ctx.env_vars().get("project_name", "medallion-pipeline")
-        role_name = f"{project_name}{_DATABRICKS_ROLE_SUFFIX}"
+        if not ctx.shared.aws_iam_role_created:
+            await ctx.info("compensate(iam): role nao foi criada nesta saga — skip")
+            return
 
+        role_name = ctx.shared.aws_iam_role_created.rsplit("/", 1)[-1]
         session = boto3_session(ctx.credentials)
         iam = session.client("iam")
 
@@ -131,6 +132,7 @@ class IamStep:
         await ctx.info("Role nao encontrada — criando via boto3 (trust bootstrap)...")
         arn = await self._create_role(ctx, role_name)
         ctx.shared.databricks_role_arn = arn
+        ctx.shared.aws_iam_role_created = arn
         await ctx.success(
             f"Role criada: {arn} (trust sem Condition — catalog step atualiza com external_id)"
         )

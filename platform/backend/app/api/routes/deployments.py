@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import AuthContext, get_current_user
 from app.database.session import get_db
 from app.models.deployment import Deployment, DeploymentLog, DeploymentStep
+from app.models.pipeline import Pipeline
 from app.models.template import Template
 from app.schemas.deployment import (
     DeploymentCreateRequest,
@@ -171,12 +172,30 @@ async def create_deployment(
             merged_env["admin_email"] = adv.admin_email
         if adv.metastore_id:
             merged_env["databricks_metastore_id"] = adv.metastore_id
+        if adv.cluster_name:
+            merged_env["cluster_name"] = adv.cluster_name
         if adv.cluster_node_type:
             merged_env["cluster_node_type"] = adv.cluster_node_type
+        if adv.cluster_driver_node_type:
+            merged_env["cluster_driver_node_type"] = adv.cluster_driver_node_type
         if adv.cluster_num_workers is not None:
             merged_env["cluster_num_workers"] = str(adv.cluster_num_workers)
         if adv.cluster_spark_version:
             merged_env["cluster_spark_version"] = adv.cluster_spark_version
+        if adv.cluster_autoscale_min is not None:
+            merged_env["cluster_autoscale_min"] = str(adv.cluster_autoscale_min)
+        if adv.cluster_autoscale_max is not None:
+            merged_env["cluster_autoscale_max"] = str(adv.cluster_autoscale_max)
+        if adv.cluster_autotermination_min is not None:
+            merged_env["cluster_autotermination_min"] = str(adv.cluster_autotermination_min)
+        if adv.cluster_policy_id:
+            merged_env["cluster_policy_id"] = adv.cluster_policy_id
+        if adv.cluster_policy_definition:
+            merged_env["cluster_policy_definition"] = adv.cluster_policy_definition
+        if adv.cluster_tags:
+            # serializa como JSON pra preservar dict no env_vars (que e flat str)
+            import json
+            merged_env["cluster_tags"] = json.dumps(adv.cluster_tags)
         if adv.observer_llm_provider:
             merged_env["observer_llm_provider"] = adv.observer_llm_provider
         if adv.observer_llm_model:
@@ -248,13 +267,21 @@ async def delete_deployment(
     auth: AuthContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Exclui um deployment e seus steps/logs (CASCADE).
+    """Exclui um deployment e seus steps/logs (CASCADE) + pipeline associada.
 
     Se o deployment esta running, cancela a saga primeiro.
+    Pipeline tem CASCADE em threads e messages — apaga em cadeia.
     """
     deployment = await _load_owned(db, deployment_id, auth.company_id)
     if deployment.status in ("pending", "running"):
         request_cancel(str(deployment_id))
+
+    # Pipeline NAO tem FK back-ref no Deployment (pipeline_id e somente forward),
+    # entao precisa apagar manualmente. Threads/messages cascateiam via FK ondelete.
+    if deployment.pipeline_id:
+        pipeline = await db.get(Pipeline, deployment.pipeline_id)
+        if pipeline and pipeline.company_id == auth.company_id:
+            await db.delete(pipeline)
 
     # CASCADE: deployment_steps + deployment_logs sao deletados pelo FK ondelete
     await db.delete(deployment)

@@ -44,6 +44,36 @@ def _resolve_project(ctx: StepContext) -> str:
 class CatalogStep:
     step_id = "catalog"
 
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: drop catalog + storage credential + external location SE criados.
+
+        DROP CATALOG cascateia schemas — saga falha rollback acontece antes de
+        qualquer write de dados, entao seguro. Skip se catalog ja existia.
+        """
+        if not ctx.shared.databricks_catalog_created:
+            await ctx.info("compensate(catalog): catalog nao foi criado — skip")
+            return
+        catalog_name = ctx.shared.catalog
+        if not catalog_name:
+            return
+        w = workspace_client(ctx.credentials)
+        try:
+            def _drop() -> None:
+                w.catalogs.delete(name=catalog_name, force=True)
+                cred = ctx.shared.databricks_storage_credential
+                loc = ctx.shared.databricks_external_location
+                if loc:
+                    w.external_locations.delete(name=loc, force=True)
+                if cred:
+                    w.storage_credentials.delete(name=cred, force=True)
+
+            await asyncio.to_thread(_drop)
+            await ctx.info(
+                f"compensate(catalog): catalog {catalog_name} + UC objects removidos"
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate(catalog) falhou: {exc}")
+
     async def execute(self, ctx: StepContext) -> None:
         catalog = ctx.env_vars().get("catalog", "medallion")
         if not _IDENTIFIER_RE.match(catalog):
@@ -186,10 +216,10 @@ class CatalogStep:
         catalog: str,
         managed_location: str | None = None,
     ) -> None:
-        def _ensure() -> None:
+        def _ensure() -> bool:
             existing = [c for c in w.catalogs.list() if c.name == catalog]
             if existing:
-                return
+                return False
             kwargs: dict = {
                 "name": catalog,
                 "comment": "Flowertex platform — medallion pipeline",
@@ -197,8 +227,11 @@ class CatalogStep:
             if managed_location:
                 kwargs["storage_root"] = managed_location
             w.catalogs.create(**kwargs)
+            return True
 
-        await asyncio.to_thread(_ensure)
+        was_created = await asyncio.to_thread(_ensure)
+        if was_created:
+            ctx.shared.databricks_catalog_created = True
 
     @staticmethod
     async def _ensure_storage_credential(

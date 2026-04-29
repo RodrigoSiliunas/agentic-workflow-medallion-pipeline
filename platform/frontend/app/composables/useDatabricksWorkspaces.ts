@@ -52,7 +52,7 @@ export function useDatabricksWorkspaces() {
       const resp = await api.get<{
         oauth_configured: boolean
         workspaces: DatabricksWorkspaceSummary[]
-      }>("/api/v1/databricks/workspaces")
+      }>("/databricks/workspaces")
       oauthConfigured.value = resp.oauth_configured
       workspaces.value = resp.workspaces || []
     } catch (e) {
@@ -68,7 +68,7 @@ export function useDatabricksWorkspaces() {
     workspaceId: number,
   ): Promise<DatabricksWorkspaceConfig> {
     return api.get<DatabricksWorkspaceConfig>(
-      `/api/v1/databricks/workspaces/${workspaceId}/config`,
+      `/databricks/workspaces/${workspaceId}/config`,
     )
   }
 
@@ -77,7 +77,7 @@ export function useDatabricksWorkspaces() {
     const resp = await api.get<{
       oauth_configured: boolean
       metastores: DatabricksMetastore[]
-    }>("/api/v1/databricks/metastores", params)
+    }>("/databricks/metastores", params)
     return resp.metastores || []
   }
 

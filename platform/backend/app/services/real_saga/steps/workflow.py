@@ -47,6 +47,19 @@ def _to_quartz_cron(cron: str) -> str:
 class WorkflowStep:
     step_id = "workflow"
 
+    async def compensate(self, ctx: StepContext) -> None:
+        """Rollback: deleta workflow job se foi criado nesta saga."""
+        job_id = ctx.shared.workflow_job_id
+        if not job_id:
+            await ctx.info("compensate(workflow): job nao foi criado — skip")
+            return
+        w = workspace_client(ctx.credentials)
+        try:
+            await asyncio.to_thread(lambda: w.jobs.delete(job_id=job_id))
+            await ctx.info(f"compensate(workflow): job {job_id} removido")
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"compensate(workflow) falhou: {exc}")
+
     @staticmethod
     async def _auto_detect_cluster(ctx: StepContext) -> str:
         """Auto-detecta o primeiro cluster disponivel no workspace.

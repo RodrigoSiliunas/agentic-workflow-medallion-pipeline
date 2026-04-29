@@ -197,6 +197,99 @@ async def get_workspace_config(
     }
 
 
+@router.get("/node-types")
+async def list_node_types(
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista node types suportados pelo workspace alvo.
+
+    Workspace tier (Premium/Enterprise) + region restringe lista. Frontend
+    filtra catalogo curado contra essa lista pra evitar oferecer t-series
+    em workspace Premium (ex: deploy fail "node type not supported").
+    """
+    svc = CredentialService(db)
+    host = await svc.get_decrypted(auth.company_id, "databricks_host")
+    token = await svc.get_decrypted(auth.company_id, "databricks_token")
+    if not host or not token:
+        return {"workspace_configured": False, "node_types": []}
+
+    async with httpx.AsyncClient(timeout=15.0) as c:
+        try:
+            resp = await c.get(
+                f"{host.rstrip('/')}/api/2.0/clusters/list-node-types",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("node-types fetch failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Databricks list-node-types erro: {exc}",
+            ) from exc
+        node_types = resp.json().get("node_types", []) or []
+
+    return {
+        "workspace_configured": True,
+        "node_types": [
+            {
+                "node_type_id": n.get("node_type_id"),
+                "memory_mb": n.get("memory_mb"),
+                "num_cores": n.get("num_cores"),
+                "category": n.get("category"),
+                "instance_type_id": (n.get("instance_type_id") or {}),
+            }
+            for n in node_types
+        ],
+    }
+
+
+@router.get("/policies")
+async def list_cluster_policies(
+    auth: AuthContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista cluster policies do workspace alvo.
+
+    Policies sao workspace-level (nao account). Usa databricks_host +
+    databricks_token das company credentials. Se faltar host/token,
+    retorna 200 com lista vazia + flag.
+    """
+    svc = CredentialService(db)
+    host = await svc.get_decrypted(auth.company_id, "databricks_host")
+    token = await svc.get_decrypted(auth.company_id, "databricks_token")
+    if not host or not token:
+        return {"workspace_configured": False, "policies": []}
+
+    async with httpx.AsyncClient(timeout=15.0) as c:
+        try:
+            resp = await c.get(
+                f"{host.rstrip('/')}/api/2.0/policies/clusters/list",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("policies fetch failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Databricks policies API erro: {exc}",
+            ) from exc
+        policies = resp.json().get("policies", []) or []
+
+    return {
+        "workspace_configured": True,
+        "policies": [
+            {
+                "policy_id": p.get("policy_id"),
+                "name": p.get("name"),
+                "description": p.get("description"),
+                "definition": p.get("definition"),
+            }
+            for p in policies
+        ],
+    }
+
+
 @router.get("/metastores")
 async def list_metastores(
     region: str | None = None,

@@ -26,12 +26,32 @@ export interface WorkspaceAdvancedConfig {
   networkCidr?: string
   adminEmail?: string
   metastoreId?: string
-  /** Node type AWS (ex m5d.large, m5d.xlarge). Default backend = m5d.large. */
+  /** Cluster reuse strategy: "existing" usa clusterId, "new" cria com nodeType + workers. */
+  clusterMode?: "existing" | "new"
+  /** existing mode: id do cluster ja running no workspace. */
+  clusterId?: string
+  /** Custom name; default = "medallion-pipeline". */
+  clusterName?: string
+  /** Worker node type AWS (ex m5d.large, m5d.xlarge). Default = m5d.large. */
   clusterNodeType?: string
-  /** Numero de workers fixos. Default = 2. */
+  /** Driver node type AWS — separado pra otimizar custos. Default = mesmo do worker. */
+  clusterDriverNodeType?: string
+  /** Numero de workers fixos. Ignorado se autoscale set. Default = 2. */
   clusterNumWorkers?: number
+  /** Autoscale min workers. Sobrepoe num_workers. */
+  clusterAutoscaleMin?: number
+  /** Autoscale max workers. Sobrepoe num_workers. */
+  clusterAutoscaleMax?: number
+  /** Auto-terminate idle minutes. Default = 30. */
+  clusterAutoterminationMin?: number
   /** Versao Databricks Runtime (ex 15.4.x-scala2.12). Default = 15.4 LTS. */
   clusterSparkVersion?: string
+  /** Cluster policy id (force allowlist + max workers + ttl). */
+  clusterPolicyId?: string
+  /** Cluster policy JSON definition — saga registra no workspace. */
+  clusterPolicyDefinition?: string
+  /** Custom tags propagadas pra AWS billing + Databricks usage. */
+  clusterTags?: Record<string, string>
   /** Observer Agent LLM provider (anthropic/openai/google). Vazio = default empresa. */
   observerLlmProvider?: string
   /** Observer Agent model id literal (ex claude-opus-4-7). Vazio = default empresa. */

@@ -9,23 +9,34 @@ from pydantic import BaseModel, ConfigDict, Field
 class WorkspaceAdvancedConfig(BaseModel):
     """Config opcional do workspace exposta na aba "Avançado" do wizard.
 
-    Campos default-derivados — usuario casual nao precisa preencher nada:
-    - root_bucket: default `{s3_bucket}-root`
-    - network_cidr: default 10.0.0.0/16
-    - admin_email: default administrator@idlehub.com.br
-    - metastore_id: default = auto-discover por regiao via Account API
-    - cluster_node_type: default m5d.large (ver useClusterTypes catalog)
-    - cluster_num_workers: default 2
-    - cluster_spark_version: default 15.4 LTS
+    Campos default-derivados — usuario casual nao precisa preencher nada.
+    Cluster sizing respeita driver/worker separados, autoscale opcional,
+    policy enforcement e custom tags pra billing tracking.
     """
 
     root_bucket: str | None = None
     network_cidr: str | None = None
     admin_email: str | None = None
     metastore_id: str | None = None
+    # Cluster identity
+    cluster_name: str | None = None
+    # Cluster sizing — node_type aplica a worker; driver_node_type opcional
+    # (None = mesmo tipo do worker)
     cluster_node_type: str | None = None
+    cluster_driver_node_type: str | None = None
     cluster_num_workers: int | None = None
     cluster_spark_version: str | None = None
+    # Autoscale (se min/max set, sobrepõe num_workers)
+    cluster_autoscale_min: int | None = None
+    cluster_autoscale_max: int | None = None
+    cluster_autotermination_min: int | None = None
+    # Policy enforcement (force allowlist + max workers + ttl)
+    cluster_policy_id: str | None = None
+    # Policy custom JSON — saga registra no workspace + atrela ao cluster.
+    # Mutuamente exclusivo com cluster_policy_id (custom tem precedencia).
+    cluster_policy_definition: str | None = None
+    # Custom tags propagadas pra AWS billing + Databricks usage
+    cluster_tags: dict[str, str] | None = None
     # Observer Agent LLM override (per-pipeline). Sem isso, usa default
     # da empresa (company.preferred_provider/model).
     observer_llm_provider: str | None = None

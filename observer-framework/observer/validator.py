@@ -288,13 +288,32 @@ def validate_fix(code: str, file_path: str) -> ValidationResult:
         result.add_error("fix vazio")
         return result
 
-    # 1) Syntax check (sempre)
-    result.checks_run.append("syntax")
-    for err in _check_syntax(code, file_path):
-        result.add_error(err)
+    # 1) Syntax check (Python apenas — YAML/JSON/TOML usam parsers proprios)
+    if file_path.endswith(".yaml") or file_path.endswith(".yml"):
+        result.checks_run.append("yaml")
+        try:
+            import yaml as _yaml
+            _yaml.safe_load(code)
+        except Exception as exc:  # noqa: BLE001
+            result.add_error(f"YAMLError: {exc}")
+    elif file_path.endswith(".json"):
+        result.checks_run.append("json")
+        try:
+            import json as _json
+            _json.loads(code)
+        except Exception as exc:  # noqa: BLE001
+            result.add_error(f"JSONError: {exc}")
+    else:
+        result.checks_run.append("syntax")
+        for err in _check_syntax(code, file_path):
+            result.add_error(err)
 
     # Se a sintaxe ja falhou, nao vale rodar ruff
     if not result.valid:
+        return result
+
+    # Non-Python: skip Python-specific checks (forbidden imports, ruff)
+    if not file_path.endswith(".py"):
         return result
 
     # 2) Import/call allowlist (sempre, depois de sintaxe valida)

@@ -62,6 +62,9 @@ docs/*
 !docs/self_hosted_llm.md
 conductor/
 
+# Documentação pessoal não-técnica (Word/PPT/diagramas, fora do versionamento).
+docs-pessoal/
+
 # Design system repo (submodule/reference)
 platform/design/
 

@@ -58,6 +58,29 @@ class WorkspaceProvisionStep:
                 raise RuntimeError(
                     "workspace_mode=existing exige workspace_id no env_vars"
                 )
+            # Fallback sem OAuth: usuario digitou workspace_id + host manualmente
+            # no wizard. Pula introspect Account API, hidrata shared state com
+            # o que tiver. Steps subsequentes (catalog/cluster/upload) usam PAT
+            # workspace-level direto.
+            if not all([account_id, oauth_client_id, oauth_secret]):
+                workspace_host = ctx.credentials.databricks_host or ""
+                if not workspace_host:
+                    raise RuntimeError(
+                        "workspace_mode=existing sem OAuth M2M precisa "
+                        "databricks_host nas credentials (digite manualmente "
+                        "no wizard ou configure em /settings)"
+                    )
+                if not ctx.credentials.databricks_token:
+                    raise RuntimeError(
+                        "workspace_mode=existing sem OAuth precisa de PAT "
+                        "(databricks_token) nas credentials"
+                    )
+                ctx.shared.databricks_workspace_id = int(ws_id)
+                ctx.shared.databricks_workspace_host = workspace_host
+                await ctx.success(
+                    f"Workspace existente adotado (modo manual): {workspace_host}"
+                )
+                return
             await self._adopt_existing_workspace(
                 ctx, account_id, oauth_client_id, oauth_secret, ws_id,
             )

@@ -140,7 +140,37 @@
           </p>
 
           <!-- Workspace selection (radio existing/new) — pre-empts main fields -->
-          <WorkspacePicker @update:state="onWorkspaceState" />
+          <WorkspacePicker
+            :host-from-settings="isCompanyConfigured('databricks_host')"
+            @update:state="onWorkspaceState"
+          />
+
+          <!-- Cluster selection (existing ID vs criar novo) -->
+          <div class="pt-2 border-t" :style="{ borderColor: 'var(--border)' }">
+            <h3 class="text-xs font-semibold mb-1" :style="{ color: 'var(--text-primary)' }">
+              Cluster do pipeline
+            </h3>
+            <p class="text-[11px] mb-2" :style="{ color: 'var(--text-tertiary)' }">
+              Workspace pode ter N clusters. Escolha existente por ID ou cria novo
+              dimensionado pra esta pipeline.
+            </p>
+            <ClusterPicker
+              :initial-mode="config.advanced?.clusterMode"
+              :initial-cluster-id="config.advanced?.clusterId"
+              :initial-cluster-name="config.advanced?.clusterName"
+              :initial-node-type="config.advanced?.clusterNodeType"
+              :initial-driver-node-type="config.advanced?.clusterDriverNodeType"
+              :initial-num-workers="config.advanced?.clusterNumWorkers"
+              :initial-autoscale-min="config.advanced?.clusterAutoscaleMin"
+              :initial-autoscale-max="config.advanced?.clusterAutoscaleMax"
+              :initial-spark-version="config.advanced?.clusterSparkVersion"
+              :initial-autotermination-min="config.advanced?.clusterAutoterminationMin"
+              :initial-policy-id="config.advanced?.clusterPolicyId"
+              :initial-policy-definition="config.advanced?.clusterPolicyDefinition"
+              :initial-tags="config.advanced?.clusterTags"
+              @update:state="onClusterState"
+            />
+          </div>
 
           <!-- Main fields -->
           <AppInput
@@ -192,22 +222,6 @@
                 :helper="envVar.helper"
                 @update:model-value="(v: string) => (config.envVars[envVar.key] = v)"
               />
-
-              <!-- Cluster sizing -->
-              <div
-                class="pt-3 border-t"
-                :style="{ borderColor: 'var(--border)' }"
-              >
-                <h4 class="text-xs font-semibold mb-2" :style="{ color: 'var(--text-primary)' }">
-                  Cluster do pipeline (driver + workers)
-                </h4>
-                <ClusterPicker
-                  :initial-node-type="config.advanced?.clusterNodeType"
-                  :initial-num-workers="config.advanced?.clusterNumWorkers"
-                  :initial-spark-version="config.advanced?.clusterSparkVersion"
-                  @update:state="onClusterState"
-                />
-              </div>
 
               <!-- Observer LLM override -->
               <div
@@ -427,13 +441,18 @@ const config = reactive<DeploymentConfig>({
   advanced: undefined,
 })
 
-// Particiona envSchema entre main + advanced. Default group="main" pra
-// retro-compat com templates antigos sem essa metadata.
+// Filtra envSchema:
+// - omite cluster_id (ja vem do ClusterPicker, evita duplicacao + auto-detect surprise)
+// - particiona main vs advanced (default group="main" pra retro-compat com templates antigos)
+const PICKER_HANDLED_KEYS = new Set(["cluster_id"])
+const filteredSchema = computed(() =>
+  props.template.envSchema.filter((e) => !PICKER_HANDLED_KEYS.has(e.key)),
+)
 const mainFields = computed(() =>
-  props.template.envSchema.filter((e) => (e.group ?? "main") !== "advanced"),
+  filteredSchema.value.filter((e) => (e.group ?? "main") !== "advanced"),
 )
 const advancedFields = computed(() =>
-  props.template.envSchema.filter((e) => e.group === "advanced"),
+  filteredSchema.value.filter((e) => e.group === "advanced"),
 )
 
 interface WorkspacePickerEvent {
@@ -448,17 +467,65 @@ interface WorkspacePickerEvent {
 }
 
 interface ClusterStateEvent {
-  nodeType: string
-  numWorkers: number
-  sparkVersion: string
+  mode: "existing" | "new"
+  clusterId?: string
+  clusterName?: string
+  driverNodeType?: string
+  workerNodeType?: string
+  numWorkers?: number
+  autoscaleMin?: number
+  autoscaleMax?: number
+  sparkVersion?: string
+  autoterminationMin?: number
+  policyId?: string
+  policyDefinition?: string
+  tags?: Record<string, string>
 }
 
 function onClusterState(state: ClusterStateEvent) {
-  config.advanced = {
-    ...(config.advanced || {}),
-    clusterNodeType: state.nodeType,
-    clusterNumWorkers: state.numWorkers,
-    clusterSparkVersion: state.sparkVersion,
+  if (state.mode === "existing") {
+    config.advanced = {
+      ...(config.advanced || {}),
+      clusterMode: "existing",
+      clusterId: state.clusterId,
+      // limpa fields do new mode pra evitar mismatch
+      clusterName: undefined,
+      clusterNodeType: undefined,
+      clusterDriverNodeType: undefined,
+      clusterNumWorkers: undefined,
+      clusterAutoscaleMin: undefined,
+      clusterAutoscaleMax: undefined,
+      clusterSparkVersion: undefined,
+      clusterAutoterminationMin: undefined,
+      clusterPolicyId: undefined,
+      clusterPolicyDefinition: undefined,
+      clusterTags: undefined,
+    }
+    // Backend cluster_provision le env["cluster_id"] direto. Espelha aqui pra
+    // saga pegar mesmo se advanced.clusterId nao for proxiado.
+    if (state.clusterId) {
+      config.envVars.cluster_id = state.clusterId
+    } else {
+      delete config.envVars.cluster_id
+    }
+  } else {
+    config.advanced = {
+      ...(config.advanced || {}),
+      clusterMode: "new",
+      clusterId: undefined,
+      clusterName: state.clusterName,
+      clusterNodeType: state.workerNodeType,
+      clusterDriverNodeType: state.driverNodeType,
+      clusterNumWorkers: state.numWorkers,
+      clusterAutoscaleMin: state.autoscaleMin,
+      clusterAutoscaleMax: state.autoscaleMax,
+      clusterSparkVersion: state.sparkVersion,
+      clusterAutoterminationMin: state.autoterminationMin,
+      clusterPolicyId: state.policyId,
+      clusterPolicyDefinition: state.policyDefinition,
+      clusterTags: state.tags,
+    }
+    delete config.envVars.cluster_id
   }
 }
 
