@@ -49,16 +49,13 @@ class TestClusterSizingOverride:
         """Sem cluster_node_type -> defaults pra m5d.large + 2 workers."""
         captured: dict = {}
 
-        async def fake_ensure(
-            ctx, w, scope, region, admin_email,
-            node_type="m5d.large",
-            num_workers=2,
-            spark_version="15.4.x-scala2.12",
-        ):
-            captured["node_type"] = node_type
-            captured["num_workers"] = num_workers
-            captured["spark_version"] = spark_version
-            return "fake-cluster-id"
+        async def fake_ensure(ctx, w, scope, region, admin_email, **kwargs):
+            captured["node_type"] = kwargs.get("node_type", "m5d.large")
+            captured["num_workers"] = kwargs.get("num_workers", 2)
+            captured["spark_version"] = kwargs.get(
+                "spark_version", "15.4.x-scala2.12"
+            )
+            return ("fake-cluster-id", True)
 
         monkeypatch.setattr(
             ClusterProvisionStep, "_ensure_cluster", staticmethod(fake_ensure)
@@ -81,16 +78,13 @@ class TestClusterSizingOverride:
         """env_vars custom propagados pra _ensure_cluster."""
         captured: dict = {}
 
-        async def fake_ensure(
-            ctx, w, scope, region, admin_email,
-            node_type="m5d.large",
-            num_workers=2,
-            spark_version="15.4.x-scala2.12",
-        ):
-            captured["node_type"] = node_type
-            captured["num_workers"] = num_workers
-            captured["spark_version"] = spark_version
-            return "fake-cluster-id"
+        async def fake_ensure(ctx, w, scope, region, admin_email, **kwargs):
+            captured["node_type"] = kwargs.get("node_type", "m5d.large")
+            captured["num_workers"] = kwargs.get("num_workers", 2)
+            captured["spark_version"] = kwargs.get(
+                "spark_version", "15.4.x-scala2.12"
+            )
+            return ("fake-cluster-id", True)
 
         monkeypatch.setattr(
             ClusterProvisionStep, "_ensure_cluster", staticmethod(fake_ensure)
@@ -117,14 +111,9 @@ class TestClusterSizingOverride:
         """num_workers nao-int -> default 2 (resiliente a input ruim)."""
         captured: dict = {}
 
-        async def fake_ensure(
-            ctx, w, scope, region, admin_email,
-            node_type="m5d.large",
-            num_workers=2,
-            spark_version="15.4.x-scala2.12",
-        ):
-            captured["num_workers"] = num_workers
-            return "fake-cluster-id"
+        async def fake_ensure(ctx, w, scope, region, admin_email, **kwargs):
+            captured["num_workers"] = kwargs.get("num_workers", 2)
+            return ("fake-cluster-id", True)
 
         monkeypatch.setattr(
             ClusterProvisionStep, "_ensure_cluster", staticmethod(fake_ensure)
