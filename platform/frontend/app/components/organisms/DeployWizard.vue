@@ -63,6 +63,9 @@
                 {{ env.label }}
               </button>
             </div>
+            <p class="mt-1.5 text-xs" :style="{ color: 'var(--text-tertiary)' }">
+              {{ envHint }}
+            </p>
           </div>
           <AppInput
             v-model="tagsText"
@@ -416,6 +419,14 @@ const environments: Array<{ value: "dev" | "staging" | "prod"; label: string }> 
   { value: "staging", label: "Staging" },
   { value: "prod", label: "Prod" },
 ]
+
+const envHint = computed(() => {
+  const env = config.environment
+  if (env === "prod") {
+    return "catalog=medallion · scope=medallion-pipeline · cluster=medallion-pipeline"
+  }
+  return `catalog=medallion_${env} · scope=medallion-pipeline-${env} · cluster=medallion-pipeline-${env}`
+})
 
 const currentStep = ref(0)
 const confirmed = ref(false)

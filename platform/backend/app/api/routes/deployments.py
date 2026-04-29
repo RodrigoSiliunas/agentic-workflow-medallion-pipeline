@@ -194,6 +194,16 @@ async def create_deployment(
         if adv.cluster_tags:
             merged_env["cluster_tags"] = json.dumps(adv.cluster_tags)
 
+    # Environment isolation: dev/staging usam catalog + secret scope com sufixo
+    # pra coexistir com prod no mesmo workspace. Evita colisao entre deploys
+    # paralelos do mesmo template. User pode override via advanced.env_vars.
+    env_name = data.config.environment
+    if env_name in ("dev", "staging"):
+        merged_env.setdefault("catalog", f"medallion_{env_name}")
+        merged_env.setdefault("secret_scope", f"medallion-pipeline-{env_name}")
+        merged_env.setdefault("cluster_name", f"medallion-pipeline-{env_name}")
+    # prod: defaults inalterados (catalog=medallion, scope=medallion-pipeline)
+
     deployment = Deployment(
         company_id=auth.company_id,
         user_id=auth.user_id,
