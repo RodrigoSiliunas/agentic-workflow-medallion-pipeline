@@ -12,7 +12,6 @@ import asyncio
 import base64
 import io
 import tarfile
-from pathlib import Path
 
 import httpx
 from databricks.sdk.service.workspace import ImportFormat, Language

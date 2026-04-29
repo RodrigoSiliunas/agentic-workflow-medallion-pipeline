@@ -237,7 +237,7 @@ class ClusterProvisionStep:
             str, str | None, str | None, int | None, str | None,
             int | None, int | None, dict[str, str] | None,
         ]:
-            """Retorna (id, node, driver_node, workers, spark, autoscale_min, autoscale_max, tags)."""
+            """Retorna (id, node, driver_node, workers, spark, autoscale_min/max, tags)."""
             for c in w.clusters.list():
                 if (c.cluster_name or "").lower() == cluster_name.lower():
                     autosc = c.autoscale
@@ -306,7 +306,7 @@ class ClusterProvisionStep:
 
             await asyncio.to_thread(_edit)
             await ctx.info(
-                f"Cluster reconfigurado (restart automatico, ~2min)"
+                "Cluster reconfigurado (restart automatico, ~2min)"
             )
             # Edit nao "criou" — adopted+modified. Compensate NAO deve deletar.
             return existing_id, False

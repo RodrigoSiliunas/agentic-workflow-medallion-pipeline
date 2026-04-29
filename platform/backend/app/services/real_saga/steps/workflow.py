@@ -10,6 +10,8 @@ A sentinel task depende de TODAS as tasks ETL com `run_if=AT_LEAST_ONE_FAILED`
 
 from __future__ import annotations
 
+import asyncio
+
 from databricks.sdk.service.jobs import (
     CronSchedule,
     JobEmailNotifications,

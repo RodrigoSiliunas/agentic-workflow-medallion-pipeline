@@ -166,9 +166,8 @@ class IamStep:
         # Policy UC pattern: S3 access + sts:AssumeRole self-reference.
         # Self-assuming exige BOTH trust policy principal self-ref E
         # inline allow sts:AssumeRole na propria role (esse statement).
-        account_id = ctx.credentials.aws_access_key_id  # placeholder — precisa real
-        # Na verdade role_arn sera construido abaixo apos create; aqui
-        # usamos wildcard controlado: role name na inline policy.
+        # Wildcard controlado pelo role_name na inline policy — role_arn
+        # real e construido apos o create.
         role_arn_for_self = f"arn:aws:iam::*:role/{role_name}"
 
         s3_policy = {
