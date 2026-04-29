@@ -44,14 +44,59 @@ MSG_EMAIL_NOT_FOUND = (
     "Verifique se digitou corretamente ou crie uma conta em nosso site primeiro."
 )
 MSG_LINKED = (
-    "Conta vinculada com sucesso! Bem-vindo(a), {name}.\n\n"
-    "Agora voce pode usar o chat como se estivesse na plataforma.\n"
-    "Digite /help para ver os comandos disponiveis."
+    "*Conta vinculada com sucesso!*\n"
+    "Bem-vindo(a), {name}.\n\n"
+    "Sou o assistente conversacional do *Flowertex*. Posso te dar status de "
+    "pipelines, ler logs, consultar tabelas Delta, abrir PRs no GitHub e "
+    "executar runs no Databricks — direto do WhatsApp.\n\n"
+    "*Comandos disponiveis:*\n"
+    "• `/pipelines` — lista os pipelines da sua empresa\n"
+    "• `/resume <pipeline>` — entra no contexto de um pipeline pra fazer perguntas\n"
+    "    Ex.: `/resume seguradora-whatsapp`\n"
+    "• `/resume <pipeline> <uuid>` — retoma uma conversa anterior\n"
+    "• `/new <pipeline>` — comeca uma conversa nova\n"
+    "• `/status` — status do pipeline ativo (ultima run, falhas, duracao)\n"
+    "• `/threads` — lista suas conversas recentes\n"
+    "• `/model <opus|sonnet|haiku>` — troca o modelo Claude\n"
+    "• `/whoami` — pipeline + thread atualmente ativos\n"
+    "• `/help` — esta ajuda\n\n"
+    "*Sem comando, eu respondo conversacionalmente* — pergunte coisas como:\n"
+    "• \"qual o status do pipeline?\"\n"
+    "• \"qual foi a ultima correcao automatica?\"\n"
+    "• \"quantas linhas tem na bronze?\"\n"
+    "• \"por que a run de ontem falhou?\"\n\n"
+    "*Sugestao pra comecar:* digite `/pipelines` agora pra ver o que esta "
+    "disponivel, depois `/resume <nome>` pra escolher um."
 )
-MSG_NO_PIPELINE = (
+MSG_NO_PIPELINE_NONE_DEPLOYED = (
     "Voce ainda nao tem nenhum pipeline implantado.\n"
     "Crie um deploy na plataforma web primeiro, depois volte aqui."
 )
+MSG_PIPELINE_HINT = (
+    "Voce tem pipeline(s) disponiveis mas nenhum ativo nesta conversa.\n"
+    "Vou te ajudar com perguntas gerais sobre Databricks/Spark/Delta, mas pra "
+    "consultar dados especificos de um pipeline preciso que voce escolha:\n\n"
+    "{pipelines}\n\n"
+    "Use `/resume <nome>` pra ativar um pipeline."
+)
+NO_PIPELINE_SYSTEM_PROMPT = """Voce e o assistente conversacional do Flowertex Platform respondendo via canal externo (WhatsApp/Discord/Telegram).
+
+CONTEXTO IMPORTANTE: o usuario *nao tem pipeline ativo* na sessao atual. Pipelines disponiveis na conta dele:
+{pipelines_list}
+
+REGRAS RIGIDAS:
+1. Responda em portugues brasileiro (pt-BR), conciso, com markdown leve.
+2. Se a pergunta for *generalista* sobre Databricks, Delta Lake, PySpark, SQL, arquitetura medallion, conceitos de pipeline, etc — responda normalmente usando seu conhecimento.
+3. Se a pergunta exigir dados *especificos* de um pipeline (status, ultima run, logs, schema de tabela, contagem de linhas, PRs do repo, conteudo de notebook) — RECUSE educadamente e instrua o usuario a rodar `/resume <nome>` antes. Nao tente adivinhar qual pipeline.
+4. Voce nao deve chamar nenhuma tool nesta sessao — todas dependem de pipeline ativo.
+5. Se voce nao tiver certeza se a pergunta e generalista ou especifica, pergunte de volta qual pipeline o usuario quer consultar.
+
+EXEMPLOS:
+- "qual a diferenca entre Bronze e Silver?" → responde (generalista).
+- "como funciona Delta Lake time travel?" → responde (generalista).
+- "qual o status do meu pipeline?" → recusa: "Pra te dar isso preciso saber qual pipeline. Use `/resume <nome>`. Disponiveis: ...".
+- "quantas linhas tem na bronze?" → recusa, mesma instrucao.
+- "qual a ultima correcao automatica?" → recusa, mesma instrucao."""
 MSG_SESSION_CREATED = (
     "Sessao iniciada no pipeline *{pipeline}*.\n"
     "Pode perguntar o que quiser sobre seus dados!"
@@ -61,9 +106,17 @@ MSG_SESSION_CREATED = (
 class ChannelMessageHandler:
     """Processa mensagens de canais externos."""
 
-    def __init__(self, db: AsyncSession, omni: OmniService):
+    def __init__(
+        self,
+        db: AsyncSession,
+        omni: OmniService,
+        startup_ts: datetime | None = None,
+    ):
         self.db = db
         self.omni = omni
+        # startup_ts: bot só processa mensagens AUTORADAS depois desse timestamp.
+        # Sem ele, processa tudo (compat com chamadas legadas, ex: webhooks.py).
+        self.startup_ts = startup_ts
 
     async def handle_event(self, event: dict) -> None:
         """Processa um evento de mensagem do Omni."""
@@ -82,13 +135,42 @@ class ChannelMessageHandler:
         if is_from_me:
             return
 
-        # Ignorar grupos
-        if "@g.us" in sender_jid or "@g.us" in chat_id:
+        # Ignorar grupos: @g.us aparece em qualquer JID + presenca de
+        # `participant` indica msg recebida em grupo (mesmo se outro field for DM).
+        is_group = (
+            "@g.us" in sender_jid
+            or "@g.us" in chat_id
+            or "@g.us" in (key.get("remoteJid") or "")
+            or bool(key.get("participant"))
+        )
+        if is_group:
             return
 
         # Ignorar sem texto
         if not text:
             return
+
+        # Ignorar mensagens AUTORADAS antes do bot ligar.
+        # WhatsApp/Baileys: rawPayload.messageTimestamp = unix seconds
+        # quando a mensagem foi enviada pelo usuario (NAO quando o gateway
+        # recebeu). Quando bot reconecta, baileys replay backlog inteiro
+        # com receivedAt=now, mas messageTimestamp continua com hora original.
+        if self.startup_ts is not None:
+            msg_ts_raw = raw.get("messageTimestamp")
+            try:
+                msg_ts_int = int(msg_ts_raw) if msg_ts_raw is not None else None
+            except (TypeError, ValueError):
+                msg_ts_int = None
+            if msg_ts_int is not None:
+                msg_dt = datetime.fromtimestamp(msg_ts_int, tz=UTC)
+                if msg_dt < self.startup_ts:
+                    logger.info(
+                        "Canal: mensagem pre-startup ignorada",
+                        sender=sender_name,
+                        msg_ts=msg_dt.isoformat(),
+                        startup_ts=self.startup_ts.isoformat(),
+                    )
+                    return
 
         # Detectar canal
         channel = self._detect_channel(event)
@@ -144,7 +226,12 @@ class ChannelMessageHandler:
         session = await self._ensure_session(user, channel, channel_user_id)
 
         if not session.active_pipeline_id:
-            await self._send(instance_id, sender_jid, MSG_NO_PIPELINE)
+            await self._handle_no_pipeline(
+                user=user,
+                text=text,
+                instance_id=instance_id,
+                sender_jid=sender_jid,
+            )
             return
 
         # 4. Salvar mensagem do usuario
@@ -160,7 +247,12 @@ class ChannelMessageHandler:
         # 5. Processar com LLM
         pipeline = await self._get_pipeline(session.active_pipeline_id)
         if not pipeline:
-            await self._send(instance_id, sender_jid, MSG_NO_PIPELINE)
+            await self._handle_no_pipeline(
+                user=user,
+                text=text,
+                instance_id=instance_id,
+                sender_jid=sender_jid,
+            )
             return
 
         # Resolucao multi-provider: session > omni_instance > company default
@@ -409,6 +501,55 @@ class ChannelMessageHandler:
             return ""
 
         return full_response.strip()
+
+    async def _handle_no_pipeline(
+        self, user: User, text: str, instance_id: str, sender_jid: str,
+    ) -> None:
+        """Sem pipeline ativo: lista disponiveis + roteia LLM com guard prompt.
+
+        Generalist Q (Databricks/Spark/Delta conceitos) → LLM responde.
+        Pipeline-specific Q → LLM recusa e pede /resume <nome>.
+        """
+        pipelines_result = await self.db.execute(
+            select(Pipeline).where(Pipeline.company_id == user.company_id)
+            .order_by(Pipeline.created_at.desc())
+        )
+        pipelines = pipelines_result.scalars().all()
+
+        if not pipelines:
+            await self._send(instance_id, sender_jid, MSG_NO_PIPELINE_NONE_DEPLOYED)
+            return
+
+        pipelines_list = "\n".join(
+            f"- *{p.name}* (use `/resume {p.name}`)" for p in pipelines
+        )
+        system_prompt = NO_PIPELINE_SYSTEM_PROMPT.format(
+            pipelines_list=pipelines_list
+        )
+
+        # Pre-aviso curto (so na primeira mensagem da conversa pode ser util,
+        # mas pra simplicidade enviamos sempre — usuario percebe rapido)
+        # Nao enviamos hint aqui; deixamos LLM responder direto pra fluidez.
+
+        orchestrator = LLMOrchestrator(self.db, user.company_id, user.name or "usuario")
+        full_response = ""
+        try:
+            async for event in orchestrator.process_message(
+                user_message=text,
+                pipeline_job_id=0,
+                conversation_history=[],
+                system_prompt_override=system_prompt,
+            ):
+                if event["type"] == "token":
+                    full_response += event["content"]
+        except Exception as exc:
+            logger.error("LLM no-pipeline error", error=str(exc))
+            full_response = ""
+
+        if not full_response.strip():
+            full_response = MSG_PIPELINE_HINT.format(pipelines=pipelines_list)
+
+        await self._send(instance_id, sender_jid, full_response.strip())
 
     # --- Slash: /model ---
 

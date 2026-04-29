@@ -95,7 +95,7 @@ async def poll_loop() -> None:
                 # Processar
                 try:
                     async with AsyncSessionLocal() as db:
-                        handler = ChannelMessageHandler(db, omni)
+                        handler = ChannelMessageHandler(db, omni, startup_ts=startup_ts)
                         await handler.handle_event(event)
                 except Exception as exc:
                     logger.error("Erro ao processar evento", event_id=eid, error=str(exc))

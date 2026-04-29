@@ -39,61 +39,57 @@ class S3Step:
     step_id = "s3"
 
     async def compensate(self, ctx: StepContext) -> None:
-        """Rollback: deleta o bucket criado pelo step atual.
+        """Rollback: deleta APENAS buckets criados nesta saga (track via shared).
 
-        Comportamento seguro:
-        - Se o bucket nao era nosso (ja existia antes), NAO deleta
-          (shared.s3_bucket_url nao seria setado em execute path de reuso
-          — mas defendemos tambem checando bucket_created flag implicito).
-        - Tolera "bucket ja deletado" — loga warn.
-        - Nao deleta bucket com dados (versao ingerida), apenas em caso
-          de erro dentro da mesma saga antes de upload completar.
+        Buckets adopted (ja existiam antes) NAO sao deletados — evita destruir
+        dados de outros pipelines. Tolera bucket ja ausente.
         """
-        bucket = ctx.shared.s3_bucket
-        if not bucket:
-            await ctx.info("compensate(s3): sem bucket registrado — skip")
+        created = list(ctx.shared.s3_buckets_created)
+        if not created:
+            await ctx.info("compensate(s3): nenhum bucket criado nesta saga — skip")
             return
 
         session = boto3_session(ctx.credentials)
         s3 = session.client("s3")
 
-        def _delete() -> bool:
+        for bucket in created:
+            def _delete(b: str = bucket) -> bool:
+                try:
+                    paginator = s3.get_paginator("list_object_versions")
+                    to_delete: list[dict] = []
+                    for page in paginator.paginate(Bucket=b):
+                        for obj in page.get("Versions", []) or []:
+                            to_delete.append(
+                                {"Key": obj["Key"], "VersionId": obj.get("VersionId")}
+                            )
+                        for obj in page.get("DeleteMarkers", []) or []:
+                            to_delete.append(
+                                {"Key": obj["Key"], "VersionId": obj.get("VersionId")}
+                            )
+                        if to_delete:
+                            s3.delete_objects(
+                                Bucket=b,
+                                Delete={"Objects": to_delete[:1000], "Quiet": True},
+                            )
+                            to_delete = to_delete[1000:]
+                    s3.delete_bucket(Bucket=b)
+                    return True
+                except ClientError as exc:
+                    code = exc.response.get("Error", {}).get("Code", "")
+                    if code in ("NoSuchBucket", "404"):
+                        return False
+                    raise
+
             try:
-                paginator = s3.get_paginator("list_object_versions")
-                to_delete: list[dict] = []
-                for page in paginator.paginate(Bucket=bucket):
-                    for obj in page.get("Versions", []) or []:
-                        to_delete.append(
-                            {"Key": obj["Key"], "VersionId": obj.get("VersionId")}
-                        )
-                    for obj in page.get("DeleteMarkers", []) or []:
-                        to_delete.append(
-                            {"Key": obj["Key"], "VersionId": obj.get("VersionId")}
-                        )
-                    if to_delete:
-                        s3.delete_objects(
-                            Bucket=bucket,
-                            Delete={"Objects": to_delete[:1000], "Quiet": True},
-                        )
-                        to_delete = to_delete[1000:]
-                s3.delete_bucket(Bucket=bucket)
-                return True
-            except ClientError as exc:
-                code = exc.response.get("Error", {}).get("Code", "")
-                if code in ("NoSuchBucket", "404"):
-                    return False
-                raise
+                deleted = await asyncio.to_thread(_delete)
+            except Exception as exc:  # noqa: BLE001
+                await ctx.warn(f"compensate(s3) falhou em deletar {bucket}: {exc}")
+                continue
 
-        try:
-            deleted = await asyncio.to_thread(_delete)
-        except Exception as exc:  # noqa: BLE001
-            await ctx.warn(f"compensate(s3) falhou em deletar {bucket}: {exc}")
-            return
-
-        if deleted:
-            await ctx.info(f"compensate(s3): bucket {bucket} removido")
-        else:
-            await ctx.info(f"compensate(s3): bucket {bucket} ja nao existia")
+            if deleted:
+                await ctx.info(f"compensate(s3): bucket {bucket} removido")
+            else:
+                await ctx.info(f"compensate(s3): bucket {bucket} ja nao existia")
 
     async def execute(self, ctx: StepContext) -> None:
         bucket_name = _resolve_bucket_name(ctx)
@@ -106,7 +102,11 @@ class S3Step:
         else:
             await ctx.info("Datalake bucket nao encontrado — criando via boto3...")
             await self._create_bucket(ctx, bucket_name, region)
-            await self._upload_sample_data(ctx, bucket_name)
+            ctx.shared.s3_buckets_created.append(bucket_name)
+
+        # Sample data: SEMPRE verificar — bucket pode existir vazio
+        # (deploy anterior abortou ou aws-nuke removeu objetos sem o bucket).
+        await self._upload_sample_data(ctx, bucket_name)
 
         ctx.shared.s3_bucket = bucket_name
         ctx.shared.s3_bucket_url = f"s3://{bucket_name}"
@@ -119,6 +119,7 @@ class S3Step:
         else:
             await ctx.info("Root bucket nao encontrado — criando via boto3...")
             await self._create_bucket(ctx, root_bucket, region, databricks_root=True)
+            ctx.shared.s3_buckets_created.append(root_bucket)
 
         # Bucket policy idempotente pra permitir Databricks AWS account
         await self._apply_databricks_root_policy(ctx, root_bucket)
@@ -257,7 +258,7 @@ class S3Step:
 
     @staticmethod
     async def _upload_sample_data(ctx: StepContext, bucket_name: str) -> None:
-        """Upload do parquet de sample se existir localmente."""
+        """Upload do parquet de sample. Idempotente: skip se key ja existe."""
         from pathlib import Path
 
         repo_root = Path(__file__).resolve().parents[6]
@@ -266,12 +267,30 @@ class S3Step:
             / "data/conversations_bronze.parquet"
         )
         if not sample.exists():
-            await ctx.info("Sem dados de sample locais — pule ou faca upload manual")
+            await ctx.warn(
+                f"Sample parquet nao encontrado em {sample} — bronze rodara sem dados."
+            )
             return
 
         session = boto3_session(ctx.credentials)
         s3 = session.client("s3")
         key = f"bronze/{sample.name}"
+
+        def _exists() -> bool:
+            try:
+                s3.head_object(Bucket=bucket_name, Key=key)
+                return True
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "")
+                if code in ("404", "NoSuchKey", "NotFound"):
+                    return False
+                raise
+
+        already = await asyncio.to_thread(_exists)
+        if already:
+            await ctx.info(f"Sample data ja em s3://{bucket_name}/{key} — skip")
+            return
+
         size_mb = sample.stat().st_size / 1024 / 1024
 
         def _upload() -> None:

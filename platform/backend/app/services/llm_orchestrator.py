@@ -176,6 +176,7 @@ class LLMOrchestrator:
         model_override: str | None = None,
         provider_override: str | None = None,
         pipeline_id: uuid.UUID | None = None,
+        system_prompt_override: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Processa mensagem do usuário. Yields SSE events.
 
@@ -208,13 +209,18 @@ class LLMOrchestrator:
             company_id=str(self.company_id),
         )
 
-        context = await self.context_engine.assemble(
-            pipeline_job_id=pipeline_job_id,
-            user_message=user_message,
-        )
-        system = context.system_prompt + "\n\n"
-        for block in context.blocks:
-            system += f"<{block.type}>\n{block.content}\n</{block.type}>\n\n"
+        if system_prompt_override is not None:
+            # Modo sem pipeline (ou contexto custom): pula assemble, evita
+            # tentar carregar runs/schemas pra job_id=0.
+            system = system_prompt_override + "\n\n"
+        else:
+            context = await self.context_engine.assemble(
+                pipeline_job_id=pipeline_job_id,
+                user_message=user_message,
+            )
+            system = context.system_prompt + "\n\n"
+            for block in context.blocks:
+                system += f"<{block.type}>\n{block.content}\n</{block.type}>\n\n"
 
         messages = conversation_history + [{"role": "user", "content": user_message}]
         tool_specs = all_tool_specs()
