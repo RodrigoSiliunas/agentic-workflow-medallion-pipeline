@@ -168,6 +168,23 @@ class ClusterProvisionStep:
                 policy_definition,
             )
 
+        # Aplica overrides fixed da policy. Saga cria all-purpose persistente —
+        # policy "Job Compute" force cluster_type=job e quebra create. Aborta cedo.
+        forced_availability: str | None = None
+        if policy_id:
+            policy_overrides = await self._policy_fixed_values(ctx, w, policy_id)
+            forced_cluster_type = policy_overrides.get("cluster_type")
+            if forced_cluster_type and forced_cluster_type != "all-purpose":
+                raise ValueError(
+                    f"Policy {policy_id} force cluster_type={forced_cluster_type}; "
+                    "saga cria cluster all-purpose persistente. "
+                    "Selecione policy compativel (ex: Personal Compute, Power User) "
+                    "ou Sem Policy."
+                )
+            availability = policy_overrides.get("aws_attributes.availability")
+            if availability:
+                forced_availability = availability
+
         custom_tags: dict[str, str] = {}
         tags_raw = env.get("cluster_tags")
         if tags_raw:
@@ -189,6 +206,7 @@ class ClusterProvisionStep:
             autotermination_min=autotermination_min,
             policy_id=policy_id,
             custom_tags=custom_tags,
+            forced_availability=forced_availability,
         )
         ctx.shared.databricks_cluster_id = cluster_id
         ctx.shared.databricks_cluster_created = was_created
@@ -196,6 +214,35 @@ class ClusterProvisionStep:
         if env.get("cluster_policy_definition"):
             ctx.shared.databricks_cluster_policy_created = True
         await ctx.success(f"Cluster pronto: {cluster_id}")
+
+    @staticmethod
+    async def _policy_fixed_values(
+        ctx: StepContext, w: WorkspaceClient, policy_id: str,
+    ) -> dict[str, str]:
+        """Le policy.definition + extrai paths com type='fixed'.
+
+        Retorna dict { "cluster_type": "job", "aws_attributes.availability": "SPOT_WITH_FALLBACK" }.
+        Ignora type='allowlist'/'range'/'unlimited' — saga so se preocupa em
+        respeitar fixed (que rejeitam create se nao bater).
+        """
+        try:
+            policy = await asyncio.to_thread(
+                lambda: w.cluster_policies.get(policy_id=policy_id)
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ctx.warn(f"policy {policy_id} nao acessivel: {exc}")
+            return {}
+        try:
+            definition = json.loads(policy.definition or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        out: dict[str, str] = {}
+        for path, rule in definition.items():
+            if isinstance(rule, dict) and rule.get("type") == "fixed":
+                value = rule.get("value")
+                if value is not None:
+                    out[path] = str(value)
+        return out
 
     @staticmethod
     async def _ensure_cluster(
@@ -214,6 +261,7 @@ class ClusterProvisionStep:
         autotermination_min: int,
         policy_id: str | None,
         custom_tags: dict[str, str],
+        forced_availability: str | None = None,
     ) -> tuple[str, bool]:
         def _spark_conf() -> dict[str, str]:
             return {
@@ -229,9 +277,17 @@ class ClusterProvisionStep:
             # Aplica se DRIVER ou WORKER precisam — Databricks usa mesma config
             # de EBS pros dois.
             attach_ebs = _needs_ebs(node_type) or _needs_ebs(driver_node_type)
+            availability = AwsAvailability.ON_DEMAND
+            first_on_demand = 1
+            if forced_availability == "SPOT_WITH_FALLBACK":
+                availability = AwsAvailability.SPOT_WITH_FALLBACK
+                first_on_demand = 0  # policy spot — sem on-demand mix
+            elif forced_availability == "SPOT":
+                availability = AwsAvailability.SPOT
+                first_on_demand = 0
             aws_attrs_kwargs: dict = {
-                "first_on_demand": 1,
-                "availability": AwsAvailability.ON_DEMAND,
+                "first_on_demand": first_on_demand,
+                "availability": availability,
                 "zone_id": "auto",
             }
             if attach_ebs:

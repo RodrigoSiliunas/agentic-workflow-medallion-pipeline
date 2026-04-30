@@ -10,9 +10,12 @@ from app.services.custom_llm_service import CustomLLMService
 
 class TestDiscoverModels:
     @pytest.mark.asyncio
+    @patch("app.core.url_validator.socket.getaddrinfo")
     @patch("app.services.custom_llm_service.httpx.AsyncClient")
-    async def test_openai_endpoint_returns_models(self, mock_client_cls):
+    async def test_openai_endpoint_returns_models(self, mock_client_cls, mock_dns):
         """GET /v1/models retorna lista padrao OpenAI."""
+        # SSRF guard resolve para IP publico — bypassa loopback/private check
+        mock_dns.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         client_mock = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = client_mock
 
@@ -36,9 +39,11 @@ class TestDiscoverModels:
         assert models[0]["id"] == "qwen3.5:9b"
 
     @pytest.mark.asyncio
+    @patch("app.core.url_validator.socket.getaddrinfo")
     @patch("app.services.custom_llm_service.httpx.AsyncClient")
-    async def test_ollama_fallback_when_v1_fails(self, mock_client_cls):
+    async def test_ollama_fallback_when_v1_fails(self, mock_client_cls, mock_dns):
         """v1/models 404 → fallback /api/tags."""
+        mock_dns.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         client_mock = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = client_mock
 
@@ -61,9 +66,11 @@ class TestDiscoverModels:
         assert len(models) == 2
 
     @pytest.mark.asyncio
+    @patch("app.core.url_validator.socket.getaddrinfo")
     @patch("app.services.custom_llm_service.httpx.AsyncClient")
-    async def test_both_fail_returns_error(self, mock_client_cls):
+    async def test_both_fail_returns_error(self, mock_client_cls, mock_dns):
         """Ambos endpoints falham → success=False com error."""
+        mock_dns.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         client_mock = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = client_mock
 
@@ -80,9 +87,11 @@ class TestDiscoverModels:
         assert server_type is None
 
     @pytest.mark.asyncio
+    @patch("app.core.url_validator.socket.getaddrinfo")
     @patch("app.services.custom_llm_service.httpx.AsyncClient")
-    async def test_api_key_passes_authorization_header(self, mock_client_cls):
+    async def test_api_key_passes_authorization_header(self, mock_client_cls, mock_dns):
         """api_key vira Authorization: Bearer ..."""
+        mock_dns.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         client_mock = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = client_mock
 
@@ -98,9 +107,11 @@ class TestDiscoverModels:
         assert call.kwargs["headers"]["Authorization"] == "Bearer sk-test-key"
 
     @pytest.mark.asyncio
+    @patch("app.core.url_validator.socket.getaddrinfo")
     @patch("app.services.custom_llm_service.httpx.AsyncClient")
-    async def test_network_error_is_handled(self, mock_client_cls):
+    async def test_network_error_is_handled(self, mock_client_cls, mock_dns):
         """httpx.HTTPError → suppressed, fallback tentado."""
+        mock_dns.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         client_mock = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = client_mock
 
