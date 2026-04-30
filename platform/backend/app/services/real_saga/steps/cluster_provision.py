@@ -21,11 +21,27 @@ from databricks.sdk.service.compute import (
     AwsAttributes,
     AwsAvailability,
     DataSecurityMode,
+    EbsVolumeType,
 )
 
 from app.services.real_saga.base import StepContext
 from app.services.real_saga.databricks_client import workspace_client
 from app.services.real_saga.registry import register_saga_step
+
+
+def _needs_ebs(node_type: str) -> bool:
+    """True se node_type nao tem instance store (precisa EBS attach).
+
+    AWS instance families com 'd' tem NVMe local (m5d, c5d, r5d, m6gd, etc).
+    Sem 'd' = sem storage local = precisa EBS pra root volume + spark scratch.
+    Heuristica: split em '.', pega family ('m5', 'm5d', etc), checa se termina
+    em 'd'. Cobre m5/m6/c5/c6/r5/r6 + variantes 'g' (graviton).
+    """
+    if "." not in node_type:
+        return True
+    family = node_type.split(".", 1)[0].lower()
+    # m5d, m6gd, c5d, r5d ... -> tem instance store
+    return not family.endswith("d")
 
 _DEFAULT_CLUSTER_NAME = "medallion-pipeline"
 
@@ -208,6 +224,24 @@ class ClusterProvisionStep:
 
         def _build_kwargs() -> dict:
             """Kwargs comum pra create + edit. Inclui sizing strategy."""
+            # EBS attach obrigatorio pra families sem instance store (m5.large
+            # rejeita create sem EBS: "At least one EBS volume must be attached").
+            # Aplica se DRIVER ou WORKER precisam — Databricks usa mesma config
+            # de EBS pros dois.
+            attach_ebs = _needs_ebs(node_type) or _needs_ebs(driver_node_type)
+            aws_attrs_kwargs: dict = {
+                "first_on_demand": 1,
+                "availability": AwsAvailability.ON_DEMAND,
+                "zone_id": "auto",
+            }
+            if attach_ebs:
+                # 1x 100GB gp3 — default que o Databricks UI sugere.
+                # Suficiente pra spark scratch + delta cache em workloads tipicos.
+                aws_attrs_kwargs.update({
+                    "ebs_volume_count": 1,
+                    "ebs_volume_size": 100,
+                    "ebs_volume_type": EbsVolumeType.GENERAL_PURPOSE_SSD,
+                })
             kwargs: dict = {
                 "cluster_name": cluster_name,
                 "spark_version": spark_version,
@@ -217,11 +251,7 @@ class ClusterProvisionStep:
                 "data_security_mode": DataSecurityMode.SINGLE_USER,
                 "single_user_name": admin_email,
                 "spark_conf": _spark_conf(),
-                "aws_attributes": AwsAttributes(
-                    first_on_demand=1,
-                    availability=AwsAvailability.ON_DEMAND,
-                    zone_id="auto",
-                ),
+                "aws_attributes": AwsAttributes(**aws_attrs_kwargs),
             }
             if autoscale is not None:
                 kwargs["autoscale"] = AutoScale(min_workers=autoscale[0], max_workers=autoscale[1])
