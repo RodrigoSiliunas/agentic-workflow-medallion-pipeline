@@ -300,11 +300,11 @@
           Use pra rastrear custo por team/cost-center/env.
         </p>
         <div class="space-y-1.5">
-          <div v-for="(_v, k) in tags" :key="k" class="flex items-center gap-2">
-            <input :value="k" type="text" class="flex-1 px-2 py-1.5 rounded-[var(--radius-md)] border text-xs font-mono" :style="inputStyle" @input="(e: Event) => renameTagKey(k, (e.target as HTMLInputElement).value)">
+          <div v-for="tag in tags" :key="tag.id" class="flex items-center gap-2">
+            <input v-model="tag.key" type="text" class="flex-1 px-2 py-1.5 rounded-[var(--radius-md)] border text-xs font-mono" :style="inputStyle" @input="emitState">
             <span :style="{ color: 'var(--text-tertiary)' }">=</span>
-            <input v-model="tags[k]" type="text" class="flex-1 px-2 py-1.5 rounded-[var(--radius-md)] border text-xs font-mono" :style="inputStyle" @input="emitState">
-            <button type="button" class="px-2 py-1.5 rounded-[var(--radius-md)] border text-xs" :style="{ borderColor: 'var(--border)', color: 'var(--status-error)' }" @click="removeTag(k)">
+            <input v-model="tag.value" type="text" class="flex-1 px-2 py-1.5 rounded-[var(--radius-md)] border text-xs font-mono" :style="inputStyle" @input="emitState">
+            <button type="button" class="px-2 py-1.5 rounded-[var(--radius-md)] border text-xs" :style="{ borderColor: 'var(--border)', color: 'var(--status-error)' }" @click="removeTag(tag.id)">
               ×
             </button>
           </div>
@@ -432,7 +432,18 @@ const policyMode = ref<"none" | "select" | "custom">(
 const strategy = ref<"fixed" | "autoscale">(
   props.initialAutoscaleMin != null && props.initialAutoscaleMax != null ? "autoscale" : "fixed",
 )
-const tags = reactive<Record<string, string>>({ ...(props.initialTags || {}) })
+// Tags como array com id estavel — usar Record<string,string> faz a key
+// servir como :key do v-for, e renomear a chave a cada keystroke desmonta
+// o input (foco perdido). Array com id sintetico mantem identidade.
+interface TagRow { id: number; key: string; value: string }
+let _tagIdSeq = 0
+const tags = ref<TagRow[]>(
+  Object.entries(props.initialTags || {}).map(([k, v]) => ({
+    id: ++_tagIdSeq,
+    key: k,
+    value: v,
+  })),
+)
 const advancedOpen = ref(false)
 
 const policyJsonError = computed(() => {
@@ -507,7 +518,7 @@ function emitState() {
     workerNodeType: workerNodeType.value,
     sparkVersion: sparkVersion.value,
     autoterminationMin: autoterminationMin.value,
-    tags: Object.keys(tags).length ? { ...tags } : undefined,
+    tags: tagsToRecord(),
   }
   if (policyMode.value === "select") {
     payload.policyId = policyId.value || undefined
@@ -568,21 +579,23 @@ function categoryStyle(cat: string): Record<string, string> {
 }
 
 function addTag() {
-  const key = `tag${Object.keys(tags).length + 1}`
-  tags[key] = ""
+  tags.value.push({ id: ++_tagIdSeq, key: `tag${tags.value.length + 1}`, value: "" })
   emitState()
 }
 
-function removeTag(key: string) {
-  Reflect.deleteProperty(tags, key)
+function removeTag(id: number) {
+  tags.value = tags.value.filter(t => t.id !== id)
   emitState()
 }
 
-function renameTagKey(oldKey: string, newKey: string) {
-  if (!newKey || newKey === oldKey || tags[newKey] !== undefined) return
-  tags[newKey] = tags[oldKey]
-  Reflect.deleteProperty(tags, oldKey)
-  emitState()
+function tagsToRecord(): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const t of tags.value) {
+    const k = t.key.trim()
+    if (!k) continue
+    out[k] = t.value
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 async function loadPolicies() {
