@@ -8,7 +8,7 @@ Login passa a aceitar company_slug opcional pra desambiguar quando
 mesmo email existe em multiplas empresas.
 
 Revision ID: b9d4e5f6a7c1
-Revises: f1a2b3c4d5e6
+Revises: b3c4d5e6f7a8
 Create Date: 2026-04-29 14:00:00.000000
 
 """
@@ -18,7 +18,7 @@ from alembic import op
 
 
 revision: str = "b9d4e5f6a7c1"
-down_revision: Union[str, Sequence[str], None] = "f1a2b3c4d5e6"
+down_revision: Union[str, Sequence[str], None] = "b3c4d5e6f7a8"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
