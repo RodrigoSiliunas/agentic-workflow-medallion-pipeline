@@ -78,3 +78,85 @@ async def test_duplicate_company_slug_rejected(http_client: httpx.AsyncClient):
     payload["admin_email"] = "b@example.com"
     r2 = await http_client.post("/api/v1/auth/register-company", json=payload)
     assert r2.status_code == 409
+
+
+async def test_email_squat_protection_allows_same_email_in_different_company(
+    http_client: httpx.AsyncClient,
+):
+    """Atacante NAO bloqueia mais empresa B de cadastrar mesmo email
+    so porque squatou na empresa A. Email unique por (company_id, email)."""
+    # Empresa A registra email victim@example.com
+    r1 = await http_client.post(
+        "/api/v1/auth/register-company",
+        json={
+            "company_name": "Squatter",
+            "company_slug": "squatter-co",
+            "admin_name": "Bad Actor",
+            "admin_email": "victim@example.com",
+            "admin_password": "squatpass123",
+        },
+    )
+    assert r1.status_code == 201
+
+    # Empresa B (legitimo dono do email) consegue registrar com mesmo email
+    r2 = await http_client.post(
+        "/api/v1/auth/register-company",
+        json={
+            "company_name": "Victim Real",
+            "company_slug": "victim-real",
+            "admin_name": "Real Owner",
+            "admin_email": "victim@example.com",
+            "admin_password": "realpass1234",
+        },
+    )
+    assert r2.status_code == 201, f"Squat: {r2.text}"
+
+
+async def test_login_requires_company_slug_when_email_collides(
+    http_client: httpx.AsyncClient,
+):
+    """Email cadastrado em 2 empresas — login sem company_slug retorna 409."""
+    for slug, password in (
+        ("collide-a", "passworda1234"),
+        ("collide-b", "passwordb1234"),
+    ):
+        r = await http_client.post(
+            "/api/v1/auth/register-company",
+            json={
+                "company_name": f"C-{slug}",
+                "company_slug": slug,
+                "admin_name": "Owner",
+                "admin_email": "shared@example.com",
+                "admin_password": password,
+            },
+        )
+        assert r.status_code == 201
+
+    # Login sem slug → 409 (ambiguo)
+    ambig = await http_client.post(
+        "/api/v1/auth/login",
+        json={"email": "shared@example.com", "password": "passworda1234"},
+    )
+    assert ambig.status_code == 409
+
+    # Login com slug correto → 200
+    ok = await http_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "shared@example.com",
+            "password": "passworda1234",
+            "company_slug": "collide-a",
+        },
+    )
+    assert ok.status_code == 200
+
+    # Login com slug correto + senha errada → 401
+    wrong_pwd = await http_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "shared@example.com",
+            "password": "passwordb1234",  # senha de B, mas slug A
+            "company_slug": "collide-a",
+        },
+    )
+    assert wrong_pwd.status_code == 401

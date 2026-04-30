@@ -13,6 +13,7 @@ import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.url_validator import UnsafeURLError, validate_databricks_workspace_host
 from app.services.credential_service import CredentialService
 
 logger = structlog.get_logger()
@@ -47,12 +48,19 @@ class DatabricksService:
 
     async def _ensure_credentials(self):
         if not self._host:
-            self._host = await self._cred_service.get_decrypted(
+            raw_host = await self._cred_service.get_decrypted(
                 self.company_id, "databricks_host"
             )
             self._token = await self._cred_service.get_decrypted(
                 self.company_id, "databricks_token"
             )
+            if raw_host:
+                try:
+                    self._host = validate_databricks_workspace_host(raw_host)
+                except UnsafeURLError as exc:
+                    raise ValueError(
+                        f"databricks_host invalido para esta empresa: {exc}"
+                    ) from exc
         if not self._host or not self._token:
             raise ValueError("Databricks nao configurado para esta empresa")
 

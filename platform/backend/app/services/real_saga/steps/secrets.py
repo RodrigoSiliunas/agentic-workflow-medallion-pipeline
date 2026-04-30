@@ -76,38 +76,42 @@ class SecretsStep:
         await asyncio.to_thread(_ensure_scope)
         if not scope_pre_exists:
             ctx.shared.databricks_secret_scope_created = True
-        await ctx.info("Scope ok — enviando secrets")
+        await ctx.info("Scope ok — enviando secrets em paralelo")
 
+        # Coleta secrets a enviar — cada um vira uma task assincrona disparada
+        # via asyncio.gather. Antes era serial: 8 secrets x ~300ms = 2.4s.
+        # Paralelizado: ~300ms total (limitado pelo slowest put_secret).
         env_vars = ctx.env_vars()
-        emitted = 0
+        to_put: list[tuple[str, str]] = []
         missing: list[str] = []
+
         for secret_key, attr in _SECRETS_FROM_CREDENTIALS.items():
             value = getattr(ctx.credentials, attr, None)
-            if not value:
+            if value:
+                to_put.append((secret_key, value))
+            else:
                 missing.append(secret_key)
-                continue
-            await asyncio.to_thread(
-                lambda k=secret_key, v=value: w.secrets.put_secret(
-                    scope=scope_name, key=k, string_value=v
-                )
-            )
-            emitted += 1
-            await ctx.info(f"  put secret: {secret_key}")
 
         for secret_key, env_key in _SECRETS_FROM_ENV_VARS.items():
             value = env_vars.get(env_key)
-            if not value:
+            if value:
+                to_put.append((secret_key, value))
+            else:
                 missing.append(secret_key)
-                continue
+
+        async def _put(key: str, val: str) -> str:
             await asyncio.to_thread(
-                lambda k=secret_key, v=value: w.secrets.put_secret(
-                    scope=scope_name, key=k, string_value=v
+                lambda: w.secrets.put_secret(
+                    scope=scope_name, key=key, string_value=val
                 )
             )
-            emitted += 1
-            await ctx.info(f"  put secret: {secret_key}")
+            return key
+
+        emitted_keys = await asyncio.gather(*(_put(k, v) for k, v in to_put))
+        for k in emitted_keys:
+            await ctx.info(f"  put secret: {k}")
 
         if missing:
             await ctx.warn(f"Secrets nao enviados (sem valor): {', '.join(missing)}")
-        await ctx.success(f"{emitted} secrets ativos no scope '{scope_name}'")
+        await ctx.success(f"{len(emitted_keys)} secrets ativos no scope '{scope_name}'")
         ctx.shared.secret_scope = scope_name

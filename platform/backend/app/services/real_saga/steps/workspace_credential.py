@@ -26,6 +26,7 @@ import json
 import boto3
 import httpx
 
+from app.services.databricks_oauth import account_oauth_token
 from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
@@ -52,13 +53,9 @@ class WorkspaceCredentialStep(SagaStepBase):
 
             async def _del() -> None:
                 async with httpx.AsyncClient(timeout=30.0) as c:
-                    tok_resp = await c.post(
-                        f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
-                        auth=(oauth_client_id, oauth_secret),
-                        data={"grant_type": "client_credentials", "scope": "all-apis"},
+                    token = await account_oauth_token(
+                        c, account_id, oauth_client_id, oauth_secret
                     )
-                    tok_resp.raise_for_status()
-                    token = tok_resp.json()["access_token"]
                     await c.delete(
                         f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/credentials/{creds_id}",
                         headers={"Authorization": f"Bearer {token}"},
@@ -241,13 +238,9 @@ class WorkspaceCredentialStep(SagaStepBase):
     ) -> tuple[str, bool]:
         """Retorna (credentials_id, created_now). created_now indica novo registro."""
         async with httpx.AsyncClient(timeout=30.0) as c:
-            token_resp = await c.post(
-                f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
-                auth=(client_id, client_secret),
-                data={"grant_type": "client_credentials", "scope": "all-apis"},
+            token = await account_oauth_token(
+                c, account_id, client_id, client_secret
             )
-            token_resp.raise_for_status()
-            token = token_resp.json()["access_token"]
 
             list_resp = await c.get(
                 f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/credentials",

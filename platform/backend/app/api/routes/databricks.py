@@ -18,8 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_user
+from app.core.url_validator import UnsafeURLError, validate_databricks_workspace_host
 from app.database.session import get_db
 from app.services.credential_service import CredentialService
+from app.services.databricks_oauth import (
+    account_oauth_token,
+    get_account_oauth_creds,
+)
 
 logger = structlog.get_logger()
 
@@ -29,30 +34,7 @@ router = APIRouter()
 async def _get_account_oauth(
     company_id, db: AsyncSession,
 ) -> tuple[str, str, str] | None:
-    """Resolve account_id + OAuth client_id + secret a partir das credenciais.
-
-    Retorna None se faltar qualquer um — caller deve responder 200 com
-    `oauth_configured: false` em vez de 500.
-    """
-    svc = CredentialService(db)
-    account_id = await svc.get_decrypted(company_id, "databricks_account_id")
-    client_id = await svc.get_decrypted(company_id, "databricks_oauth_client_id")
-    secret = await svc.get_decrypted(company_id, "databricks_oauth_secret")
-    if not all([account_id, client_id, secret]):
-        return None
-    return account_id, client_id, secret
-
-
-async def _account_token(
-    c: httpx.AsyncClient, account_id: str, client_id: str, secret: str,
-) -> str:
-    resp = await c.post(
-        f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
-        auth=(client_id, secret),
-        data={"grant_type": "client_credentials", "scope": "all-apis"},
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+    return await get_account_oauth_creds(CredentialService(db), company_id)
 
 
 @router.get("/workspaces")
@@ -86,7 +68,7 @@ async def list_workspaces(
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as c:
-            token = await _account_token(c, account_id, client_id, secret)
+            token = await account_oauth_token(c, account_id, client_id, secret)
             resp = await c.get(
                 f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/workspaces",
                 headers={"Authorization": f"Bearer {token}"},
@@ -150,7 +132,7 @@ async def get_workspace_config(
     account_id, client_id, secret = oauth
 
     async with httpx.AsyncClient(timeout=30.0) as c:
-        token = await _account_token(c, account_id, client_id, secret)
+        token = await account_oauth_token(c, account_id, client_id, secret)
         ws_resp = await c.get(
             f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/workspaces/{workspace_id}",
             headers={"Authorization": f"Bearer {token}"},
@@ -214,10 +196,19 @@ async def list_node_types(
     if not host or not token:
         return {"workspace_configured": False, "node_types": []}
 
+    try:
+        safe_host = validate_databricks_workspace_host(host)
+    except UnsafeURLError as exc:
+        logger.warning("databricks_host bloqueado por SSRF guard", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"databricks_host invalido: {exc}",
+        ) from exc
+
     async with httpx.AsyncClient(timeout=15.0) as c:
         try:
             resp = await c.get(
-                f"{host.rstrip('/')}/api/2.0/clusters/list-node-types",
+                f"{safe_host}/api/2.0/clusters/list-node-types",
                 headers={"Authorization": f"Bearer {token}"},
             )
             resp.raise_for_status()
@@ -261,10 +252,19 @@ async def list_cluster_policies(
     if not host or not token:
         return {"workspace_configured": False, "policies": []}
 
+    try:
+        safe_host = validate_databricks_workspace_host(host)
+    except UnsafeURLError as exc:
+        logger.warning("databricks_host bloqueado por SSRF guard", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"databricks_host invalido: {exc}",
+        ) from exc
+
     async with httpx.AsyncClient(timeout=15.0) as c:
         try:
             resp = await c.get(
-                f"{host.rstrip('/')}/api/2.0/policies/clusters/list",
+                f"{safe_host}/api/2.0/policies/clusters/list",
                 headers={"Authorization": f"Bearer {token}"},
             )
             resp.raise_for_status()
@@ -304,7 +304,7 @@ async def list_metastores(
     account_id, client_id, secret = oauth
 
     async with httpx.AsyncClient(timeout=30.0) as c:
-        token = await _account_token(c, account_id, client_id, secret)
+        token = await account_oauth_token(c, account_id, client_id, secret)
         resp = await c.get(
             f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/metastores",
             headers={"Authorization": f"Bearer {token}"},

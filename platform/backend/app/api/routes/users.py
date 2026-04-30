@@ -52,8 +52,14 @@ async def create_user(
             detail="Nao pode criar usuario com role igual ou superior ao seu",
         )
 
-    # Email unico
-    existing = await db.execute(select(User).where(User.email == data.email))
+    # Email unico DENTRO da empresa (composite unique). Permite mesmo email
+    # em outras empresas — anti squat cross-tenant.
+    existing = await db.execute(
+        select(User).where(
+            User.email == data.email,
+            User.company_id == auth.company_id,
+        )
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email ja cadastrado")
 

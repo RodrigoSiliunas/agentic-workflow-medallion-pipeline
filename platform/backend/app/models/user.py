@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,11 +27,17 @@ ROLE_PERMISSIONS = {
 
 class User(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "users"
+    # Email unico por empresa, NAO global. Permite que o email "ceo@x.com"
+    # exista em multiplas companies sem squatting (login disambigua via
+    # company_slug). Migration b9d4e5f6a7c1 troca o unique global por composto.
+    __table_args__ = (
+        UniqueConstraint("company_id", "email", name="uq_users_company_email"),
+    )
 
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
     )
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), default="viewer")

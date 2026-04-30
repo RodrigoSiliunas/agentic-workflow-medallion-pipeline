@@ -7,6 +7,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.url_validator import UnsafeURLError, validate_databricks_workspace_host
 from app.models.credential import CompanyCredential
 from app.services.encryption import EncryptionService
 
@@ -80,6 +81,14 @@ class CredentialService:
         """Salva ou atualiza uma credencial (criptografada)."""
         if credential_type not in CREDENTIAL_TYPES:
             raise ValueError(f"Tipo invalido: {credential_type}")
+
+        # SSRF guard: rejeitar databricks_host fora do allowlist na escrita.
+        # Defense-in-depth — validacao tambem ocorre no momento de uso.
+        if credential_type == "databricks_host":
+            try:
+                value = validate_databricks_workspace_host(value)
+            except UnsafeURLError as exc:
+                raise ValueError(f"databricks_host invalido: {exc}") from exc
 
         encrypted = self.encryption.encrypt(value)
 
@@ -187,23 +196,17 @@ class CredentialService:
             return {"success": False, "error": str(e)}
 
     async def _test_databricks(self, company_id: uuid.UUID, host: str) -> dict:
-        # SSRF protection: so aceitar URLs de workspaces Databricks reais
-        import re
-
-        if not re.match(
-            r"^https://[\w.-]+\.(cloud\.databricks\.com|azuredatabricks\.net)", host
-        ):
-            return {
-                "success": False,
-                "error": "URL invalida — apenas hosts *.cloud.databricks.com aceitos",
-            }
+        try:
+            safe_host = validate_databricks_workspace_host(host)
+        except UnsafeURLError as exc:
+            return {"success": False, "error": str(exc)}
         token = await self.get_decrypted(company_id, "databricks_token")
         if not token:
             return {"success": False, "error": "Token Databricks nao configurado"}
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    f"{host}/api/2.0/clusters/list",
+                    f"{safe_host}/api/2.0/clusters/list",
                     headers={"Authorization": f"Bearer {token}"},
                     timeout=10,
                 )

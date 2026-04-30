@@ -27,6 +27,7 @@ import asyncio
 
 import httpx
 
+from app.services.databricks_oauth import account_oauth_token
 from app.services.real_saga.base import SagaStepBase, StepContext
 from app.services.real_saga.registry import register_saga_step
 
@@ -57,13 +58,7 @@ class WorkspaceProvisionStep(SagaStepBase):
 
         async def _del() -> None:
             async with httpx.AsyncClient(timeout=120.0) as c:
-                tok = await c.post(
-                    f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
-                    auth=(client_id, secret),
-                    data={"grant_type": "client_credentials", "scope": "all-apis"},
-                )
-                tok.raise_for_status()
-                token = tok.json()["access_token"]
+                token = await account_oauth_token(c, account_id, client_id, secret)
                 await c.delete(
                     f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/workspaces/{ws_id}",
                     headers={"Authorization": f"Bearer {token}"},
@@ -291,13 +286,7 @@ class WorkspaceProvisionStep(SagaStepBase):
 
     @staticmethod
     async def _get_oauth_token(c, account_id, client_id, secret) -> str:
-        resp = await c.post(
-            f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
-            auth=(client_id, secret),
-            data={"grant_type": "client_credentials", "scope": "all-apis"},
-        )
-        resp.raise_for_status()
-        return resp.json()["access_token"]
+        return await account_oauth_token(c, account_id, client_id, secret)
 
     @staticmethod
     async def _add_admin_user(c, host: str, token: str, email: str) -> None:

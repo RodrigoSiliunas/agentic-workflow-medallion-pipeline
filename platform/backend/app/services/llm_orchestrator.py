@@ -78,6 +78,23 @@ class LLMOrchestrator:
         self.github = GitHubService(db, company_id)
         self.context_engine = ContextEngine(db, company_id)
         self._cred_service = CredentialService(db)
+        # Cacheia preferred_provider+preferred_model em 1 SELECT — antes
+        # eram 2 queries sequenciais (_resolve_company_provider + _get_model).
+        self._company_prefs: tuple[str, str] | None = None
+
+    async def _get_company_prefs(self) -> tuple[str, str]:
+        """1 query → (preferred_provider, preferred_model). Cacheado por instancia."""
+        if self._company_prefs is None:
+            result = await self.db.execute(
+                select(Company.preferred_provider, Company.preferred_model).where(
+                    Company.id == self.company_id
+                )
+            )
+            row = result.first()
+            provider = (row[0] if row else None) or "anthropic"
+            model = (row[1] if row else None) or "claude-sonnet-4-6"
+            self._company_prefs = (provider, model)
+        return self._company_prefs
 
     async def _get_chat_provider(
         self, provider_override: str | None = None
@@ -88,7 +105,10 @@ class LLMOrchestrator:
           - "anthropic" | "openai" | "google"  -> built-in (api_key via cred_service)
           - "custom:<uuid>"                    -> CustomLLMEndpoint do DB
         """
-        provider_name = provider_override or await self._resolve_company_provider()
+        if provider_override:
+            provider_name = provider_override
+        else:
+            provider_name, _ = await self._get_company_prefs()
 
         # Custom endpoint (Ollama, vLLM, OpenRouter, etc)
         if provider_name.startswith("custom:"):
@@ -137,21 +157,11 @@ class LLMOrchestrator:
             )
         return create_chat_provider(provider_name, api_key=api_key), provider_name
 
-    async def _resolve_company_provider(self) -> str:
-        """Le preferred_provider da empresa, default 'anthropic'."""
-        result = await self.db.execute(
-            select(Company.preferred_provider).where(Company.id == self.company_id)
-        )
-        return result.scalar_one_or_none() or "anthropic"
-
     async def _get_model(self, override: str | None = None) -> str:
         """Resolve model id. Aliases legacy convertidos."""
         if override:
             return self._LEGACY_MODEL_ALIASES.get(override, override)
-        result = await self.db.execute(
-            select(Company.preferred_model).where(Company.id == self.company_id)
-        )
-        pref = result.scalar_one_or_none() or "claude-sonnet-4-6"
+        _, pref = await self._get_company_prefs()
         return self._LEGACY_MODEL_ALIASES.get(pref, pref)
 
     def _tool_context(self) -> ToolContext:

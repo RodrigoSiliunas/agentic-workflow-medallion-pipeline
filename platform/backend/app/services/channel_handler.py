@@ -19,7 +19,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.channel import ActiveSession, ChannelIdentity
+from app.models.channel import ActiveSession, ChannelIdentity, OmniInstance
 from app.models.chat import Message, Thread
 from app.models.pipeline import Pipeline
 from app.models.user import User
@@ -317,9 +317,24 @@ class ChannelMessageHandler:
         self, channel: str, channel_user_id: str, email: str,
         instance_id: str, sender_jid: str,
     ) -> None:
-        """Tenta vincular canal ao usuario pelo email."""
+        """Tenta vincular canal ao usuario pelo email — escopado pela empresa
+        do OmniInstance (anti cross-tenant link)."""
+        instance_result = await self.db.execute(
+            select(OmniInstance).where(OmniInstance.instance_id == instance_id)
+        )
+        instance = instance_result.scalar_one_or_none()
+        if not instance:
+            logger.warning(
+                "link account: OmniInstance nao encontrada", instance_id=instance_id
+            )
+            await self._send(instance_id, sender_jid, MSG_EMAIL_NOT_FOUND)
+            return
+
         result = await self.db.execute(
-            select(User).where(User.email == email)
+            select(User).where(
+                User.email == email,
+                User.company_id == instance.company_id,
+            )
         )
         user = result.scalar_one_or_none()
 

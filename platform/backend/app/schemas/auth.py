@@ -8,6 +8,12 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
+    # Disambigua email duplicado entre tenants. Opcional quando email
+    # so existe em uma empresa; obrigatorio quando colide.
+    company_slug: str | None = Field(
+        default=None,
+        min_length=2, max_length=50, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$",
+    )
 
 
 class RegisterCompanyRequest(BaseModel):

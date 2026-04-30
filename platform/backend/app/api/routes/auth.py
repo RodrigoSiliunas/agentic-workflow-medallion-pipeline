@@ -69,10 +69,34 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalar_one_or_none()
+    """Login por email + password. company_slug obrigatorio quando email
+    colide entre tenants (anti squat de email cross-tenant)."""
+    query = select(User).where(User.email == data.email)
+    if data.company_slug:
+        query = query.join(Company, Company.id == User.company_id).where(
+            Company.slug == data.company_slug
+        )
+    matches = (await db.execute(query)).scalars().all()
 
-    if not user or not verify_password(data.password, user.password_hash):
+    if not matches:
+        # Mesma resposta pra "email nao existe" e "senha errada" (anti enum).
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas"
+        )
+
+    if len(matches) > 1 and not data.company_slug:
+        # Email aparece em multiplas empresas. Cliente precisa enviar slug.
+        # 409 Conflict: requisicao logica invalida sem context adicional.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Email cadastrado em multiplas empresas. "
+                "Envie company_slug no body pra desambiguar."
+            ),
+        )
+
+    user = matches[0]
+    if not verify_password(data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas"
         )
@@ -116,10 +140,8 @@ async def register_company(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug ja existe")
 
-    existing_user = await db.execute(select(User).where(User.email == data.admin_email))
-    if existing_user.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email ja cadastrado")
-
+    # Email NAO mais checado globalmente — pode existir em outra empresa.
+    # Unique composto (company_id, email) garante unicidade dentro do tenant.
     company = Company(name=data.company_name, slug=data.company_slug)
     db.add(company)
     await db.flush()

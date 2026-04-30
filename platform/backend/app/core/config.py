@@ -57,5 +57,9 @@ class Settings(BaseSettings):
     SECURITY_HEADERS_CSP: str | None = None
     SECURITY_HEADERS_HSTS: bool = True
 
+    # SSRF guard pra custom LLM endpoints. Em dev queremos permitir
+    # localhost (Ollama em 11434). Em prod sempre False.
+    ALLOW_LOOPBACK_LLM_ENDPOINTS: bool = False
+
 
 settings = Settings()

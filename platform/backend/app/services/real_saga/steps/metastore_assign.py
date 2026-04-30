@@ -113,13 +113,8 @@ class MetastoreAssignStep(SagaStepBase):
     async def _get_token(
         c: httpx.AsyncClient, account_id: str, client_id: str, secret: str
     ) -> str:
-        resp = await c.post(
-            f"https://accounts.cloud.databricks.com/oidc/accounts/{account_id}/v1/token",
-            auth=(client_id, secret),
-            data={"grant_type": "client_credentials", "scope": "all-apis"},
-        )
-        resp.raise_for_status()
-        return resp.json()["access_token"]
+        from app.services.databricks_oauth import account_oauth_token
+        return await account_oauth_token(c, account_id, client_id, secret)
 
     @staticmethod
     async def _discover_metastore(

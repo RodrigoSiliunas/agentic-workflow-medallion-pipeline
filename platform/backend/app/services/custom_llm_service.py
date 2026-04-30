@@ -5,6 +5,12 @@ Discovery dual-mode:
 - Fallback GET {base_url_root}/api/tags (Ollama nativo)
 
 Cifragem de api_key reutiliza EncryptionService (Fernet).
+
+SSRF guard: `_validate_endpoint_url` aplicado em CRUD + discovery. Bloqueia
+loopback/RFC1918/link-local salvo dev mode (ALLOW_LOOPBACK_LLM_ENDPOINTS).
+Defesa contra api_key exfil: usuario que controla base_url poderia
+apontar pro server dele e capturar a key + tokens — ngrok publicos ok,
+internal hosts nao.
 """
 
 from __future__ import annotations
@@ -17,10 +23,23 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.url_validator import UnsafeURLError, validate_public_url
 from app.models.custom_llm_endpoint import CustomLLMEndpoint
 from app.services.encryption import EncryptionService
 
 logger = structlog.get_logger()
+
+
+def _validate_endpoint_url(base_url: str) -> str:
+    """Valida base_url + retorna URL normalizada. Raises ValueError em rejeicao."""
+    try:
+        return validate_public_url(
+            base_url,
+            allow_loopback=settings.ALLOW_LOOPBACK_LLM_ENDPOINTS,
+        )
+    except UnsafeURLError as exc:
+        raise ValueError(f"base_url rejeitada por SSRF guard: {exc}") from exc
 
 
 class CustomLLMService:
@@ -56,11 +75,12 @@ class CustomLLMService:
         models: list,
         enabled: bool = True,
     ) -> CustomLLMEndpoint:
+        safe_url = _validate_endpoint_url(base_url)
         encrypted = self.encryption.encrypt(api_key) if api_key else None
         endpoint = CustomLLMEndpoint(
             company_id=company_id,
             name=name,
-            base_url=base_url.rstrip("/"),
+            base_url=safe_url,
             encrypted_api_key=encrypted,
             models=models or [],
             enabled=enabled,
@@ -82,7 +102,7 @@ class CustomLLMService:
         if name is not None:
             endpoint.name = name
         if base_url is not None:
-            endpoint.base_url = base_url.rstrip("/")
+            endpoint.base_url = _validate_endpoint_url(base_url)
         if api_key is not None:
             # api_key string vazia = limpa. None = mantem.
             endpoint.encrypted_api_key = (
@@ -126,7 +146,10 @@ class CustomLLMService:
         1. GET {base_url}/models (OpenAI standard)
         2. Fallback: extrai root da base_url e GET {root}/api/tags (Ollama nativo)
         """
-        normalized = base_url.rstrip("/")
+        try:
+            normalized = _validate_endpoint_url(base_url)
+        except ValueError as exc:
+            return False, [], None, str(exc)
         # Headers
         headers = {}
         if api_key:

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_user
 from app.database.session import get_db
+from app.models.company import Company
 from app.models.deployment import Deployment, DeploymentLog, DeploymentStep
 from app.models.pipeline import Pipeline
 from app.models.template import Template
@@ -194,15 +195,24 @@ async def create_deployment(
         if adv.cluster_tags:
             merged_env["cluster_tags"] = json.dumps(adv.cluster_tags)
 
-    # Environment isolation: dev/staging usam catalog + secret scope com sufixo
-    # pra coexistir com prod no mesmo workspace. Evita colisao entre deploys
-    # paralelos do mesmo template. User pode override via advanced.env_vars.
+    # Multi-tenant isolation: prefixar scope/catalog/cluster com company_slug
+    # impede colisao quando companies compartilham workspace (demo, single-account
+    # SaaS). Mesmo em workspace dedicado por empresa, o prefixo identifica
+    # ownership e evita overwrite acidental de secrets/catalogs entre deploys.
+    company_row = await db.execute(
+        select(Company.slug).where(Company.id == auth.company_id)
+    )
+    company_slug = (company_row.scalar_one_or_none() or "tenant").replace("_", "-")
+    # Sanitize: secret scopes Databricks aceitam [a-zA-Z0-9-_]; catalogs aceitam
+    # [a-zA-Z0-9_]. Convertemos hyphens pra underscore no catalog.
+    catalog_safe_slug = company_slug.replace("-", "_")
+
     env_name = data.config.environment
-    if env_name in ("dev", "staging"):
-        merged_env.setdefault("catalog", f"medallion_{env_name}")
-        merged_env.setdefault("secret_scope", f"medallion-pipeline-{env_name}")
-        merged_env.setdefault("cluster_name", f"medallion-pipeline-{env_name}")
-    # prod: defaults inalterados (catalog=medallion, scope=medallion-pipeline)
+    env_suffix = "" if env_name == "prod" else f"-{env_name}"
+    catalog_env_suffix = "" if env_name == "prod" else f"_{env_name}"
+    merged_env.setdefault("catalog", f"medallion_{catalog_safe_slug}{catalog_env_suffix}")
+    merged_env.setdefault("secret_scope", f"medallion-{company_slug}{env_suffix}")
+    merged_env.setdefault("cluster_name", f"medallion-{company_slug}{env_suffix}")
 
     deployment = Deployment(
         company_id=auth.company_id,

@@ -251,11 +251,15 @@ class ContextEngine:
         )
 
     def _select_relevant_notebooks(self, intent: str) -> list[str]:
-        """Seleciona notebooks relevantes ao intent."""
-        base = "pipeline/notebooks/"
+        """Seleciona notebooks relevantes ao intent.
+
+        Paths refletem layout atual do monorepo (pipelines/pipeline-seguradora-whatsapp/).
+        agent_pre + agent_post foram removidos — pipeline e ETL puro.
+        """
+        base = "pipelines/pipeline-seguradora-whatsapp/notebooks/"
         if intent in ("error_diagnosis", "fix_request"):
             return [
-                f"{base}agent_post.py",
+                f"{base}pre_check.py",
                 f"{base}silver/dedup_clean.py",
                 f"{base}silver/entities_mask.py",
                 f"{base}validation/checks.py",
@@ -265,4 +269,4 @@ class ContextEngine:
                 f"{base}gold/analytics.py",
                 f"{base}silver/enrichment.py",
             ]
-        return [f"{base}agent_pre.py"]
+        return [f"{base}pre_check.py"]
