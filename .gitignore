@@ -83,3 +83,14 @@ terraform.tfvars.local
 mapping.encrypted
 *.local.md
 .rebuild-state.local.md
+
+# Claude Code state (per-user)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Caveman compress backup (auto-gerado pelo skill)
+CLAUDE.original.md
+
+# Pip leakage no scripts/ (instalação acidental no repo root no Windows)
+scripts/pip*.exe
+scripts/vba_extract.py
