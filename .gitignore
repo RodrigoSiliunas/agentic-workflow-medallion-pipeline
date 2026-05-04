@@ -45,7 +45,6 @@ Thumbs.db
 .nuxt/
 .output/
 node_modules/
-bun.lock
 
 # Platform backend venv
 platform/backend/venv/
