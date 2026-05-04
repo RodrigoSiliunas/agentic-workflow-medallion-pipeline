@@ -18,6 +18,10 @@ class WorkspaceAdvancedConfig(BaseModel):
     network_cidr: str | None = None
     admin_email: str | None = None
     metastore_id: str | None = None
+    # Cluster compute model: ephemeral cria new_cluster por job run (DBU rate
+    # Job, ~1/3 do all-purpose, sem custo idle). persistent cria cluster
+    # all-purpose reusable. Default ephemeral pra ETL agendado.
+    cluster_compute: Literal["ephemeral", "persistent"] | None = None
     # Cluster identity
     cluster_name: str | None = None
     # Cluster sizing — node_type aplica a worker; driver_node_type opcional

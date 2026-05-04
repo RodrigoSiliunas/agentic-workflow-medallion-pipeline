@@ -46,7 +46,7 @@ class TestClusterSizingOverride:
 
     @pytest.mark.asyncio
     async def test_default_node_type_when_unset(self, monkeypatch):
-        """Sem cluster_node_type -> defaults pra m5d.large + 2 workers."""
+        """Sem cluster_node_type -> defaults pra m5d.large + 2 workers (persistent mode)."""
         captured: dict = {}
 
         async def fake_ensure(ctx, w, scope, region, admin_email, **kwargs):
@@ -65,7 +65,7 @@ class TestClusterSizingOverride:
             lambda creds: MagicMock(),
         )
 
-        ctx = _make_ctx(env_vars={})
+        ctx = _make_ctx(env_vars={"cluster_compute": "persistent"})
         step = ClusterProvisionStep()
         await step.execute(ctx)
 
@@ -75,7 +75,7 @@ class TestClusterSizingOverride:
 
     @pytest.mark.asyncio
     async def test_override_via_env_vars(self, monkeypatch):
-        """env_vars custom propagados pra _ensure_cluster."""
+        """env_vars custom propagados pra _ensure_cluster (persistent mode)."""
         captured: dict = {}
 
         async def fake_ensure(ctx, w, scope, region, admin_email, **kwargs):
@@ -95,6 +95,7 @@ class TestClusterSizingOverride:
         )
 
         ctx = _make_ctx(env_vars={
+            "cluster_compute": "persistent",
             "cluster_node_type": "r5d.2xlarge",
             "cluster_num_workers": "4",
             "cluster_spark_version": "16.1.x-scala2.12",
@@ -123,8 +124,39 @@ class TestClusterSizingOverride:
             lambda creds: MagicMock(),
         )
 
-        ctx = _make_ctx(env_vars={"cluster_num_workers": "not-a-number"})
+        ctx = _make_ctx(env_vars={
+            "cluster_compute": "persistent",
+            "cluster_num_workers": "not-a-number",
+        })
         step = ClusterProvisionStep()
         await step.execute(ctx)
 
         assert captured["num_workers"] == 2
+
+    @pytest.mark.asyncio
+    async def test_ephemeral_mode_builds_spec_skips_creation(self, monkeypatch):
+        """cluster_compute=ephemeral -> nao chama _ensure_cluster, popula cluster_spec."""
+        ensure_called = {"value": False}
+
+        async def fake_ensure(ctx, w, scope, region, admin_email, **kwargs):
+            ensure_called["value"] = True
+            return ("should-not-happen", True)
+
+        monkeypatch.setattr(
+            ClusterProvisionStep, "_ensure_cluster", staticmethod(fake_ensure)
+        )
+        monkeypatch.setattr(
+            "app.services.real_saga.steps.cluster_provision.workspace_client",
+            lambda creds: MagicMock(),
+        )
+
+        ctx = _make_ctx(env_vars={})  # default is ephemeral
+        step = ClusterProvisionStep()
+        await step.execute(ctx)
+
+        assert ensure_called["value"] is False
+        assert ctx.shared.cluster_compute == "ephemeral"
+        assert ctx.shared.cluster_spec is not None
+        assert ctx.shared.cluster_spec.get("node_type_id") == "m5d.large"
+        assert ctx.shared.cluster_spec.get("num_workers") == 2
+        assert ctx.shared.databricks_cluster_id is None

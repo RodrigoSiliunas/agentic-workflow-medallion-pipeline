@@ -116,10 +116,13 @@ class ClusterProvisionStep:
 
     async def execute(self, ctx: StepContext) -> None:
         env = ctx.env_vars()
+        cluster_compute = (env.get("cluster_compute") or "ephemeral").lower()
+        ctx.shared.cluster_compute = cluster_compute
 
         explicit_id = env.get("cluster_id", "")
         if explicit_id:
             ctx.shared.databricks_cluster_id = explicit_id
+            ctx.shared.cluster_compute = "persistent"
             await ctx.info(f"Usando cluster_id explicito: {explicit_id}")
             return
 
@@ -168,18 +171,25 @@ class ClusterProvisionStep:
                 policy_definition,
             )
 
-        # Aplica overrides fixed da policy. Saga cria all-purpose persistente —
-        # policy "Job Compute" force cluster_type=job e quebra create. Aborta cedo.
+        # Aplica overrides fixed da policy. cluster_type forced = "job" so e
+        # compativel se cluster_compute=ephemeral (workflow cria new_cluster job).
         forced_availability: str | None = None
+        forced_cluster_type: str | None = None
         if policy_id:
             policy_overrides = await self._policy_fixed_values(ctx, w, policy_id)
             forced_cluster_type = policy_overrides.get("cluster_type")
-            if forced_cluster_type and forced_cluster_type != "all-purpose":
+            if forced_cluster_type == "all-purpose" and cluster_compute == "ephemeral":
                 raise ValueError(
-                    f"Policy {policy_id} force cluster_type={forced_cluster_type}; "
-                    "saga cria cluster all-purpose persistente. "
-                    "Selecione policy compativel (ex: Personal Compute, Power User) "
-                    "ou Sem Policy."
+                    f"Policy {policy_id} force cluster_type=all-purpose mas "
+                    "cluster_compute=ephemeral. Selecione policy 'Job Compute' "
+                    "ou 'Sem Policy', ou troque cluster_compute pra 'persistent'."
+                )
+            if forced_cluster_type == "job" and cluster_compute == "persistent":
+                raise ValueError(
+                    f"Policy {policy_id} force cluster_type=job mas "
+                    "cluster_compute=persistent. Selecione policy compativel com "
+                    "all-purpose (Personal Compute, Power User) ou troque "
+                    "cluster_compute pra 'ephemeral'."
                 )
             availability = policy_overrides.get("aws_attributes.availability")
             if availability:
@@ -195,6 +205,35 @@ class ClusterProvisionStep:
             except (TypeError, ValueError, json.JSONDecodeError):
                 await ctx.warn(f"cluster_tags invalido (esperado JSON dict): {tags_raw}")
 
+        ctx.shared.databricks_cluster_policy_id = policy_id
+        if env.get("cluster_policy_definition"):
+            ctx.shared.databricks_cluster_policy_created = True
+
+        if cluster_compute == "ephemeral":
+            # NAO cria cluster persistente. Monta spec pro workflow injetar
+            # em job_clusters[].new_cluster — cada run cria/destroi cluster.
+            spec = self._build_cluster_spec(
+                scope=scope,
+                region=region,
+                admin_email=admin_email,
+                node_type=node_type,
+                driver_node_type=driver_node_type,
+                num_workers=num_workers,
+                autoscale=autoscale,
+                spark_version=spark_version,
+                policy_id=policy_id,
+                custom_tags=custom_tags,
+                forced_availability=forced_availability,
+                ephemeral=True,
+            )
+            ctx.shared.cluster_spec = spec
+            await ctx.success(
+                f"Cluster spec ephemeral pronto (DBU rate Job, "
+                f"workspace cria cluster por run). policy={policy_id or 'none'}"
+            )
+            return
+
+        # Persistent mode — cria all-purpose cluster reusable
         cluster_id, was_created = await self._ensure_cluster(
             ctx, w, scope, region, admin_email,
             cluster_name=cluster_name,
@@ -210,10 +249,7 @@ class ClusterProvisionStep:
         )
         ctx.shared.databricks_cluster_id = cluster_id
         ctx.shared.databricks_cluster_created = was_created
-        ctx.shared.databricks_cluster_policy_id = policy_id
-        if env.get("cluster_policy_definition"):
-            ctx.shared.databricks_cluster_policy_created = True
-        await ctx.success(f"Cluster pronto: {cluster_id}")
+        await ctx.success(f"Cluster persistente pronto: {cluster_id}")
 
     @staticmethod
     async def _policy_fixed_values(
@@ -243,6 +279,67 @@ class ClusterProvisionStep:
                 if value is not None:
                     out[path] = str(value)
         return out
+
+    @staticmethod
+    def _build_cluster_spec(
+        *,
+        scope: str,
+        region: str,
+        admin_email: str,
+        node_type: str,
+        driver_node_type: str,
+        num_workers: int | None,
+        autoscale: tuple[int, int] | None,
+        spark_version: str,
+        policy_id: str | None,
+        custom_tags: dict[str, str],
+        forced_availability: str | None,
+        ephemeral: bool,
+    ) -> dict:
+        """Monta dict serializavel do new_cluster spec — usado pelo workflow
+        step pra injetar em job_clusters[].new_cluster (Jobs API 2.1).
+
+        ephemeral=True omite autotermination_minutes (Job clusters terminam
+        no fim do run automaticamente, autotermination invalido).
+        """
+        spark_conf = {
+            "spark.hadoop.fs.s3a.access.key": f"{{{{secrets/{scope}/aws-access-key-id}}}}",
+            "spark.hadoop.fs.s3a.secret.key": f"{{{{secrets/{scope}/aws-secret-access-key}}}}",
+            "spark.hadoop.fs.s3a.endpoint": f"s3.{region}.amazonaws.com",
+        }
+        availability = forced_availability or "ON_DEMAND"
+        first_on_demand = 0 if availability in ("SPOT_WITH_FALLBACK", "SPOT") else 1
+        aws_attrs: dict = {
+            "first_on_demand": first_on_demand,
+            "availability": availability,
+            "zone_id": "auto",
+        }
+        if _needs_ebs(node_type) or _needs_ebs(driver_node_type):
+            aws_attrs.update({
+                "ebs_volume_count": 1,
+                "ebs_volume_size": 100,
+                "ebs_volume_type": "GENERAL_PURPOSE_SSD",
+            })
+        spec: dict = {
+            "spark_version": spark_version,
+            "node_type_id": node_type,
+            "driver_node_type_id": driver_node_type,
+            "data_security_mode": "SINGLE_USER",
+            "single_user_name": admin_email,
+            "spark_conf": spark_conf,
+            "aws_attributes": aws_attrs,
+        }
+        if autoscale is not None:
+            spec["autoscale"] = {
+                "min_workers": autoscale[0], "max_workers": autoscale[1],
+            }
+        else:
+            spec["num_workers"] = num_workers or 2
+        if policy_id:
+            spec["policy_id"] = policy_id
+        if custom_tags:
+            spec["custom_tags"] = custom_tags
+        return spec
 
     @staticmethod
     async def _ensure_cluster(

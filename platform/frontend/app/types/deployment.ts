@@ -28,6 +28,8 @@ export interface WorkspaceAdvancedConfig {
   metastoreId?: string
   /** Cluster reuse strategy: "existing" usa clusterId, "new" cria com nodeType + workers. */
   clusterMode?: "existing" | "new"
+  /** Compute model: ephemeral (Job Compute, ~1/3 DBU, sem custo idle) ou persistent (all-purpose). Default ephemeral. */
+  clusterCompute?: "ephemeral" | "persistent"
   /** existing mode: id do cluster ja running no workspace. */
   clusterId?: string
   /** Custom name; default = "medallion-pipeline". */

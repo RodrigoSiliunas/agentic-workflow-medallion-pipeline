@@ -171,6 +171,7 @@ async def create_deployment(
             "network_cidr": "network_cidr",
             "admin_email": "admin_email",
             "metastore_id": "databricks_metastore_id",
+            "cluster_compute": "cluster_compute",
             "cluster_name": "cluster_name",
             "cluster_node_type": "cluster_node_type",
             "cluster_driver_node_type": "cluster_driver_node_type",
@@ -193,6 +194,11 @@ async def create_deployment(
             merged_env[env_key] = str(value)
         if adv.cluster_tags:
             merged_env["cluster_tags"] = json.dumps(adv.cluster_tags)
+
+    # Cluster compute default: ephemeral (Job Compute, ~1/3 DBU, sem custo idle).
+    # Workflow gera new_cluster inline em job_clusters[]; cluster_provision
+    # step skipa criacao mas valida policy + monta spec em shared state.
+    merged_env.setdefault("cluster_compute", "ephemeral")
 
     # Environment isolation: prod usa defaults legacy (catalog=medallion,
     # scope=medallion-pipeline) pra preservar compat com notebooks que

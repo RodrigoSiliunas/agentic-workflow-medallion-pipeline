@@ -159,6 +159,7 @@
             </p>
             <ClusterPicker
               :initial-mode="config.advanced?.clusterMode"
+              :initial-cluster-compute="config.advanced?.clusterCompute"
               :initial-cluster-id="config.advanced?.clusterId"
               :initial-cluster-name="config.advanced?.clusterName"
               :initial-node-type="config.advanced?.clusterNodeType"
@@ -479,6 +480,7 @@ interface WorkspacePickerEvent {
 
 interface ClusterStateEvent {
   mode: "existing" | "new"
+  clusterCompute?: "ephemeral" | "persistent"
   clusterId?: string
   clusterName?: string
   driverNodeType?: string
@@ -523,6 +525,7 @@ function onClusterState(state: ClusterStateEvent) {
     config.advanced = {
       ...(config.advanced || {}),
       clusterMode: "new",
+      clusterCompute: state.clusterCompute,
       clusterId: undefined,
       clusterName: state.clusterName,
       clusterNodeType: state.workerNodeType,

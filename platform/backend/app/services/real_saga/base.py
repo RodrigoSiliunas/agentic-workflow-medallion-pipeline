@@ -96,6 +96,12 @@ class SharedSagaState:
     databricks_workspace_host: str | None = None
     databricks_cluster_id: str | None = None
     databricks_cluster_policy_id: str | None = None
+    # cluster_compute: "ephemeral" (workflow.job_clusters[].new_cluster) ou
+    # "persistent" (workflow tasks reusam cluster_id all-purpose).
+    # cluster_spec armazena dict do new_cluster pra ephemeral mode — workflow
+    # step injeta no job_clusters do JobSpec.
+    cluster_compute: str | None = None
+    cluster_spec: dict | None = None
     secret_scope: str | None = None
     catalog: str | None = None
     repo_path: str | None = None

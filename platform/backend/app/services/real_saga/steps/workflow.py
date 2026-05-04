@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import asyncio
 
+from databricks.sdk.service.compute import ClusterSpec
 from databricks.sdk.service.jobs import (
     CronSchedule,
+    JobCluster,
     JobEmailNotifications,
     NotebookTask,
     RunIf,
@@ -82,14 +84,39 @@ class WorkflowStep:
                 "workflow step sem observer_job_id — step `observer` deve rodar antes"
             )
 
-        # cluster_id obrigatorio. Cluster_provision step deve preencher
-        # ctx.shared.databricks_cluster_id antes do workflow rodar.
+        # Cluster wiring: dois modos.
+        # ephemeral: cluster_provision salvou spec em ctx.shared.cluster_spec.
+        #   Workflow gera job_clusters[].new_cluster com cluster_key reusado
+        #   por todas as tasks. Cluster nasce/morre por run (DBU rate Job).
+        # persistent: cluster_provision criou cluster all-purpose; tasks
+        #   referenciam existing_cluster_id. Cluster fica idle 30min entre runs.
+        cluster_compute = (ctx.shared.cluster_compute or "ephemeral").lower()
         cluster_id = ctx.shared.databricks_cluster_id or env.get("cluster_id", "")
-        if not cluster_id:
-            raise RuntimeError(
-                "workflow step sem cluster_id — step `cluster_provision` deve rodar "
-                "antes ou env_vars['cluster_id'] deve estar setado"
+        cluster_spec_dict = ctx.shared.cluster_spec
+        job_cluster_key = "medallion_pipeline_cluster"
+        job_clusters: list[JobCluster] = []
+
+        if cluster_compute == "ephemeral":
+            if not cluster_spec_dict:
+                raise RuntimeError(
+                    "workflow ephemeral sem cluster_spec — step `cluster_provision` "
+                    "deve rodar antes e popular ctx.shared.cluster_spec"
+                )
+            cluster_kwarg: dict = {"job_cluster_key": job_cluster_key}
+            job_clusters.append(
+                JobCluster(
+                    job_cluster_key=job_cluster_key,
+                    new_cluster=ClusterSpec.from_dict(cluster_spec_dict),
+                )
             )
+        else:
+            if not cluster_id:
+                raise RuntimeError(
+                    "workflow persistent sem cluster_id — step `cluster_provision` "
+                    "deve rodar antes ou env_vars['cluster_id'] deve estar setado"
+                )
+            cluster_kwarg = {"existing_cluster_id": cluster_id}
+
         pipeline_notebooks = (
             f"{repo_path}/pipelines/pipeline-seguradora-whatsapp/notebooks"
         )
@@ -98,7 +125,9 @@ class WorkflowStep:
         )
 
         w = workspace_client(ctx.credentials)
-        await ctx.info(f"Criando workflow '{WORKFLOW_JOB_NAME}' com 8 tasks")
+        await ctx.info(
+            f"Criando workflow '{WORKFLOW_JOB_NAME}' (cluster_compute={cluster_compute})"
+        )
 
         base_params: dict[str, str] = {
             "catalog": catalog,
@@ -106,13 +135,6 @@ class WorkflowStep:
             "chaos_mode": "off",
             "bronze_prefix": bronze_prefix,
         }
-
-        # Se cluster_id esta configurado, usa cluster dedicado (necessario pra
-        # spark.hadoop.fs.s3a.* que nao funciona em serverless).
-        # Se vazio, serverless auto-provisionado.
-        cluster_kwarg = {"existing_cluster_id": cluster_id} if cluster_id else {}
-        if cluster_id:
-            await ctx.info(f"Usando cluster dedicado: {cluster_id}")
 
         tasks: list[Task] = [
             Task(
@@ -234,7 +256,7 @@ class WorkflowStep:
             ),
         ]
 
-        settings = {
+        settings: dict = {
             "name": WORKFLOW_JOB_NAME,
             "description": (
                 "Medallion WhatsApp — Bronze -> Silver -> Gold com Observer sentinel.\n"
@@ -259,6 +281,8 @@ class WorkflowStep:
                 on_start=[admin_email],
             ),
         }
+        if job_clusters:
+            settings["job_clusters"] = job_clusters
 
         job_id = await _upsert_job(w, WORKFLOW_JOB_NAME, settings, owner_email=admin_email)
         await ctx.success(f"Pipeline workflow pronto: id={job_id}")

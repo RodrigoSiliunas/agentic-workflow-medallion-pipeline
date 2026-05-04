@@ -172,6 +172,7 @@ export function useDeploymentsApi() {
           network_cidr: config.advanced.networkCidr,
           admin_email: config.advanced.adminEmail,
           metastore_id: config.advanced.metastoreId,
+          cluster_compute: config.advanced.clusterCompute,
           cluster_name: config.advanced.clusterName,
           cluster_node_type: config.advanced.clusterNodeType,
           cluster_driver_node_type: config.advanced.clusterDriverNodeType,

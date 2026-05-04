@@ -85,8 +85,12 @@ SAGA_BLUEPRINT: list[dict[str, str]] = [
     },
     {
         "id": "cluster_provision",
-        "name": "Provision Databricks cluster",
-        "description": "Cluster ETL m5d.large com instance profile + libs",
+        "name": "Cluster spec / provisioning",
+        "description": (
+            "ephemeral (default): valida policy + monta new_cluster spec "
+            "(cluster nasce/morre por run, DBU rate Job). "
+            "persistent: cria cluster all-purpose reusable."
+        ),
     },
     {
         "id": "upload",

@@ -50,8 +50,45 @@
     <!-- Modo new                                                     -->
     <!-- =========================================================== -->
     <div v-else class="space-y-3">
-      <!-- Nome -->
+      <!-- Cluster mode: ephemeral vs persistent -->
       <div>
+        <label class="block text-xs font-medium mb-1" :style="{ color: 'var(--text-secondary)' }">
+          Modelo de cluster
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            class="px-3 py-2 rounded-[var(--radius-md)] border text-xs font-medium transition-colors text-left"
+            :style="clusterComputeStyle('ephemeral')"
+            @click="setClusterCompute('ephemeral')"
+          >
+            <div class="font-semibold">Ephemeral (Job Compute)</div>
+            <div class="text-[10px] opacity-80 font-normal mt-0.5">
+              Cluster criado/destruido por run. ~1/3 DBU. Sem custo idle.
+              Cold start ~3min.
+            </div>
+          </button>
+          <button
+            type="button"
+            class="px-3 py-2 rounded-[var(--radius-md)] border text-xs font-medium transition-colors text-left"
+            :style="clusterComputeStyle('persistent')"
+            @click="setClusterCompute('persistent')"
+          >
+            <div class="font-semibold">Persistent (All-purpose)</div>
+            <div class="text-[10px] opacity-80 font-normal mt-0.5">
+              Cluster reusable, autotermination 30min. DBU 3x maior.
+              Warm-start &lt;30s entre runs.
+            </div>
+          </button>
+        </div>
+        <p class="text-[10px] mt-1" :style="{ color: 'var(--text-tertiary)' }">
+          ETL agendado (1-2x/dia): use Ephemeral. Runs frequentes (hourly+) ou
+          notebooks interativos: Persistent.
+        </p>
+      </div>
+
+      <!-- Nome (so faz sentido em persistent — ephemeral nao tem nome reusavel) -->
+      <div v-if="clusterCompute === 'persistent'">
         <label class="block text-xs font-medium mb-1" :style="{ color: 'var(--text-secondary)' }">
           Nome do cluster
         </label>
@@ -360,6 +397,7 @@ const DEFAULT_NAME = "medallion-pipeline"
 
 interface ClusterPickerState {
   mode: "existing" | "new"
+  clusterCompute?: "ephemeral" | "persistent"
   clusterId?: string
   clusterName?: string
   driverNodeType?: string
@@ -377,6 +415,7 @@ interface ClusterPickerState {
 
 const props = defineProps<{
   initialMode?: "existing" | "new"
+  initialClusterMode?: "ephemeral" | "persistent"
   initialClusterId?: string
   initialClusterName?: string
   initialNodeType?: string
@@ -411,6 +450,9 @@ const clusterTypes = computed(() =>
 )
 
 const mode = ref<"existing" | "new">(props.initialMode || "new")
+const clusterCompute = ref<"ephemeral" | "persistent">(
+  props.initialClusterMode || "ephemeral",
+)
 const clusterId = ref<string>(props.initialClusterId || "")
 const clusterName = ref<string>(props.initialClusterName || "")
 const workerNodeType = ref<string>(props.initialNodeType || "m5d.large")
@@ -487,6 +529,20 @@ function setMode(next: "existing" | "new") {
   emitState()
 }
 
+function setClusterCompute(next: "ephemeral" | "persistent") {
+  clusterCompute.value = next
+  emitState()
+}
+
+function clusterComputeStyle(value: "ephemeral" | "persistent"): Record<string, string> {
+  const isActive = clusterCompute.value === value
+  return {
+    background: isActive ? "var(--brand-600)" : "var(--surface)",
+    color: isActive ? "white" : "var(--text-secondary)",
+    borderColor: isActive ? "var(--brand-600)" : "var(--border)",
+  }
+}
+
 function setStrategy(next: "fixed" | "autoscale") {
   strategy.value = next
   emitState()
@@ -513,6 +569,7 @@ function emitState() {
   }
   const payload: ClusterPickerState = {
     mode: "new",
+    clusterCompute: clusterCompute.value,
     clusterName: clusterName.value || undefined,
     driverNodeType: driverNodeType.value,
     workerNodeType: workerNodeType.value,
