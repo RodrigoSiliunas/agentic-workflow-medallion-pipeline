@@ -1,15 +1,21 @@
 """SSH bootstrap + deploy do projeto no VPS via paramiko.
 
-Roda comandos remotos com password auth, captura stdout/stderr/exit code.
+Roda comandos remotos com SSH key (preferido) ou password auth, captura
+stdout/stderr/exit code.
 
-Credenciais via env vars (NUNCA hardcoded):
-  VPS_HOST   — IP/hostname do VPS
-  VPS_USER   — usuario SSH
-  VPS_PASS   — password SSH
+Config via env vars:
+  VPS_HOST   — hostname/IP do VPS         (default: soulfocus.io)
+  VPS_USER   — usuario SSH                (default: root)
+  VPS_KEY    — caminho da chave privada   (default: ~/.ssh/vps-hostinger-soul-focus)
+  VPS_PASS   — password SSH               (fallback so se VPS_KEY nao existir)
 
-Uso:
-  $env:VPS_HOST="x.x.x.x"; $env:VPS_USER="user"; $env:VPS_PASS="..."
+Defaults apontam pro VPS Hostinger (soulfocus.io). Pra outro VPS:
+  $env:VPS_HOST="x.x.x.x"; $env:VPS_USER="usr"; $env:VPS_PASS="..."
   python scripts/vps_deploy.py <action>
+
+NOTA: o Hostinger ja roda nginx-proxy em Docker (auto-discovery via VIRTUAL_HOST
+labels). A action `nginx` deste script instala nginx nativo do sistema e
+conflita com nginx-proxy — usar apenas em VPS limpo (Contabo-style).
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import io
 import os
 import sys
 import time
+from pathlib import Path
 
 import paramiko
 
@@ -25,20 +32,36 @@ import paramiko
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-HOST = os.environ.get("VPS_HOST")
-USER = os.environ.get("VPS_USER")
+HOST = os.environ.get("VPS_HOST", "soulfocus.io")
+USER = os.environ.get("VPS_USER", "root")
+KEY_PATH = os.environ.get("VPS_KEY", str(Path.home() / ".ssh" / "vps-hostinger-soul-focus"))
 PASS = os.environ.get("VPS_PASS")
 
-if not (HOST and USER and PASS):
-    sys.exit("ERROR: defina VPS_HOST, VPS_USER e VPS_PASS no ambiente antes de rodar.")
+# Auth: SSH key se o arquivo existir, senao password.
+USE_KEY = Path(KEY_PATH).expanduser().is_file()
+
+if not USE_KEY and not PASS:
+    sys.exit(
+        "ERROR: nenhum metodo de auth disponivel. Defina VPS_KEY apontando "
+        "pra chave privada existente OU VPS_PASS com a senha."
+    )
+
+# Sudo: root nao precisa; outros usuarios precisam de password no -S.
+NEEDS_SUDO_PW = USER != "root"
+if NEEDS_SUDO_PW and not PASS:
+    sys.exit("ERROR: actions com sudo precisam de VPS_PASS quando USER != root.")
 
 
 def run(client: paramiko.SSHClient, cmd: str, timeout: int = 600, use_sudo_pw: bool = False) -> tuple[int, str, str]:
     """Run remote command. Returns (exit_code, stdout, stderr)."""
     print(f"\n>>> {cmd[:200]}")
-    if use_sudo_pw:
-        # Inject password pra sudo via stdin (-S flag)
-        cmd = f"echo '{PASS}' | sudo -S -p '' {cmd[5:] if cmd.startswith('sudo ') else cmd}"
+    if use_sudo_pw and NEEDS_SUDO_PW:
+        # Injeta password pra sudo via stdin (-S flag). Root pula isso.
+        body = cmd[5:] if cmd.startswith("sudo ") else cmd
+        cmd = f"echo '{PASS}' | sudo -S -p '' {body}"
+    elif use_sudo_pw and not NEEDS_SUDO_PW:
+        # Root: tira o "sudo " prefix, ja roda como root.
+        cmd = cmd[5:] if cmd.startswith("sudo ") else cmd
     stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout, get_pty=False)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
@@ -54,10 +77,20 @@ def run(client: paramiko.SSHClient, cmd: str, timeout: int = 600, use_sudo_pw: b
 def main():
     action = sys.argv[1] if len(sys.argv) > 1 else "test"
 
-    print(f"== Connecting to {USER}@{HOST} ==")
+    auth_label = f"key={KEY_PATH}" if USE_KEY else "password"
+    print(f"== Connecting to {USER}@{HOST} ({auth_label}) ==")
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(HOST, username=USER, password=PASS, timeout=30, allow_agent=False, look_for_keys=False)
+    if USE_KEY:
+        client.connect(
+            HOST, username=USER, key_filename=KEY_PATH, timeout=30,
+            allow_agent=False, look_for_keys=False,
+        )
+    else:
+        client.connect(
+            HOST, username=USER, password=PASS, timeout=30,
+            allow_agent=False, look_for_keys=False,
+        )
     print("CONNECTED")
 
     try:
@@ -72,15 +105,15 @@ def main():
             run(client, "git --version 2>&1 || echo 'git not installed'")
 
         elif action == "bootstrap":
-            # Docker, git, ufw ja instalados. Falta nginx + python3-cryptography.
-            run(client, "sudo -S DEBIAN_FRONTEND=noninteractive apt install -y nginx python3-cryptography curl", use_sudo_pw=True, timeout=600)
-            run(client, "sudo -S systemctl enable --now nginx", use_sudo_pw=True)
-            run(client, "sudo -S ufw allow 22/tcp", use_sudo_pw=True)
-            run(client, "sudo -S ufw allow 80/tcp", use_sudo_pw=True)
-            run(client, "sudo -S ufw --force enable", use_sudo_pw=True)
-            run(client, "docker --version", use_sudo_pw=False)
-            run(client, "docker compose version", use_sudo_pw=False)
-            run(client, "nginx -v 2>&1", use_sudo_pw=False)
+            # Instala nginx nativo + python3-cryptography. Pula em VPS que ja roda nginx-proxy em Docker.
+            run(client, "sudo DEBIAN_FRONTEND=noninteractive apt install -y nginx python3-cryptography curl", use_sudo_pw=True, timeout=600)
+            run(client, "sudo systemctl enable --now nginx", use_sudo_pw=True)
+            run(client, "sudo ufw allow 22/tcp", use_sudo_pw=True)
+            run(client, "sudo ufw allow 80/tcp", use_sudo_pw=True)
+            run(client, "sudo ufw --force enable", use_sudo_pw=True)
+            run(client, "docker --version")
+            run(client, "docker compose version")
+            run(client, "nginx -v 2>&1")
 
         elif action == "clone":
             run(client, "rm -rf ~/agentic-workflow-medallion-pipeline")
@@ -127,7 +160,6 @@ def main():
 
         elif action == "compose_up":
             base = "~/agentic-workflow-medallion-pipeline/platform/backend"
-            # contabo ja no grupo docker (id mostrou 988), sem sudo
             run(client, f"cd {base} && docker compose up -d --build", timeout=900)
             time.sleep(5)
             run(client, f"cd {base} && docker compose ps")
@@ -139,6 +171,7 @@ def main():
             run(client, f"cd {base} && docker compose logs --tail=30 postgres redis")
 
         elif action == "nginx":
+            # AVISO: conflita com nginx-proxy em Docker (porta 80). Apenas pra VPS sem reverse proxy nativo.
             nginx_conf = """server {
     listen 80 default_server;
     server_name _;
@@ -178,17 +211,31 @@ def main():
             with sftp.file("/tmp/flowertex.nginx.conf", "w") as f:
                 f.write(nginx_conf)
             sftp.close()
-            run(client, "sudo -S mv /tmp/flowertex.nginx.conf /etc/nginx/sites-available/flowertex", use_sudo_pw=True)
-            run(client, "sudo -S ln -sf /etc/nginx/sites-available/flowertex /etc/nginx/sites-enabled/flowertex", use_sudo_pw=True)
-            run(client, "sudo -S rm -f /etc/nginx/sites-enabled/default", use_sudo_pw=True)
-            run(client, "sudo -S nginx -t", use_sudo_pw=True)
-            run(client, "sudo -S systemctl reload nginx", use_sudo_pw=True)
+            run(client, "sudo mv /tmp/flowertex.nginx.conf /etc/nginx/sites-available/flowertex", use_sudo_pw=True)
+            run(client, "sudo ln -sf /etc/nginx/sites-available/flowertex /etc/nginx/sites-enabled/flowertex", use_sudo_pw=True)
+            run(client, "sudo rm -f /etc/nginx/sites-enabled/default", use_sudo_pw=True)
+            run(client, "sudo nginx -t", use_sudo_pw=True)
+            run(client, "sudo systemctl reload nginx", use_sudo_pw=True)
 
         elif action == "verify":
             run(client, "curl -s -o /dev/null -w 'health: %{http_code}\\n' http://127.0.0.1/health")
             run(client, "curl -s -o /dev/null -w 'api templates: %{http_code}\\n' http://127.0.0.1/api/v1/templates")
             run(client, "curl -s -o /dev/null -w 'frontend: %{http_code}\\n' http://127.0.0.1/")
-            run(client, "sudo -S docker compose -f ~/agentic-workflow-medallion-pipeline/platform/backend/docker-compose.yml ps", use_sudo_pw=True)
+            run(client, "sudo docker compose -f ~/agentic-workflow-medallion-pipeline/platform/backend/docker-compose.yml ps", use_sudo_pw=True)
+
+        elif action == "teardown":
+            # Remove deploy completo: containers, volumes, networks, imagens, repo clonado, nginx site.
+            base = "~/agentic-workflow-medallion-pipeline"
+            run(client, f"cd {base}/platform/backend && docker compose down -v --remove-orphans 2>&1 || true", timeout=180)
+            run(client, "docker ps -a --format '{{.Names}}' | grep -E '^flowertex-' | xargs -r docker rm -f")
+            run(client, "docker volume ls --format '{{.Name}}' | grep -iE 'flowertex|backend' | xargs -r docker volume rm")
+            run(client, "docker network ls --format '{{.Name}}' | grep -iE 'flowertex|backend' | xargs -r docker network rm")
+            run(client, "docker images --format '{{.Repository}}:{{.Tag}}' | grep -iE '^backend-(backend|frontend|omni)' | xargs -r docker rmi")
+            run(client, f"rm -rf {base}")
+            run(client, "sudo rm -f /etc/nginx/sites-enabled/flowertex /etc/nginx/sites-available/flowertex", use_sudo_pw=True)
+            run(client, "sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default 2>&1 || true", use_sudo_pw=True)
+            run(client, "sudo nginx -t 2>&1 && sudo systemctl reload nginx", use_sudo_pw=True)
+            run(client, "docker ps -a --format '{{.Names}}\\t{{.Status}}' | grep -E 'flowertex' || echo 'clean: no flowertex containers'")
 
         else:
             print(f"unknown action: {action}")
