@@ -168,6 +168,17 @@ from observer.providers import (
 - **Cache**: Redis
 - **Padrões**: Service layer, domain exceptions, Pydantic Settings, lifespan hooks
 
+## Deploy temporário no Hostinger (deploy/hostinger/)
+
+Subdominio `flowertex.idlehub.com.br` ativo até **2026-05-15** no VPS Hostinger compartilhado (mesmo host de idlehub/voxflow/whiz-buddy). Padrão idlehub/whiz-buddy: build em `ghcr.io/rodrigosiliunas/flowertex-{backend,frontend}` via `release-flowertex.yml`, SSH deploy via `deploy-flowertex.yml` (appleboy/ssh-action) após release succeed.
+
+- **Reverse proxy**: container `nginx-proxy` global em `/opt/nginx-proxy/`, vhost manual em `/opt/nginx-proxy/conf.d/flowertex.conf` (template em `deploy/hostinger/nginx-flowertex.conf`)
+- **TLS**: `certbot-global` em loop 12h emite e renova cert via `--webroot`
+- **Network compartilhada**: `proxy-network` (external bridge)
+- **Bootstrap**: `deploy/hostinger/bootstrap.sh` (one-shot via SSH)
+- **Secrets do GHA**: `HOSTINGER_SSH_HOST=soulfocus.io`, `HOSTINGER_SSH_USER=root`, `HOSTINGER_SSH_KEY=<conteudo da chave>`
+- **DNS**: A record `flowertex.idlehub.com.br → 72.60.142.196` no painel Hostinger (DNS Parking, sem Cloudflare)
+
 ## Infraestrutura (infra/aws/)
 
 - **01-foundation**: IAM users/roles/policies, Security Groups, Secrets Manager, S3 Databricks root

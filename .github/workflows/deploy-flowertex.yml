@@ -1,0 +1,63 @@
+name: Deploy Flowertex
+
+on:
+  workflow_run:
+    workflows: ["Release Flowertex"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (default: main)"
+        required: false
+        default: "main"
+
+jobs:
+  deploy:
+    name: SSH deploy → Hostinger
+    runs-on: ubuntu-latest
+    # Quando dispara via workflow_run, so prossegue se o Release passou.
+    # Quando dispara via workflow_dispatch, sempre roda.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+              echo "tag=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: SSH + docker compose pull/up
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+
+            # Atualiza IMAGE_TAG no .env (chave existe pelo .env.example)
+            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${{ steps.tag.outputs.tag }}|" .env
+
+            docker compose pull
+            docker compose up -d --remove-orphans
+
+            # Health check (6 tentativas, 10s entre tries = ate 60s)
+            for i in $(seq 1 6); do
+                sleep 10
+                code=$(curl -fsS -o /dev/null -w "%{http_code}" https://flowertex.idlehub.com.br/health 2>/dev/null || echo "000")
+                echo "attempt $i: health=$code"
+                if [ "$code" = "200" ]; then
+                    echo "deploy healthy"
+                    exit 0
+                fi
+            done
+            echo "health check failed — dump logs"
+            docker compose logs --tail=80 backend
+            exit 1

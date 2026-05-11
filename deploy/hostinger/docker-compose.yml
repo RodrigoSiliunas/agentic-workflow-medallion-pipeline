@@ -1,0 +1,104 @@
+# Deploy temporario do Flowertex no VPS Hostinger (subdominio do idlehub.com.br).
+# Vivo ate 2026-05-15. Vide deploy/hostinger/README.md e ../plans pra contexto.
+#
+# Padrao: imagens vindo de ghcr.io/rodrigosiliunas (push via release-flowertex.yml).
+# IMAGE_TAG vem do .env (sed-ado pelo deploy-flowertex.yml com o SHA do commit).
+# Sem omni, ollama, ngrok aqui — escopo curto.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: flowertex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - flowertex_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - flowertex-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: flowertex-redis
+    restart: unless-stopped
+    volumes:
+      - flowertex_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - flowertex-net
+
+  backend:
+    image: ghcr.io/rodrigosiliunas/flowertex-backend:${IMAGE_TAG:-main}
+    container_name: flowertex-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      FRONTEND_URL: ${FRONTEND_URL}
+      SAGA_RUNNER: ${SAGA_RUNNER:-mock}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - flowertex-net
+      - proxy-network
+
+  frontend:
+    image: ghcr.io/rodrigosiliunas/flowertex-frontend:${IMAGE_TAG:-main}
+    container_name: flowertex-frontend
+    restart: unless-stopped
+    environment:
+      # URL publica absoluta — Nuxt 4 le isso em runtime via runtimeConfig.public.apiBase
+      # e sobrescreve o ENV /api/v1 que ficou embutido no build. Absoluta funciona
+      # tanto pro browser (mesmo origem) quanto pro SSR (round-trip via internet,
+      # aceitavel pra deploy temp).
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
+      NUXT_PUBLIC_MOCK_MODE: ${NUXT_PUBLIC_MOCK_MODE:-false}
+      NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - flowertex-net
+      - proxy-network
+
+volumes:
+  flowertex_pgdata:
+  flowertex_redisdata:
+
+networks:
+  # Interna — backend + frontend conversam com postgres/redis sem expor host
+  flowertex-net:
+    driver: bridge
+  # Externa — compartilhada com o nginx-proxy global do VPS (ja existente)
+  proxy-network:
+    external: true
