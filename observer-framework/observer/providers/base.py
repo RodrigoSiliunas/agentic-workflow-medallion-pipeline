@@ -143,6 +143,11 @@ class DiagnosisRequest:
     # nao foi possivel resolver (sem GitHub token, branch nao existe,
     # ou path repo-relative nao detectado).
     reference_code: str = ""
+    # Caminho repo-relative do arquivo que esta sendo corrigido (ex:
+    # `pipelines/pipeline-seguradora-whatsapp/notebooks/bronze/ingest.py`).
+    # Passado pro LLM como instrucao explicita pra evitar hallucinacao
+    # de path (LLM costumava inventar `/pipeline/` segments extra).
+    file_to_fix_hint: str = ""
 
 
 @dataclass
