@@ -30,6 +30,9 @@ class DatabricksService:
         self._cred_service = CredentialService(db)
         self._host: str | None = None
         self._token: str | None = None
+        # Cache do warehouse ID resolvido lazy na primeira query_table.
+        # Evita listar warehouses N vezes; reseta quando credenciais mudam.
+        self._warehouse_id: str | None = None
 
     @classmethod
     def _client(cls) -> httpx.AsyncClient:
@@ -188,19 +191,96 @@ class DatabricksService:
         resp.raise_for_status()
         return resp.json()
 
+    async def _resolve_warehouse_id(self) -> str:
+        """Resolve um warehouse_id valido (e RUNNING) via SQL Warehouses API.
+
+        Databricks SQL Statement API NAO aceita "auto" como warehouse_id
+        — exige UUID de um warehouse existente. Caso o warehouse esteja
+        STOPPED, dispara start + poll ate RUNNING (max 60s, suficiente
+        pro cold-start de Serverless Starter Warehouse).
+        """
+        if self._warehouse_id:
+            # Reconferir state — warehouse pode ter parado por idle timeout.
+            try:
+                state = await self._get_warehouse_state(self._warehouse_id)
+                if "RUNNING" in state or "STARTING" in state:
+                    return self._warehouse_id
+            except httpx.HTTPError:
+                self._warehouse_id = None  # cache invalido, re-resolve
+
+        list_resp = await self._client().get(
+            f"{self._host}/api/2.0/sql/warehouses",
+            headers=self._headers(),
+            timeout=10,
+        )
+        list_resp.raise_for_status()
+        warehouses = list_resp.json().get("warehouses", [])
+        if not warehouses:
+            raise RuntimeError(
+                "Nenhum SQL Warehouse no workspace — criar via Databricks UI"
+            )
+
+        # Preferir RUNNING; fallback pro primeiro
+        running = next(
+            (wh for wh in warehouses if "RUNNING" in str(wh.get("state", ""))),
+            None,
+        )
+        chosen = running or warehouses[0]
+        wh_id = chosen["id"]
+        state = str(chosen.get("state", ""))
+
+        if "RUNNING" not in state:
+            logger.info(
+                "Starting SQL warehouse", warehouse_id=wh_id, state=state,
+            )
+            start_resp = await self._client().post(
+                f"{self._host}/api/2.0/sql/warehouses/{wh_id}/start",
+                headers=self._headers(),
+                timeout=10,
+            )
+            start_resp.raise_for_status()
+            # Poll ate RUNNING (max 60s — Serverless Starter cold-start ~5s).
+            for _ in range(12):
+                await asyncio.sleep(5)
+                current = await self._get_warehouse_state(wh_id)
+                if "RUNNING" in current:
+                    break
+            else:
+                raise RuntimeError(
+                    f"Warehouse {wh_id} nao subiu em 60s"
+                )
+
+        self._warehouse_id = wh_id
+        return wh_id
+
+    async def _get_warehouse_state(self, warehouse_id: str) -> str:
+        resp = await self._client().get(
+            f"{self._host}/api/2.0/sql/warehouses/{warehouse_id}",
+            headers=self._headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return str(resp.json().get("state", ""))
+
     async def query_table(self, sql: str, max_rows: int = 100) -> dict:
-        """Executa query SQL via Databricks SQL Statement API."""
+        """Executa query SQL via Databricks SQL Statement API.
+
+        Resolve warehouse_id em runtime — antes mandava `"auto"` que a API
+        rejeitava com 400 Bad Request. Cacheia o ID e auto-starta o
+        warehouse se necessario.
+        """
         await self._ensure_credentials()
+        warehouse_id = await self._resolve_warehouse_id()
         resp = await self._client().post(
             f"{self._host}/api/2.0/sql/statements",
             json={
                 "statement": sql,
-                "warehouse_id": "auto",
+                "warehouse_id": warehouse_id,
                 "wait_timeout": "30s",
                 "row_limit": max_rows,
             },
             headers=self._headers(),
-            timeout=30,
+            timeout=60,
         )
         resp.raise_for_status()
         return resp.json()
