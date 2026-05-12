@@ -69,7 +69,7 @@ class ObserverConfig(BaseModel):
         description="Nome do LLM provider registrado (anthropic, openai, ...)",
     )
     llm_model: str = Field(
-        default="claude-opus-4-20250514",
+        default="claude-opus-4-7",
         description="Modelo especifico do LLM provider",
     )
     llm_max_tokens: int = Field(

@@ -186,6 +186,11 @@ class TestGitHubProviderBranchBase:
         fake_ref.object.sha = "deadbeefcafe"
         fake_repo.get_git_ref.return_value = fake_ref
         fake_repo.get_contents.side_effect = Exception("not found")
+        # Mock compare() para devolver diff nao-vazio (passa pelo guard
+        # de zero-diff). Cada teste foca em algo diferente do diff em si.
+        fake_compare = MagicMock()
+        fake_compare.files = [MagicMock()]
+        fake_repo.compare.return_value = fake_compare
         fake_pygithub.return_value.get_repo.return_value = fake_repo
 
         # Mock do modulo github importado lazy dentro de create_fix_pr
@@ -234,3 +239,25 @@ class TestGitHubProviderBranchBase:
 
         first_call = fake_repo.get_git_ref.call_args_list[0]
         assert first_call.args[0] == "heads/release/v2"
+
+    def test_create_fix_pr_raises_when_diff_is_empty(self, monkeypatch):
+        """Se compare() retorna files=[] o LLM propos conteudo identico
+        a base — nao abrir PR vazio.
+        """
+        import pytest
+
+        provider, fake_repo = self._make_provider_and_mocks(monkeypatch, "dev")
+        # Zera o diff retornado pelo compare()
+        fake_repo.compare.return_value.files = []
+
+        result = DiagnosisResult(
+            fixed_code="print('ok')",
+            file_to_fix="pipelines/pipeline-seguradora-whatsapp/notebooks/bronze/ingest.py",
+            confidence=0.9,
+        )
+
+        with pytest.raises(ValueError, match="identico a dev"):
+            provider.create_fix_pr(result, "bronze_ingestion")
+
+        # PR nunca chega a ser criado
+        fake_repo.create_pull.assert_not_called()
