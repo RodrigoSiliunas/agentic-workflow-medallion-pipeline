@@ -98,13 +98,28 @@ const active = computed<OmniInstance[]>(() =>
   store.instances.filter((i) => i.state !== "disconnected"),
 )
 
-function onCreated(id: string, channel: ChannelKind) {
+async function onCreated(id: string, channel: ChannelKind) {
   if (channel === "whatsapp") {
     pairingInstanceId.value = id
-  } else {
-    // Discord/Telegram — abrir modal de token direto
-    tokenInstanceId.value = id
-    tokenChannel.value = channel
+    return
+  }
+
+  // Discord/Telegram — tentar conectar otimisticamente usando credential
+  // salva em Settings. Se backend retornar 422 credential_missing, abre
+  // modal pra usuario informar o token na hora.
+  try {
+    await store.connect(id)
+  } catch (e: unknown) {
+    const detail = (e as { detail?: unknown }).detail
+    const code = (detail as { code?: string } | undefined)?.code
+    if (code === "credential_missing") {
+      tokenInstanceId.value = id
+      tokenChannel.value = channel
+    } else {
+      // Erro real (Omni down, token invalido salvo, etc) — mostrar pelo
+      // estado da instancia (last_error fica visivel no card).
+      await store.load(true)
+    }
   }
 }
 

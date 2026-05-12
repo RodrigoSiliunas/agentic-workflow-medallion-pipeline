@@ -28,6 +28,16 @@
       />
 
       <p
+        v-if="hasSavedToken"
+        class="mt-2 text-[11px] flex items-start gap-1"
+        :style="{ color: 'var(--text-secondary)' }"
+      >
+        <AppIcon name="information-circle" size="xs" />
+        Token salvo em Settings disponivel. Deixe vazio pra reusar ou cole
+        um novo aqui pra sobrescrever so desta vez.
+      </p>
+
+      <p
         v-if="error"
         class="mt-3 text-[11px]"
         :style="{ color: 'var(--status-error)' }"
@@ -52,11 +62,11 @@
           v-if="!success"
           size="sm"
           :loading="connecting"
-          :disabled="!token.trim()"
+          :disabled="!token.trim() && !hasSavedToken"
           icon="i-heroicons-link"
           @click="handleConnect"
         >
-          Conectar
+          {{ !token.trim() && hasSavedToken ? "Usar token salvo" : "Conectar" }}
         </AppButton>
       </div>
     </div>
@@ -74,11 +84,17 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 const channelsStore = useChannelsStore()
+const { settings, load: loadSettings } = useSettings()
 
 const token = ref("")
 const error = ref("")
 const connecting = ref(false)
 const success = ref(false)
+
+const credentialType = computed(() => `${props.channel}_bot_token`)
+const hasSavedToken = computed(
+  () => Boolean(settings.value.credentials[credentialType.value]?.is_configured),
+)
 
 const channelLabel = computed(() => {
   const labels: Record<string, string> = { discord: "Discord", telegram: "Telegram" }
@@ -106,11 +122,15 @@ function close() {
 }
 
 async function handleConnect() {
-  if (!props.instanceId || !token.value.trim()) return
+  if (!props.instanceId) return
+  const trimmed = token.value.trim()
+  // Sem token e sem credential salva = nada pra mandar.
+  if (!trimmed && !hasSavedToken.value) return
   error.value = ""
   connecting.value = true
   try {
-    await channelsStore.connect(props.instanceId, token.value.trim())
+    // Token vazio com credential salva = backend faz fallback.
+    await channelsStore.connect(props.instanceId, trimmed || undefined)
     success.value = true
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : "Falha ao conectar"
@@ -121,11 +141,13 @@ async function handleConnect() {
 
 watch(
   () => props.instanceId,
-  (id) => {
+  async (id) => {
     if (id) {
       token.value = ""
       error.value = ""
       success.value = false
+      // Buscar status das credentials pra decidir hint + button label.
+      await loadSettings()
     }
   },
 )
