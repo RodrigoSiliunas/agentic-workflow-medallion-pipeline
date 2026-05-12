@@ -211,8 +211,16 @@ results = []
 for failure in failures:
     log.append(f"--- Processando: {failure['job_name']} ---")
 
-    ctx = observer.build_context(failure, catalog=CATALOG)
+    ctx = observer.build_context(
+        failure,
+        catalog=CATALOG,
+        github_repo=os.environ.get("GITHUB_REPO", ""),
+        github_token=os.environ.get("GITHUB_TOKEN", ""),
+        git_reference_branch=config.base_branch,
+    )
     log.append(f"Codigo: {len(ctx['notebook_code'])} chars")
+    if ctx.get("reference_code"):
+        log.append(f"Git reference: {len(ctx['reference_code'])} chars")
     log.append(f"Erro: {ctx['error_message'][:150]}")
 
     # Marca o inicio do diagnostico para medir duration_seconds
@@ -251,6 +259,7 @@ for failure in failures:
             notebook_code=ctx["notebook_code"],
             schema_info=ctx["schema_info"],
             pipeline_state=ctx["pipeline_state"],
+            reference_code=ctx.get("reference_code", ""),
         )
         diagnosis = llm.diagnose(request)
 
