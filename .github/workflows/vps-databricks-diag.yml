@@ -38,7 +38,9 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/flowertex
-            docker exec flowertex-backend uv run python \
-              /app/platform/backend/scripts/vps_databricks_diag.py \
+            # cwd do container = /app/platform/backend (WORKDIR do Dockerfile)
+            # — path relativo + -w garante que `from app.database...` resolve.
+            docker exec -w /app/platform/backend flowertex-backend \
+              uv run python scripts/vps_databricks_diag.py \
               --user-email "$USER_EMAIL" \
               --runs "$RUNS"
