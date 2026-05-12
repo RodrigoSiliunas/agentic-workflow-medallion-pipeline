@@ -34,7 +34,15 @@ from app.schemas.channel import (
     OmniInstanceResponse,
     QRCodeResponse,
 )
+from app.services.credential_service import CredentialService
 from app.services.omni_service import CHANNEL_MAP, OmniService
+
+# Mapeamento canal -> credential_type. Usado pelo connect_channel quando o
+# cliente nao passa token explicito: pega o token salvo em Settings.
+CHANNEL_CREDENTIAL_MAP = {
+    "discord": "discord_bot_token",
+    "telegram": "telegram_bot_token",
+}
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -116,8 +124,30 @@ async def connect_channel(
                 detail="Falha ao criar instancia no Omni",
             )
 
+    # Resolver token: prioridade pro que veio no payload (override manual),
+    # senao cair pra credential salva em Settings pelo canal correspondente.
+    token = data.token
+    if not token and instance.channel in CHANNEL_CREDENTIAL_MAP:
+        cred_type = CHANNEL_CREDENTIAL_MAP[instance.channel]
+        token = await CredentialService(db).get_decrypted(auth.company_id, cred_type)
+
+    if not token and instance.channel in CHANNEL_CREDENTIAL_MAP:
+        # Sem token no payload nem em Settings — frontend precisa abrir modal.
+        # 422 com codigo estruturado pro client diferenciar de outros erros.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "credential_missing",
+                "credential_type": CHANNEL_CREDENTIAL_MAP[instance.channel],
+                "message": (
+                    f"Sem token configurado pra {instance.channel}. "
+                    "Salve em Settings ou informe no modal."
+                ),
+            },
+        )
+
     try:
-        await omni.connect_instance(instance.omni_instance_id, token=data.token)
+        await omni.connect_instance(instance.omni_instance_id, token=token)
         instance.state = "connected"
         instance.last_sync_at = datetime.now(UTC)
         instance.last_error = None
