@@ -41,7 +41,7 @@ async def _resolve_creds(email: str) -> tuple[str, str]:
 
 def _upload(host: str, token: str, source: Path, workspace_path: str) -> None:
     from databricks.sdk import WorkspaceClient
-    from databricks.sdk.service.workspace import ImportFormat
+    from databricks.sdk.service.workspace import ImportFormat, Language
 
     w = WorkspaceClient(host=host, token=token)
 
@@ -56,13 +56,31 @@ def _upload(host: str, token: str, source: Path, workspace_path: str) -> None:
     except Exception as exc:  # noqa: BLE001
         print(f"=== mkdirs warn (talvez ja exista): {exc}")
 
+    # Tenta AUTO primeiro (pega yaml/json/raw .py como FILE). Se existir
+    # um NOTEBOOK no path destino, AUTO falha com "type mismatch" — nesse
+    # caso refaz upload como SOURCE+Python pra sobrescrever notebook.
+    try:
+        w.workspace.upload(
+            path=workspace_path,
+            content=content,
+            format=ImportFormat.AUTO,
+            overwrite=True,
+        )
+        print("=== Upload OK (AUTO)")
+        return
+    except Exception as exc:  # noqa: BLE001
+        if "type mismatch" not in str(exc).lower():
+            raise
+        print(f"=== AUTO falhou ({exc}); retry como SOURCE+PYTHON (notebook)")
+
     w.workspace.upload(
         path=workspace_path,
         content=content,
-        format=ImportFormat.AUTO,
+        format=ImportFormat.SOURCE,
+        language=Language.PYTHON,
         overwrite=True,
     )
-    print("=== Upload OK")
+    print("=== Upload OK (SOURCE+PYTHON)")
 
 
 async def _main() -> None:
