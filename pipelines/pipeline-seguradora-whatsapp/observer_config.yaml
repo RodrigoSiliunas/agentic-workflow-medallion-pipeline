@@ -16,7 +16,10 @@
 observer:
   # ---------- LLM ----------
   llm_provider: anthropic
-  llm_model: claude-opus-4-20250514
+  # claude-opus-4-20250514 retornou 404 (modelo retirado pela Anthropic).
+  # Migrar pra Opus 4.7 (latest). Sonnet 4.6 e Haiku 4.5 sao alternativas
+  # mais baratas se custo virar problema.
+  llm_model: claude-opus-4-7
   llm_max_tokens: 16000
 
   # ---------- Git ----------
