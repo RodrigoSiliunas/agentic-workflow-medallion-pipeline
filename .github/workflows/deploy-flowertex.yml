@@ -88,6 +88,16 @@ jobs:
                 echo "OMNI_API_KEY gerada: ${NEW_KEY:0:20}..."
             fi
 
+            # Garante SAGA_RUNNER=real no VPS — credenciais sao injetadas
+            # via /settings em runtime, nao por env. Mock e so pro dev local.
+            if grep -q '^SAGA_RUNNER=mock' .env; then
+                sed -i 's/^SAGA_RUNNER=mock/SAGA_RUNNER=real/' .env
+                echo "SAGA_RUNNER atualizado pra real"
+            elif ! grep -q '^SAGA_RUNNER=' .env; then
+                echo "SAGA_RUNNER=real" >> .env
+                echo "SAGA_RUNNER=real adicionado"
+            fi
+
             docker compose pull
             docker compose up -d --remove-orphans
 
