@@ -78,6 +78,25 @@ class GitHubProvider(GitProvider):
         gh = Github(auth=Auth.Token(self._token))
         repo = gh.get_repo(self._repo_name)
 
+        # Path-exists guard: Observer SEMPRE corrige arquivo existente.
+        # Se o LLM propos um path que nao existe na base, e quase certo
+        # que ele hallucinou ("pipelines/.../pipeline/notebooks/..." com
+        # /pipeline/ extra ja aconteceu). Falhar cedo evita poluir o
+        # repo com arquivos fantasmas em paths invalidos.
+        missing: list[str] = []
+        for fix in fixes:
+            file_path = fix["file_path"]
+            try:
+                repo.get_contents(file_path, ref=self._base_branch)
+            except Exception:  # noqa: BLE001
+                missing.append(file_path)
+        if missing:
+            raise ValueError(
+                "LLM propos fix em path(s) que nao existem em "
+                f"{self._base_branch}: {missing}. Path provavelmente "
+                "hallucinado — confira contra arvore real do repo."
+            )
+
         # Branch unica baseada em timestamp
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         task_slug = failed_task.replace("_", "-")
@@ -90,7 +109,9 @@ class GitHubProvider(GitProvider):
         repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
 
         # Um commit por arquivo (todos na mesma branch). O PR final
-        # agrega todas as mudancas.
+        # agrega todas as mudancas. Como o guard acima ja confirmou
+        # existencia na base, aqui faz somente update_file (sem
+        # fallback de create_file que mascarava hallucinacao de path).
         applied_files: list[str] = []
         for fix in fixes:
             file_path = fix["file_path"]
@@ -99,23 +120,14 @@ class GitHubProvider(GitProvider):
                 f"fix: correcao automatica em {failed_task} ({file_path})\n\n"
                 f"{diagnosis.fix_description}"
             )
-            try:
-                content = repo.get_contents(file_path, ref=branch_name)
-                repo.update_file(
-                    path=file_path,
-                    message=commit_msg,
-                    content=code,
-                    sha=content.sha,
-                    branch=branch_name,
-                )
-            except Exception:
-                # Arquivo nao existe no branch — cria
-                repo.create_file(
-                    path=file_path,
-                    message=commit_msg,
-                    content=code,
-                    branch=branch_name,
-                )
+            content = repo.get_contents(file_path, ref=branch_name)
+            repo.update_file(
+                path=file_path,
+                message=commit_msg,
+                content=code,
+                sha=content.sha,
+                branch=branch_name,
+            )
             applied_files.append(file_path)
 
         # Garantir que base branch existe. Se nao existir, cai pra main
