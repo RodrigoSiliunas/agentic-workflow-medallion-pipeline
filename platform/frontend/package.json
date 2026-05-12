@@ -24,11 +24,11 @@
     "@nuxt/fonts": "^0.14.0",
     "@pinia/nuxt": "^0.11.2",
     "@vueuse/nuxt": "^13.5.0",
+    "@iconify-json/heroicons": "^1.2.3",
+    "@iconify-json/simple-icons": "^1.2.77",
     "pinia": "^3.0.3"
   },
   "devDependencies": {
-    "@iconify-json/heroicons": "^1.2.3",
-    "@iconify-json/simple-icons": "^1.2.77",
     "@nuxt/eslint": "^1.15.2",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/test-utils": "^2.4.6",

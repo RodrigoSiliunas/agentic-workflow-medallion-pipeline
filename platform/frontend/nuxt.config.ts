@@ -45,6 +45,14 @@ export default defineNuxtConfig({
     colorMode: true,
   },
 
+  // Nuxt Icon — em prod (container Docker) o serverBundle 'auto' as vezes
+  // escolhe 'remote' (proxy pra api.iconify.design), que falhava com 404 no
+  // VPS Hostinger. Forcar 'local' garante que os @iconify-json/* instalados
+  // como dependency sejam servidos pelo proprio Nitro.
+  icon: {
+    serverBundle: "local",
+  },
+
   // Geist font (sans + mono) — design system Flowertex
   fonts: {
     families: [
