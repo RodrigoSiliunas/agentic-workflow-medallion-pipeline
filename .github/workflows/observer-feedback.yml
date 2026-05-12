@@ -36,11 +36,17 @@ jobs:
           fi
 
       - name: Update observer.diagnostics
+        continue-on-error: true  # Falha aqui (ex: secrets nao setados)
+        # nao deve impedir o workspace sync abaixo.
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           PIPELINE_CATALOG: medallion
         run: |
+          if [ -z "$DATABRICKS_HOST" ] || [ -z "$DATABRICKS_TOKEN" ]; then
+            echo "DATABRICKS_HOST/TOKEN nao configurados — pula diagnostics update"
+            exit 0
+          fi
           python observer-framework/scripts/update_pr_feedback.py \
             --pr-number ${{ github.event.pull_request.number }} \
             --status ${{ steps.status.outputs.status }}
