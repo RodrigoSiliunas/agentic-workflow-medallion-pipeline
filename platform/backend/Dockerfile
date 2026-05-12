@@ -28,6 +28,11 @@ COPY pipelines/pipeline-seguradora-whatsapp/data/ /app/pipelines/pipeline-segura
 # pra hotpatch do config no workspace Databricks sem redeploy completo
 # da saga. Tambem util pra scripts de diag lerem defaults do pipeline.
 COPY pipelines/pipeline-seguradora-whatsapp/observer_config.yaml /app/pipelines/pipeline-seguradora-whatsapp/observer_config.yaml
+
+# Notebooks do pipeline — usados pelo observer-feedback.yml auto-sync
+# (uploadar fix Observer pro workspace Databricks pos-merge). Tambem
+# uteis pra hotpatch manual via vps_upload_workspace_file.py.
+COPY pipelines/pipeline-seguradora-whatsapp/notebooks/ /app/pipelines/pipeline-seguradora-whatsapp/notebooks/
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Non-root user com home directory (uv precisa de ~/.cache)
