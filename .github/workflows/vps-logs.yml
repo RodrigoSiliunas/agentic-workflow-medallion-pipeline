@@ -1,0 +1,56 @@
+name: VPS Logs
+
+# Dump on-demand dos logs do backend Flowertex no VPS Hostinger. Util pra
+# debugar runtime sem precisar SSH manual quando user reporta bug em prod.
+# Trigger: workflow_dispatch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service name (backend, frontend, omni, postgres, redis, all)"
+        required: false
+        default: "backend"
+      tail:
+        description: "Lines to tail"
+        required: false
+        default: "300"
+      grep:
+        description: "Optional grep pattern (ex: ProgrammingError)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  dump-logs:
+    name: SSH + docker logs
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH dump
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          SERVICE: ${{ github.event.inputs.service }}
+          TAIL: ${{ github.event.inputs.tail }}
+          PATTERN: ${{ github.event.inputs.grep }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 2m
+          envs: SERVICE,TAIL,PATTERN
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            if [ "$SERVICE" = "all" ]; then
+                CMD="docker compose logs --tail=$TAIL"
+            else
+                CMD="docker compose logs --tail=$TAIL $SERVICE"
+            fi
+            if [ -n "$PATTERN" ]; then
+                eval "$CMD" 2>&1 | grep -iE "$PATTERN" || echo "(no matches for: $PATTERN)"
+            else
+                eval "$CMD"
+            fi
