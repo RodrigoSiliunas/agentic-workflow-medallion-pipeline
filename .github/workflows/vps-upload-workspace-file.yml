@@ -1,0 +1,48 @@
+name: VPS Upload Workspace File
+
+# Upload de arquivo local (do container backend) pra path no workspace
+# Databricks. Pra hotpatch de configs sem redeploy completo da saga.
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_email:
+        description: "Email do user dono das credentials"
+        required: true
+      source_path:
+        description: "Path local relativo ao /app (ex: pipelines/.../observer_config.yaml)"
+        required: true
+      workspace_path:
+        description: "Path absoluto no workspace Databricks"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    name: SSH + docker exec upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH exec
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          USER_EMAIL: ${{ github.event.inputs.user_email }}
+          SOURCE_PATH: ${{ github.event.inputs.source_path }}
+          WORKSPACE_PATH: ${{ github.event.inputs.workspace_path }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 3m
+          envs: USER_EMAIL,SOURCE_PATH,WORKSPACE_PATH
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+              flowertex-backend \
+              uv run python scripts/vps_upload_workspace_file.py \
+              --user-email "$USER_EMAIL" \
+              --source-path "$SOURCE_PATH" \
+              --workspace-path "$WORKSPACE_PATH"
