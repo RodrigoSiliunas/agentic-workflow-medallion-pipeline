@@ -1,0 +1,49 @@
+name: VPS SQL Query
+
+# Executa SQL via Databricks SQL Warehouse rodando no container backend.
+# Pra debug do 400 Bad Request que o bot reporta em queries da bronze.
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_email:
+        description: "Email do user dono das credentials"
+        required: true
+      query:
+        description: "SQL query"
+        required: true
+      warehouse_id:
+        description: "Warehouse ID (opcional — pega primeiro se vazio)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  sql:
+    name: SSH + docker exec sql query
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH exec
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          USER_EMAIL: ${{ github.event.inputs.user_email }}
+          QUERY: ${{ github.event.inputs.query }}
+          WAREHOUSE_ID: ${{ github.event.inputs.warehouse_id }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 8m
+          envs: USER_EMAIL,QUERY,WAREHOUSE_ID
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            ARGS=("--user-email" "$USER_EMAIL" "--query" "$QUERY")
+            if [ -n "$WAREHOUSE_ID" ]; then
+                ARGS+=("--warehouse-id" "$WAREHOUSE_ID")
+            fi
+            docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+              flowertex-backend \
+              uv run python scripts/vps_sql_query.py "${ARGS[@]}"
