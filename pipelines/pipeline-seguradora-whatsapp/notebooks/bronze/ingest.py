@@ -8,6 +8,7 @@
 # MAGIC **Schema evolution**: `mergeSchema=false` — schema explicito via EXPECTED_SCHEMA.
 
 # COMMAND ----------
+
 # DBTITLE 1,Imports
 import logging
 import sys
@@ -18,11 +19,13 @@ from pyspark.sql.functions import col, current_timestamp, lit  # noqa: F401
 from pyspark.sql.types import StringType, StructField, StructType
 
 # COMMAND ----------
+
 # DBTITLE 1,Setup Spark + Logger
 spark = SparkSession.builder.appName("BronzeIngestion").getOrCreate()
 logger = logging.getLogger(__name__)
 
 # COMMAND ----------
+
 # DBTITLE 1,Auto-detect repo root para importar pipeline_lib
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()  # noqa: F821
 _repo_root = "/".join(_nb_path.split("/")[:4])
@@ -34,6 +37,7 @@ from pipeline_lib.storage import S3Lake  # noqa: NB003, E402
 from pipeline_lib.validation import delta_row_count  # noqa: NB003, E402, F401
 
 # COMMAND ----------
+
 # DBTITLE 1,Configuration
 # Widget scope passa secret scope com AWS creds + s3-bucket + bronze-prefix
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")  # noqa: F821
@@ -43,6 +47,7 @@ BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")  # noqa: F821
 TARGET_TABLE = "medallion.bronze.conversations"
 
 # COMMAND ----------
+
 # DBTITLE 1,Chaos mode — propagado via task value do pre_check
 chaos_mode = "off"
 try:
@@ -53,6 +58,7 @@ except Exception:
     chaos_mode = "off"
 
 # COMMAND ----------
+
 # DBTITLE 1,Schema esperado — definicao explicita
 EXPECTED_SCHEMA = StructType([
     StructField("message_id", StringType(), True),
@@ -72,6 +78,7 @@ EXPECTED_SCHEMA = StructType([
 ])
 
 # COMMAND ----------
+
 # DBTITLE 1,Funcao principal de ingestao
 def ingest_to_bronze():
     try:
@@ -122,5 +129,6 @@ def ingest_to_bronze():
         raise
 
 # COMMAND ----------
+
 # DBTITLE 1,Execucao
 ingest_to_bronze()
