@@ -130,6 +130,33 @@ class GitHubProvider(GitProvider):
                 fallback_ref.object.sha,
             )
 
+        # Guard rail: se o LLM propos conteudo identico ao que ja existe
+        # na base, o PR vai abrir vazio (additions=0/deletions=0). Detecta
+        # antes de criar o PR pra nao poluir a fila de revisao do humano.
+        try:
+            comparison = repo.compare(self._base_branch, branch_name)
+            files_changed = list(getattr(comparison, "files", []) or [])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"compare {self._base_branch}...{branch_name} falhou: {exc}. "
+                "Seguindo com criacao do PR sem o guard de zero-diff."
+            )
+            files_changed = []
+            comparison = None
+
+        if comparison is not None and not files_changed:
+            try:
+                repo.get_git_ref(f"heads/{branch_name}").delete()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    f"Falha ao limpar branch zero-diff {branch_name}: {exc}"
+                )
+            raise ValueError(
+                f"LLM propos conteudo identico a {self._base_branch} — "
+                "nao ha diff a aplicar. Provavelmente workspace.export falhou "
+                "e o LLM caiu pra restaurar reference_code que ja esta na base."
+            )
+
         # PR com diagnostico
         conf = diagnosis.confidence
         emoji = "🟢" if conf >= 0.8 else "🟡" if conf >= 0.5 else "🔴"
