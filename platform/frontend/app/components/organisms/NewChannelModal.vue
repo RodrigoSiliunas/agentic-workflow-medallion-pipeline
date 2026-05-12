@@ -119,11 +119,13 @@ async function handleCreate() {
   creating.value = true
   try {
     const instance = await channelsStore.create(name.value.trim(), selectedChannel.value)
+    // creating=false ANTES de close() — senao o guard early-return em close()
+    // impede o emit, modal fica preso aberto mesmo depois do create succeder.
+    creating.value = false
     emit("created", instance.id, selectedChannel.value)
     close()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : "Falha ao criar instância"
-  } finally {
     creating.value = false
   }
 }
