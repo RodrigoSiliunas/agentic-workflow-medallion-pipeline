@@ -69,7 +69,7 @@ class ObserverConfig(BaseModel):
         description="Nome do LLM provider registrado (anthropic, openai, ...)",
     )
     llm_model: str = Field(
-        default="claude-opus-4-20250514",
+        default="claude-opus-4-7",
         description="Modelo especifico do LLM provider",
     )
     llm_max_tokens: int = Field(
@@ -86,6 +86,14 @@ class ObserverConfig(BaseModel):
     base_branch: str = Field(
         default="dev",
         description="Branch base para os PRs criados pelo Observer",
+    )
+    github_repo: str = Field(
+        default="",
+        description=(
+            "owner/repo do GitHub (ex: RodrigoSiliunas/agentic-workflow-medallion-pipeline). "
+            "Nao eh segredo — repo publico ou visivel pelo PAT — fica no YAML pra "
+            "evitar o auto-redact do Databricks no PR URL impresso no log."
+        ),
     )
 
     # Resilience

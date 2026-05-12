@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timedelta
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.workspace import ExportFormat
 
 from observer.redaction import redact
 from observer.triggering import extract_failed_task_keys
@@ -117,8 +118,11 @@ class WorkflowObserver:
                 continue
             nb_path = task.notebook_task.notebook_path
             try:
+                # SDK exige enum ExportFormat — string causa
+                # `'str' object has no attribute 'value'` no caminho
+                # interno do client (chama format.value).
                 export = self.w.workspace.export(
-                    path=nb_path, format="SOURCE"
+                    path=nb_path, format=ExportFormat.SOURCE
                 )
                 if export.content:
                     code = base64.b64decode(export.content).decode("utf-8")

@@ -22,10 +22,11 @@ class TestObserverConfigDefaults:
     def test_default_values(self):
         config = ObserverConfig()
         assert config.llm_provider == "anthropic"
-        assert config.llm_model == "claude-opus-4-20250514"
+        assert config.llm_model == "claude-opus-4-7"
         assert config.llm_max_tokens == 16000
         assert config.git_provider == "github"
         assert config.base_branch == "dev"
+        assert config.github_repo == ""
         assert config.max_retries == 3
         assert config.dedup_window_hours == 24
         assert config.dry_run is False

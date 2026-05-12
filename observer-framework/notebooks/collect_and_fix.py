@@ -83,7 +83,18 @@ config = load_observer_config(
 
 os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get(SCOPE, "anthropic-api-key")
 os.environ["GITHUB_TOKEN"] = dbutils.secrets.get(SCOPE, "github-token")
-os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
+
+# GITHUB_REPO prefere o YAML (config.github_repo) ao secret. Lendo do
+# secret faria o Databricks auto-redactar o PR URL no log (PR criado em
+# https://github.com/[REDACTED]/pull/N). Nome do repo nao e segredo.
+# Fallback pro secret legado pra nao quebrar instalacoes antigas.
+if config.github_repo:
+    os.environ["GITHUB_REPO"] = config.github_repo
+else:
+    try:
+        os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
+    except Exception:
+        os.environ["GITHUB_REPO"] = ""
 
 # COMMAND ----------
 
