@@ -12,6 +12,10 @@ on:
         required: false
         default: "main"
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   deploy:
     name: SSH deploy → Hostinger
@@ -32,18 +36,31 @@ jobs:
 
       - name: SSH + docker compose pull/up
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          # Forward o GITHUB_TOKEN efemero pra o session SSH usar como creds ghcr.io.
+          # Mesmo padrao usado pelos outros apps do VPS (voxflow/whiz-buddy): cada
+          # deploy reescreve /root/.docker/config.json com o token ativo do workflow,
+          # que tem read:packages do proprio repo. Tokens ghs_* expiram em ~1h.
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
         with:
           host: ${{ secrets.HOSTINGER_SSH_HOST }}
           username: ${{ secrets.HOSTINGER_SSH_USER }}
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           timeout: 60s
           command_timeout: 5m
+          envs: GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG
           script: |
             set -euo pipefail
             cd /opt/flowertex
 
-            # Atualiza IMAGE_TAG no .env (chave existe pelo .env.example)
-            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${{ steps.tag.outputs.tag }}|" .env
+            # Login ghcr.io com o token efemero do workflow (precisa pra pull
+            # dos packages flowertex-{backend,frontend} privados do mesmo repo).
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+            # Atualiza IMAGE_TAG no .env
+            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
             docker compose pull
             docker compose up -d --remove-orphans
