@@ -18,6 +18,8 @@ Lib/
 # Não ignorar scripts/ no repo root (case-insensitive no Windows).
 Scripts/
 !/scripts/
+!observer-framework/scripts/
+!pipelines/*/scripts/
 pyvenv.cfg
 
 # Environment
@@ -93,3 +95,4 @@ CLAUDE.original.md
 # Pip leakage no scripts/ (instalação acidental no repo root no Windows)
 scripts/pip*.exe
 scripts/vba_extract.py
+nuke-config.yaml

@@ -189,9 +189,9 @@ Subdominio `flowertex.idlehub.com.br` ativo até **2026-05-15** no VPS Hostinger
 ## CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): roda ruff + pytest em dois jobs separados — `observer-framework` e `pipeline-seguradora-whatsapp`. Job extra `validate-agent-pr` para branches `fix/*` e `feat/*` rodando ambos.
-- **CD** (`.github/workflows/cd.yml`): sincroniza Databricks Repo com `main` automaticamente. Paths monitorados: `observer-framework/**` e `pipelines/**`. Repo Databricks espelha repo inteiro, observer-framework e pipelines atualizados atomicamente.
-- **Observer Feedback** (`.github/workflows/observer-feedback.yml`): GitHub Action chamada quando PRs `fix/agent-auto-*` mergeados/fechados — executa `observer-framework/scripts/update_pr_feedback.py`.
-- **Fluxo**: Observer cria PR para `dev` → CI valida → humano revisa → merge → dev → PR para main → CD deploya.
+- **Observer Feedback** (`.github/workflows/observer-feedback.yml`): GitHub Action chamada quando PRs `fix/agent-auto-*` mergeados/fechados — executa `observer-framework/scripts/update_pr_feedback.py` (atualiza tabela diagnostics). Plataforma re-deploya saga `upload` step manualmente quando precisa sincronizar `/Shared/flowertex/...` com `dev` atualizado.
+- **Secrets do GHA pro Observer Feedback**: `DATABRICKS_HOST`, `DATABRICKS_TOKEN`.
+- **Fluxo**: Observer cria PR para `dev` (branch criada a partir de `dev`, nao `main`) → CI valida → humano revisa → merge → observer-feedback workflow atualiza diagnostics.
 
 ## Chaos Testing
 
