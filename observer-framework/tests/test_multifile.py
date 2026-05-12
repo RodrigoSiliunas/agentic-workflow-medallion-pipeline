@@ -185,7 +185,11 @@ class TestGitHubProviderBranchBase:
         fake_ref = MagicMock()
         fake_ref.object.sha = "deadbeefcafe"
         fake_repo.get_git_ref.return_value = fake_ref
-        fake_repo.get_contents.side_effect = Exception("not found")
+        # get_contents devolve um stub valido — passa pelos guards de
+        # path-exists e do update_file (sha extraido daqui).
+        fake_contents = MagicMock()
+        fake_contents.sha = "filebeef"
+        fake_repo.get_contents.return_value = fake_contents
         # Mock compare() para devolver diff nao-vazio (passa pelo guard
         # de zero-diff). Cada teste foca em algo diferente do diff em si.
         fake_compare = MagicMock()
@@ -239,6 +243,29 @@ class TestGitHubProviderBranchBase:
 
         first_call = fake_repo.get_git_ref.call_args_list[0]
         assert first_call.args[0] == "heads/release/v2"
+
+    def test_create_fix_pr_raises_when_path_doesnt_exist(self, monkeypatch):
+        """LLM propondo path inventado (ex: /pipeline/ extra) deve ser
+        rejeitado antes de criar branch — evita PR com arquivo fantasma.
+        """
+        import pytest
+
+        provider, fake_repo = self._make_provider_and_mocks(monkeypatch, "dev")
+        # Simula path nao existente na base
+        fake_repo.get_contents.side_effect = Exception("404 not found")
+
+        result = DiagnosisResult(
+            fixed_code="print('ok')",
+            file_to_fix="pipelines/pipeline-seguradora-whatsapp/pipeline/notebooks/bronze/ingest.py",
+            confidence=0.9,
+        )
+
+        with pytest.raises(ValueError, match="nao existem em dev"):
+            provider.create_fix_pr(result, "bronze_ingestion")
+
+        # Branch nunca foi criada
+        fake_repo.create_git_ref.assert_not_called()
+        fake_repo.create_pull.assert_not_called()
 
     def test_create_fix_pr_raises_when_diff_is_empty(self, monkeypatch):
         """Se compare() retorna files=[] o LLM propos conteudo identico

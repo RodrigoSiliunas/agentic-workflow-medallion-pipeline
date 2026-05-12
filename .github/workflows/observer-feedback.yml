@@ -45,6 +45,73 @@ jobs:
             --pr-number ${{ github.event.pull_request.number }} \
             --status ${{ steps.status.outputs.status }}
 
+      # Sync arquivos do PR mergeado pro workspace Databricks.
+      # Saga deploy popula /Shared/flowertex/... so uma vez (no deploy inicial).
+      # Sem isso, fix do Observer fica no git mas workspace mantem versao
+      # quebrada que o user editou manualmente via Databricks UI.
+      - name: List PR files
+        if: steps.status.outputs.status == 'merged'
+        id: prfiles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Filtra pra paths sincaveis: pipelines/ e observer-framework/.
+          # Bloqueia .github/, infra/, platform/, etc — nao tem analogo no
+          # workspace e poderia sobrescrever coisa errada.
+          files=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json files --jq '.files[].path' \
+            | grep -E '^(pipelines/|observer-framework/(observer/|notebooks/))' \
+            || true)
+          if [ -z "$files" ]; then
+            echo "files=" >> "$GITHUB_OUTPUT"
+            echo "Nenhum arquivo sincavel — skip workspace sync." >> "$GITHUB_STEP_SUMMARY"
+          else
+            # Multiline output via heredoc
+            {
+              echo "files<<EOF"
+              echo "$files"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync Databricks workspace
+        if: steps.status.outputs.status == 'merged' && steps.prfiles.outputs.files != ''
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PR_FILES: ${{ steps.prfiles.outputs.files }}
+          SAGA_USER_EMAIL: administrator@idlehub.com.br
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 5m
+          envs: PR_FILES,SAGA_USER_EMAIL
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            REPO_BASE="/Shared/flowertex/agentic-workflow-medallion-pipeline"
+            while IFS= read -r src; do
+              [ -z "$src" ] && continue
+              # Notebooks Databricks (qualquer .py em pasta notebooks/)
+              # uploadam sem extensao — workspace identifica como notebook.
+              # Outros arquivos uploadam com extensao igual ao git.
+              if echo "$src" | grep -qE '/notebooks/.*\.py$'; then
+                dst="$REPO_BASE/${src%.py}"
+              else
+                dst="$REPO_BASE/$src"
+              fi
+              echo "==> $src -> $dst"
+              docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+                flowertex-backend \
+                uv run python scripts/vps_upload_workspace_file.py \
+                --user-email "$SAGA_USER_EMAIL" \
+                --source-path "$src" \
+                --workspace-path "$dst"
+            done <<EOF
+            $PR_FILES
+            EOF
+
       - name: Summary
         run: |
           echo "## Observer Feedback Loop" >> "$GITHUB_STEP_SUMMARY"
@@ -52,3 +119,6 @@ jobs:
           echo "- Branch: \`${{ github.event.pull_request.head.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Status: **${{ steps.status.outputs.status }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tabela atualizada: \`medallion.observer.diagnostics\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.status.outputs.status }}" = "merged" ]; then
+            echo "- Workspace Databricks sincronizado (Shared/flowertex/...)." >> "$GITHUB_STEP_SUMMARY"
+          fi
