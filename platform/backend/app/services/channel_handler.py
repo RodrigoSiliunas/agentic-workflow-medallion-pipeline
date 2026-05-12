@@ -36,7 +36,7 @@ _email_re = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 # Mensagens padrao
 MSG_ONBOARDING = (
     "Ola! Sou o assistente Flowertex.\n\n"
-    "Para comecar, preciso vincular seu numero a sua conta na plataforma.\n"
+    "Para comecar, preciso vincular esse canal a sua conta na plataforma.\n"
     "Por favor, digite o *email* que voce usa para fazer login:"
 )
 MSG_EMAIL_NOT_FOUND = (
@@ -320,7 +320,7 @@ class ChannelMessageHandler:
         """Tenta vincular canal ao usuario pelo email — escopado pela empresa
         do OmniInstance (anti cross-tenant link)."""
         instance_result = await self.db.execute(
-            select(OmniInstance).where(OmniInstance.instance_id == instance_id)
+            select(OmniInstance).where(OmniInstance.omni_instance_id == instance_id)
         )
         instance = instance_result.scalar_one_or_none()
         if not instance:
