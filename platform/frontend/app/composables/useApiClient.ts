@@ -52,7 +52,21 @@ export function useApiClient() {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }))
-      throw new Error(error.detail || response.statusText)
+      // FastAPI manda detail como string ou como objeto estruturado (ex:
+      // { code: "credential_missing", ... }). Preservar o objeto na
+      // propriedade `detail` permite que o caller faca branching por codigo.
+      const detail = error.detail
+      const message =
+        typeof detail === "string"
+          ? detail
+          : (detail as { message?: string })?.message || response.statusText
+      const err = new Error(message) as Error & {
+        status: number
+        detail: unknown
+      }
+      err.status = response.status
+      err.detail = detail
+      throw err
     }
 
     // 204 No Content — retorna undefined (ex: DELETE responses)
