@@ -204,20 +204,45 @@ class ChannelMessageHandler:
 
         # 2. Checar slash commands
         if is_slash_command(text):
-            # Garantir sessao existe
-            session = await self._ensure_session(user, channel, channel_user_id)
-            handler = SlashCommandHandler(
-                db=self.db,
-                user_id=user.id,
-                company_id=user.company_id,
-                channel=channel,
+            logger.info(
+                "Slash command recebido",
+                channel=channel, channel_user_id=channel_user_id,
+                command=text.split()[0] if text else "",
             )
+            try:
+                # Garantir sessao existe
+                session = await self._ensure_session(user, channel, channel_user_id)
+                handler = SlashCommandHandler(
+                    db=self.db,
+                    user_id=user.id,
+                    company_id=user.company_id,
+                    channel=channel,
+                )
 
-            # Comando especial: /model
-            if text.lower().startswith("/model"):
-                reply = await self._handle_model_command(text, user, channel, channel_user_id)
-            else:
-                reply = await handler.handle(text)
+                # Comando especial: /model
+                if text.lower().startswith("/model"):
+                    reply = await self._handle_model_command(
+                        text, user, channel, channel_user_id,
+                    )
+                else:
+                    reply = await handler.handle(text)
+
+                logger.info(
+                    "Slash command processado",
+                    command=text.split()[0] if text else "",
+                    reply_len=len(reply or ""),
+                )
+            except Exception as exc:
+                # Antes: omni_poller capturava silenciosamente e o usuario nao
+                # via resposta. Agora manda erro explicito pra debug imediato.
+                logger.exception(
+                    "Erro ao processar slash command",
+                    command=text.split()[0] if text else "",
+                )
+                reply = (
+                    "Erro ao processar comando. Equipe ja foi avisada — "
+                    f"tente novamente em alguns minutos.\n\n_({type(exc).__name__})_"
+                )
 
             await self._send(instance_id, sender_jid, reply)
             return
