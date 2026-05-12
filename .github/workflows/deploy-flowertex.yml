@@ -25,6 +25,8 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Resolve image tag
         id: tag
         run: |
@@ -33,6 +35,19 @@ jobs:
           else
               echo "tag=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: SCP deploy files
+        # Sincroniza docker-compose.yml + nginx vhost antes do SSH. Sem isso,
+        # mudancas em deploy/hostinger/* nao chegam no VPS — o bootstrap.sh so
+        # roda na primeira vez, deploys subsequentes mantinham a versao antiga.
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          source: "deploy/hostinger/docker-compose.yml,deploy/hostinger/nginx-flowertex.conf"
+          target: "/opt/flowertex/"
+          strip_components: 2
 
       - name: SSH + docker compose pull/up
         uses: appleboy/ssh-action@v1.2.0
