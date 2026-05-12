@@ -45,20 +45,6 @@ jobs:
             --pr-number ${{ github.event.pull_request.number }} \
             --status ${{ steps.status.outputs.status }}
 
-      - name: Sync Databricks Repo
-        # Quando o PR e mergeado, forca o /Repos/ em Databricks a puxar
-        # o head de `dev`. Limpa edicoes locais que o usuario fez via UI
-        # (cenario E2E do teste manual onde o usuario edita a notebook
-        # direto no workspace pra disparar uma falha real).
-        if: steps.status.outputs.status == 'merged'
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          python observer-framework/scripts/sync_databricks_repo.py \
-            --repo-path "/Repos/${{ secrets.DATABRICKS_REPO_USER }}/agentic-workflow-medallion-pipeline" \
-            --branch dev
-
       - name: Summary
         run: |
           echo "## Observer Feedback Loop" >> "$GITHUB_STEP_SUMMARY"
