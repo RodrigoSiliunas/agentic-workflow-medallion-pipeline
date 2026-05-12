@@ -1,0 +1,44 @@
+name: VPS Databricks Diag
+
+# Roda diagnostico Databricks dentro do container backend no VPS, decripta
+# credentials da empresa do user especificado e lista runs recentes + erros.
+# Trigger: workflow_dispatch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_email:
+        description: "Email do user dono das credentials (ex: administrator@idlehub.com.br)"
+        required: true
+      runs:
+        description: "Quantidade de runs recentes a listar"
+        required: false
+        default: "5"
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    name: SSH + docker exec databricks diag
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH exec
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          USER_EMAIL: ${{ github.event.inputs.user_email }}
+          RUNS: ${{ github.event.inputs.runs }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 5m
+          envs: USER_EMAIL,RUNS
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            docker exec flowertex-backend uv run python \
+              /app/platform/backend/scripts/vps_databricks_diag.py \
+              --user-email "$USER_EMAIL" \
+              --runs "$RUNS"
