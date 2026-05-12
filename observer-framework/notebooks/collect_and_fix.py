@@ -271,7 +271,10 @@ for failure in failures:
             schema_info=ctx["schema_info"],
             pipeline_state=ctx["pipeline_state"],
             reference_code=ctx.get("reference_code", ""),
+            file_to_fix_hint=ctx.get("file_to_fix_hint", ""),
         )
+        if ctx.get("file_to_fix_hint"):
+            log.append(f"File-to-fix hint: {ctx['file_to_fix_hint']}")
         diagnosis = llm.diagnose(request)
 
         log.append(f"Provider: {diagnosis.provider}/{diagnosis.model}")

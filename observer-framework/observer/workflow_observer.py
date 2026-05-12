@@ -269,11 +269,31 @@ class WorkflowObserver:
 
         first_failed = failure["failed_tasks"][0]
 
+        # Resolver file_to_fix_hint do task que falhou — extrai path
+        # repo-relative do notebook_path workspace (`/Shared/.../<repo>/X`
+        # ou `/Repos/<user>/<repo>/X`). Sem isso, LLM hallucinava path
+        # tentando combinar exemplo do prompt com o real (`/pipeline/`
+        # segments extra apareciam).
+        file_to_fix_hint = ""
+        try:
+            run = self.w.jobs.get_run(run_id=run_id)
+            for task in run.tasks or []:
+                if task.task_key != first_failed or not task.notebook_task:
+                    continue
+                nb_path = task.notebook_task.notebook_path
+                m = _REPO_PATH_RE.match(nb_path)
+                if m:
+                    file_to_fix_hint = f"{m.group('path')}.py"
+                break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Falha ao resolver file_to_fix_hint: {exc}")
+
         return {
             "failed_task": first_failed,
             "error_message": failure["errors"].get(first_failed, "Unknown"),
             "notebook_code": codes.get(first_failed, "[código não disponível]"),
             "reference_code": git_refs.get(first_failed, ""),
+            "file_to_fix_hint": file_to_fix_hint,
             "schema_info": schema,
             "all_codes": codes,
             "all_references": git_refs,
