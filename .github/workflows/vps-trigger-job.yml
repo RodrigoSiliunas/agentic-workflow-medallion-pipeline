@@ -1,0 +1,53 @@
+name: VPS Trigger Databricks Job
+
+# Dispara um job Databricks via SDK rodando dentro do container backend
+# no VPS (token decriptado do Postgres via CredentialService).
+# Trigger: workflow_dispatch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_email:
+        description: "Email do user dono das credentials"
+        required: true
+      job_name:
+        description: "Nome do job (ex: medallion_pipeline_whatsapp)"
+        required: false
+      job_id:
+        description: "Job ID (alternativa ao --job-name)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    name: SSH + docker exec trigger
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH exec
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          USER_EMAIL: ${{ github.event.inputs.user_email }}
+          JOB_NAME: ${{ github.event.inputs.job_name }}
+          JOB_ID: ${{ github.event.inputs.job_id }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 3m
+          envs: USER_EMAIL,JOB_NAME,JOB_ID
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            ARGS=("--user-email" "$USER_EMAIL")
+            if [ -n "$JOB_NAME" ]; then
+                ARGS+=("--job-name" "$JOB_NAME")
+            fi
+            if [ -n "$JOB_ID" ]; then
+                ARGS+=("--job-id" "$JOB_ID")
+            fi
+            docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+              flowertex-backend \
+              uv run python scripts/vps_trigger_databricks_job.py "${ARGS[@]}"
