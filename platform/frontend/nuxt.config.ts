@@ -49,8 +49,13 @@ export default defineNuxtConfig({
   // escolhe 'remote' (proxy pra api.iconify.design), que falhava com 404 no
   // VPS Hostinger. Forcar 'local' garante que os @iconify-json/* instalados
   // como dependency sejam servidos pelo proprio Nitro.
+  //
+  // localApiEndpoint fora de /api/ porque o nginx-proxy do VPS roteia /api/*
+  // pro FastAPI backend (nao pro Nuxt) — manter em /_nuxt_icon/ cai no
+  // location / e e atendido pelo frontend SSR.
   icon: {
     serverBundle: "local",
+    localApiEndpoint: "/_nuxt_icon",
   },
 
   // Geist font (sans + mono) — design system Flowertex
