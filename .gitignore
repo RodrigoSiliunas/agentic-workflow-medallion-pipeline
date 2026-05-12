@@ -20,6 +20,7 @@ Scripts/
 !/scripts/
 !observer-framework/scripts/
 !pipelines/*/scripts/
+!platform/backend/scripts/
 pyvenv.cfg
 
 # Environment
