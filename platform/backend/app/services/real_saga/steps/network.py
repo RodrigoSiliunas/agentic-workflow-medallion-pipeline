@@ -238,7 +238,7 @@ class NetworkStep(SagaStepBase):
             if subnet_ids and sg_id:
                 return vpc_id, subnet_ids, sg_id, False
 
-        # Create VPC
+        # Criar VPC
         vpc = ec2.create_vpc(
             CidrBlock="10.0.0.0/16",
             TagSpecifications=[{

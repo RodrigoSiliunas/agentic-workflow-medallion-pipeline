@@ -49,7 +49,7 @@ def _convert_messages_anthropic_to_openai(
             out.append({"role": role, "content": content})
             continue
 
-        # Lista de blocks (Anthropic format)
+        # Lista de blocos (formato Anthropic)
         if isinstance(content, list):
             text_parts: list[str] = []
             tool_calls: list[dict[str, Any]] = []

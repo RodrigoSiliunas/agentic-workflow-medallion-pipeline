@@ -1,8 +1,8 @@
 # Manual de Desenvolvimento - Codex
 
-> Este manual documenta todos os padroes, decisoes arquiteturais e fluxos de trabalho do projeto
-> **Agentic Workflow Medallion Pipeline**. Use-o como referencia completa para continuar o
-> desenvolvimento com o mesmo nivel de contexto da sessao original.
+> Este manual documenta todos os padrões, decisões arquiteturais e fluxos de trabalho do projeto
+> **Agentic Workflow Medallion Pipeline**. Use-o como referência completa para continuar o
+> desenvolvimento com o mesmo nível de contexto da sessão original.
 >
 > **Criado em:** 2026-04-09 | **Autor do projeto:** Rodrigo Siliunas
 
@@ -10,44 +10,44 @@
 
 ## Indice
 
-1. [Visao Geral do Projeto](#1-visao-geral-do-projeto)
+1. [Visão Geral do Projeto](#1-visão-geral-do-projeto)
 2. [Estrutura do Monorepo](#2-estrutura-do-monorepo)
 3. [Arquitetura Medallion Pipeline](#3-arquitetura-medallion-pipeline)
 4. [Observer Agent Framework](#4-observer-agent-framework)
-5. [Notebooks Databricks - Padroes](#5-notebooks-databricks---padroes)
+5. [Notebooks Databricks - Padrões](#5-notebooks-databricks---padrões)
 6. [pipeline_lib - Biblioteca Compartilhada](#6-pipeline_lib---biblioteca-compartilhada)
 7. [Deploy e Infraestrutura](#7-deploy-e-infraestrutura)
 8. [CI/CD](#8-cicd)
 9. [Chaos Testing](#9-chaos-testing)
 10. [Plataforma Conversacional](#10-plataforma-conversacional)
 11. [Terraform / AWS](#11-terraform--aws)
-12. [Convencoes de Codigo](#12-convencoes-de-codigo)
+12. [Convenções de Código](#12-convenções-de-código)
 13. [Ambiente e Credenciais](#13-ambiente-e-credenciais)
-14. [Erros Comuns e Solucoes](#14-erros-comuns-e-solucoes)
+14. [Erros Comuns e Soluções](#14-erros-comuns-e-soluções)
 15. [Roadmap de Melhorias](#15-roadmap-de-melhorias)
 16. [Comandos Frequentes](#16-comandos-frequentes)
 
 ---
 
-## 1. Visao Geral do Projeto
+## 1. Visão Geral do Projeto
 
 **Nome:** Agentic Workflow Medallion Pipeline
 **Objetivo:** Pipeline de dados sobre conversas WhatsApp de seguro auto (~153k mensagens).
-Transforma dados brutos em analytics acionaveis com um agente autonomo de IA que monitora,
+Transforma dados brutos em analytics acionáveis com um agente autônomo de IA que monitora,
 diagnostica e corrige falhas automaticamente via PRs no GitHub.
 
-### Tres partes:
+### Três partes:
 
-| Parte | Descricao | Status |
+| Parte | Descrição | Status |
 |-------|-----------|--------|
 | **Pipeline Medallion** | ETL Bronze > Silver > Gold + Observer Agent | Implementado |
 | **Plataforma Conversacional** | SaaS multi-tenant (Nuxt 4 + FastAPI) | Em desenvolvimento |
-| **Infra as Code** | Terraform AWS (S3, IAM, Security Groups) | Criado, pendente execucao |
+| **Infra as Code** | Terraform AWS (S3, IAM, Security Groups) | Criado, pendente execução |
 
-### Principio fundamental
+### Princípio fundamental
 
-O pipeline ETL eh **puro** — zero logica de agente/AI nos notebooks de dados.
-O Observer Agent eh um **framework generico separado** que funciona com qualquer workflow Databricks.
+O pipeline ETL é **puro** — zero lógica de agente/AI nos notebooks de dados.
+O Observer Agent é um **framework genérico separado** que funciona com qualquer workflow Databricks.
 
 ---
 
@@ -55,11 +55,11 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 
 ```
 /
-├── observer-framework/           # Framework reusavel (futuro repo open-source)
+├── observer-framework/           # Framework reutilizável (futuro repo open-source)
 │   ├── observer/                 # Pacote Python `observer`
 │   │   ├── __init__.py
 │   │   ├── config.py             # ObserverConfig + load_observer_config
-│   │   ├── dedup.py              # check_duplicate via hash SHA-256 + PR status
+│   │   ├── dedup.py              # check_duplicáte via hash SHA-256 + PR status
 │   │   ├── persistence.py        # ObserverDiagnosticsStore (Delta)
 │   │   ├── triggering.py         # Helpers do task sentinel
 │   │   ├── validator.py          # compile + ast + ruff pre-PR
@@ -70,7 +70,7 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 │   │       ├── anthropic_provider.py
 │   │       ├── openai_provider.py
 │   │       └── github_provider.py
-│   ├── notebooks/                # Notebooks Databricks genericos do observer
+│   ├── notebooks/                # Notebooks Databricks genéricos do observer
 │   │   ├── collect_and_fix.py    # Notebook principal do job
 │   │   └── trigger_sentinel.py   # Task referenciada pelos pipelines
 │   ├── deploy/
@@ -85,7 +85,7 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 │   ├── README.md, LICENSE, CHANGELOG.md, CONTRIBUTING.md
 │   └── pyproject.toml            # Pacote `observer` standalone
 │
-├── pipelines/                    # Guarda-chuva para multiplos pipelines one-click
+├── pipelines/                    # Guarda-chuva para múltiplos pipelines one-click
 │   └── pipeline-seguradora-whatsapp/   # Pipeline WhatsApp de seguro auto
 │       ├── notebooks/            # Databricks notebooks (.py source format)
 │       │   ├── pre_check.py      # Task 0: pre-flight (propaga run_id + chaos_mode)
@@ -93,8 +93,8 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 │       │   │   └── ingest.py     # Task 1: S3 parquet → Delta bronze (overwrite)
 │       │   ├── silver/
 │       │   │   ├── dedup_clean.py   # Task 2: dedup + normalização
-│       │   │   ├── entities_mask.py # Task 3: extração + mascaramento PII
-│       │   │   └── enrichment.py    # Task 4: métricas conversacionais
+│       │   │   ├── entities_mask.py # Task 3: extração + mascáramento PII
+│       │   │   └── enrichment.py    # Task 4: métricás conversacionais
 │       │   ├── gold/
 │       │   │   ├── analytics.py     # Task 5: orquestrador (12 notebooks paralelos)
 │       │   │   ├── funnel.py        # Funil de vendas
@@ -104,20 +104,20 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 │       │   └── validation/
 │       │       └── checks.py        # Task 6: quality gates
 │       │
-│       ├── pipeline_lib/         # Biblioteca Python especifica WhatsApp
+│       ├── pipeline_lib/         # Biblioteca Python específica WhatsApp
 │       │   ├── storage/
 │       │   │   └── s3_client.py     # S3Lake: leitura/escrita S3 via boto3 in-memory
 │       │   ├── schema/
-│       │   │   ├── contracts.py     # Colunas obrigatorias + constraints
+│       │   │   ├── contracts.py     # Colunas obrigatórias + constraints
 │       │   │   └── validator.py     # Validador de schema
-│       │   ├── extractors/       # CPF, phone, email, plate, vehicle, etc
+│       │   ├── extractors/       # CPF, phone, email, plate, véicle, etc
 │       │   └── masking/          # HMAC, redaction, format-preserving
 │       │
-│       ├── deploy/               # Scripts de deploy/gestao Databricks
+│       ├── deploy/               # Scripts de deploy/gestão Databricks
 │       │   ├── create_workflow.py    # Cria job ETL; task sentinel referencia observer-framework
-│       │   ├── setup_catalog.py      # Cria catalog + schemas no Unity Catalog
+│       │   ├── setup_cátalog.py      # Cria cátalog + schemas no Unity Catalog
 │       │   ├── trigger_chaos.py      # Dispara chaos testing
-│       │   ├── trigger_run.py        # Dispara execucao do pipeline
+│       │   ├── trigger_run.py        # Dispara execução do pipeline
 │       │   └── upload_data.py        # Upload parquet para S3
 │       │
 │       ├── tests/                # 91 testes pytest (extractors, masking, schema, deploy)
@@ -135,13 +135,13 @@ O Observer Agent eh um **framework generico separado** que funciona com qualquer
 │       └── 02-datalake/         # S3 medallion bucket + lifecycle
 │
 ├── conductor/                   # Tracks e workflow do projeto
-├── docs/                        # Analise arquitetural, specs
+├── docs/                        # Análise arquitetural, specs
 ├── .github/workflows/           # CI (ruff + pytest) + CD (Databricks sync)
-├── CLAUDE.md                    # Instrucoes para AI assistants
-└── .env.example                 # Template de variaveis de ambiente
+├── CLAUDE.md                    # Instruções para AI assistants
+└── .env.example                 # Template de variáveis de ambiente
 ```
 
-> **IMPORTANTE:** O pacote se chama `pipeline_lib` (nao `lib`) porque `lib` conflita com a
+> **IMPORTANTE:** O pacote se chama `pipeline_lib` (não `lib`) porque `lib` conflita com a
 > stdlib do Python no Windows. Todos os imports usam `from pipeline_lib.xxx import yyy`.
 
 ---
@@ -160,10 +160,10 @@ S3 (Parquet bruto)
 [Bronze] ─────── S3Lake.read_parquet() → schema validation → Delta overwrite
     │
     ▼
-[Silver] ─────── Dedup → Entity extraction + PII masking → Enrichment (metricas)
+[Silver] ─────── Dedup → Entity extraction + PII masking → Enrichment (métricás)
     │
     ▼
-[Gold] ────────── 12 notebooks analiticos em 3 fases paralelas (ThreadPoolExecutor)
+[Gold] ────────── 12 notebooks analíticos em 3 fases paralelas (ThreadPoolExecutor)
     │
     ▼
 [Validation] ──── Row counts, null rates, consistency checks
@@ -191,7 +191,7 @@ S3 (Parquet bruto)
 | `observer_trigger` | `observer/trigger_sentinel.py` | todas as tasks (run_if: AT_LEAST_ONE_FAILED) |
 
 **Shared Parameters (widgets):**
-- `catalog` = "medallion"
+- `cátalog` = "medallion"
 - `scope` = "medallion-pipeline"
 - `chaos_mode` = "off"
 - `bronze_prefix` = "bronze/"
@@ -202,11 +202,11 @@ S3 (Parquet bruto)
 
 | Task | Notebook | Params |
 |------|----------|--------|
-| `observe_and_fix` | `observer/collect_and_fix.py` | source_run_id, catalog, scope, llm_provider, git_provider |
+| `observe_and_fix` | `observer/collect_and_fix.py` | source_run_id, cátalog, scope, llm_provider, git_provider |
 
-`max_concurrent_runs = 3` — pode rodar multiplas instancias simultaneamente.
+`max_concurrent_runs = 3` — pode rodar múltiplas instâncias simultaneamente.
 
-### Comunicacao entre Tasks
+### Comunicação entre Tasks
 
 Via `dbutils.jobs.taskValues`:
 ```python
@@ -223,32 +223,32 @@ chaos_mode = dbutils.jobs.taskValues.get(
 
 **Catalog:** `medallion`
 
-| Schema | Tabela | Descricao |
+| Schema | Tabela | Descrição |
 |--------|--------|-----------|
 | bronze | conversations | Dados brutos do S3 |
-| silver | messages_clean | Mensagens deduplicadas |
+| silver | messages_clean | Mensagens deduplicádas |
 | silver | leads_profile | Perfis de leads |
-| silver | conversations_enriched | Metricas conversacionais |
-| gold | funil_vendas | Funil de conversao |
+| silver | conversations_enriched | Métricás conversacionais |
+| gold | funil_vendas | Funil de conversão |
 | gold | agent_performance | Performance dos agentes |
-| gold | sentiment | Analise de sentimento |
+| gold | sentiment | Análise de sentimento |
 | gold | lead_scoring | Scoring de leads |
 | gold | email_providers | Providers de email |
-| gold | temporal_analysis | Analise temporal |
+| gold | temporal_analysis | Análise temporal |
 | gold | competitor_intel | Inteligencia competitiva |
-| gold | campaign_roi | ROI de campanhas |
-| gold | personas | Segmentacao de personas |
+| gold | cámpaign_roi | ROI de cámpanhas |
+| gold | personas | Segmentacáo de personas |
 | gold | churn_reengagement | Churn e reengajamento |
-| gold | negotiation_complexity | Complexidade de negociacao |
-| gold | first_contact_resolution | Resolucao no primeiro contato |
+| gold | negotiation_complexity | Complexidade de negociacáo |
+| gold | first_contact_resolution | Resolucáo no primeiro contato |
 
 ### Atomicidade (sem rollback)
 
-- Cada notebook faz `df.write.mode("overwrite")` — atomico via Delta Lake
-- **Sem rollback Delta** — como eh overwrite idempotente, rodar de novo resolve qualquer falha parcial
-- Em caso de falha, `observer_trigger` dispara o Observer Agent com `source_run_id`, `source_job_id`, `source_job_name` e `failed_tasks`
-- O Observer analisa o codigo do notebook que falhou, propoe correcao via Claude Opus e abre PR no GitHub
-- **Filosofia**: ETL = dados, Observer = inteligencia. Nao misturar logica de agente no pipeline.
+- Cada notebook faz `df.write.mode("overwrite")` — atômico via Delta Lake
+- **Sem rollback Delta** — como é overwrite idempotente, rodar de novo resolve qualquer falha parcial
+- Em cáso de falha, `observer_trigger` dispara o Observer Agent com `source_run_id`, `source_job_id`, `source_job_name` e `failed_tasks`
+- O Observer analisa o código do notebook que falhou, propõe correção via Claude Opus e abre PR no GitHub
+- **Filosofia**: ETL = dados, Observer = inteligência. Não misturar lógica de agente no pipeline.
 
 ### Gold Analytics - Paralelismo
 
@@ -258,9 +258,9 @@ chaos_mode = dbutils.jobs.taskValues.get(
 phases = [
     {"name": "Core", "notebooks": [funnel, agent_performance, sentiment, email_providers]},
     {"name": "Scoring + Analytics", "notebooks": [lead_scoring, temporal_analysis, competitor_intel]},
-    {"name": "Avancado", "notebooks": [campaign_roi, segmentation, churn, negotiation, fcr]},
+    {"name": "Avançado", "notebooks": [cámpaign_roi, segmentation, churn, negotiation, fcr]},
 ]
-# Fases rodam em SEQUENCIA (dependencias), notebooks dentro de cada fase em PARALELO
+# Fases rodam em SEQUÊNCIA (dependências), notebooks dentro de cáda fase em PARALELO
 ```
 
 ---
@@ -269,15 +269,15 @@ phases = [
 
 ### Arquitetura
 
-O Observer eh um **framework generico** que funciona com **qualquer workflow Databricks**.
-Nao conhece nada sobre o pipeline Medallion especificamente.
+O Observer é um **framework genérico** que funciona com **qualquer workflow Databricks**.
+Não conhece nada sobre o pipeline Medallion específicamente.
 
 ```
 WorkflowObserver (coleta contexto)
     │
-    ├── find_recent_failures()     # Busca runs com falha
+    ├── find_recent_failures()     # Buscá runs com falha
     ├── build_failure_from_run()   # Extrai detalhes da falha
-    ├── collect_notebook_code()    # Le codigo via Workspace API (base64)
+    ├── collect_notebook_code()    # Le código via Workspace API (base64)
     ├── collect_schema_info()      # Le schema via Unity Catalog API
     └── build_context()            # Monta contexto completo para LLM
          │
@@ -326,11 +326,11 @@ class GitHubProvider(GitProvider): ...
 
 | Provider | Modelo Default | Streaming | Retry |
 |----------|---------------|-----------|-------|
-| `anthropic` | claude-opus-4-20250514 | Sim (obrigatorio para Opus) | 3x exponential backoff |
-| `openai` | gpt-4o | Nao | 3x exponential backoff |
+| `anthropic` | claude-opus-4-20250514 | Sim (obrigatório para Opus) | 3x exponential backoff |
+| `openai` | gpt-4o | Não | 3x exponential backoff |
 
-**Ambos usam o mesmo SYSTEM_PROMPT** (engenheiro de dados senior, PySpark/Delta/Databricks).
-**Ambos retornam JSON estruturado** com: diagnosis, root_cause, fix_description, fixed_code, file_to_fix, confidence.
+**Ambos usam o mesmo SYSTEM_PROMPT** (engenheiro de dados sênior, PySpark/Delta/Databricks).
+**Ambos retornam JSON estruturado** com: diagnosis, root_cáuse, fix_description, fixed_code, file_to_fix, confidence.
 
 ### Git Providers Implementados
 
@@ -338,7 +338,7 @@ class GitHubProvider(GitProvider): ...
 |----------|---------------|-----------|
 | `github` | `fix/agent-auto-{task}-{timestamp}` | `dev` branch |
 
-PR body inclui: emoji de confianca (verde/amarelo/vermelho), diagnostico, causa raiz, descricao do fix, provider/model usado.
+PR body inclui: emoji de confiança (verde/amarelo/vermelho), diagnóstico, cáusa raiz, descrição do fix, provider/model usado.
 
 ### Retry/Backoff
 
@@ -348,7 +348,7 @@ Decorator `@with_retry` em `base.py`:
 def diagnose(self, request): ...
 ```
 - Retenta em erros transientes (rede, rate limit, timeout)
-- NAO retenta em erros de logica (ValueError, KeyError, TypeError)
+- NÃO retenta em erros de lógica (ValueError, KeyError, TypeError)
 - Exponential backoff: 2s, 4s, 8s
 
 ### DataClasses
@@ -366,7 +366,7 @@ class DiagnosisRequest:
 @dataclass
 class DiagnosisResult:
     diagnosis: str
-    root_cause: str
+    root_cáuse: str
     fix_description: str
     fixed_code: str | None
     file_to_fix: str | None
@@ -387,14 +387,14 @@ class PRResult:
 
 ---
 
-## 5. Notebooks Databricks - Padroes
+## 5. Notebooks Databricks - Padrões
 
 ### Formato
 
-Notebooks sao arquivos `.py` com formato Databricks Source:
-- Separador entre celulas: `# COMMAND ----------`
+Notebooks são arquivos `.py` com formato Databricks Source:
+- Separador entre células: `# COMMAND ----------`
 - Primeira linha: `# Databricks notebook source`
-- Titulos nas celulas: `# DBTITLE 1,Nome do Titulo`
+- Títulos nas células: `# DBTITLE 1,Nome do Título`
 - Magics: `# MAGIC %md`, `# MAGIC %sql`, etc.
 
 ### Template de Notebook
@@ -403,12 +403,12 @@ Notebooks sao arquivos `.py` com formato Databricks Source:
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Camada: Nome do Notebook
-# MAGIC Descricao do que faz.
+# MAGIC Descrição do que faz.
 # MAGIC
-# MAGIC **Camada:** Bronze/Silver/Gold | **Dependencia:** tabela X
+# MAGIC **Camada:** Bronze/Silver/Gold | **Dependência:** tabela X
 # MAGIC **Output:** tabela Y
 # MAGIC
-# MAGIC _Ultima atualizacao: 2026-04-09_
+# MAGIC _Última atualização: 2026-04-09_
 
 # COMMAND ----------
 
@@ -419,43 +419,43 @@ from pyspark.sql.types import StructType, StructField, StringType
 import logging
 import time
 
-logger = logging.getLogger("camada.nome")
+logger = logging.getLogger("cámada.nome")
 start_time = time.time()
 
 # COMMAND ----------
 
 # DBTITLE 1,Parametros
-dbutils.widgets.text("catalog", "medallion", "Catalog Name")
+dbutils.widgets.text("cátalog", "medallion", "Catalog Name")
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")
 
-CATALOG = dbutils.widgets.get("catalog")
+CATALOG = dbutils.widgets.get("cátalog")
 SCOPE = dbutils.widgets.get("scope")
 
 # COMMAND ----------
 
-# DBTITLE 1,Logica Principal
-# ... codigo aqui ...
+# DBTITLE 1,Lógicá Principal
+# ... código aqui ...
 
 # COMMAND ----------
 
-# DBTITLE 1,Saida
-dbutils.notebook.exit("SUCCESS: descricao do resultado")
+# DBTITLE 1,Saída
+dbutils.notebook.exit("SUCCESS: descrição do resultado")
 ```
 
-### Regras OBRIGATORIAS
+### Regras OBRIGATÓRIAS
 
-1. **DBTITLE** em TODA celula de codigo (nao em celulas %md separadas)
-2. **Header markdown** como primeira celula (titulo, descricao, camada, output, data)
-3. **Imports** todos na primeira celula de codigo, ordenados:
-   - `from ... import ...` primeiro (alfabetico)
-   - `import ...` depois (alfabetico)
-4. **Comentarios** frequentes em PT-BR com acentuacao correta
+1. **DBTITLE** em TODA célula de código (não em células %md separadas)
+2. **Header markdown** como primeira célula (título, descrição, cámada, output, data)
+3. **Imports** todos na primeira célula de código, ordenados:
+   - `from ... import ...` primeiro (alfabético)
+   - `import ...` depois (alfabético)
+4. **Comentários** frequentes em PT-BR com acentuação correta
 5. **SEM inline imports** — tudo no topo
 6. **Sem serverless** — pipeline roda em cluster dedicado (m5d.large)
-7. **dbutils.notebook.exit()** NUNCA dentro de try/except (exit lanca excecao especial)
-8. **Schema evolution**: colunas novas sao aceitas via Delta `mergeSchema`, nunca rejeitadas
+7. **dbutils.notebook.exit()** NUNCA dentro de try/except (exit lança exceção especial)
+8. **Schema evolution**: colunas novas são aceitas via Delta `mergeSchema`, nunca rejeitadas
 
-### Comunicacao via Task Values
+### Comunicação via Task Values
 
 ```python
 # Setar valor (produtor)
@@ -516,9 +516,9 @@ lake.write_parquet(df, "silver/clean/")
 
 **Detalhes importantes:**
 - Usa `dbutils.secrets` para credenciais AWS (multi-tenant ready)
-- Leitura via BytesIO (nao DBFS — DBFS desabilitado em serverless)
+- Leitura via BytesIO (não DBFS — DBFS desabilitado em serverless)
 - Escrita particionada em chunks de 50k linhas para evitar OOM no driver
-- Paginacao automatica para `list_objects_v2` (buckets grandes)
+- Paginacáo automaticá para `list_objects_v2` (buckets grandes)
 
 ### Schema Contracts (`schema/contracts.py`)
 
@@ -526,14 +526,14 @@ lake.write_parquet(df, "silver/clean/")
 REQUIRED_COLUMNS = {
     "message_id", "conversation_id", "timestamp", "direction",
     "sender_phone", "sender_name", "message_type", "message_body",
-    "status", "channel", "campaign_id", "agent_id",
+    "status", "channel", "cámpaign_id", "agent_id",
     "conversation_outcome", "metadata",
 }
 
 VALUE_CONSTRAINTS = {
     "conversation_id": r"^conv_[0-9a-f]{8}$",
     "direction": {"inbound", "outbound"},
-    "message_type": {"text", "audio", "image", "document", "sticker", "contact", "video", "location"},
+    "message_type": {"text", "audio", "image", "document", "sticker", "contact", "video", "locátion"},
     "status": {"sent", "delivered", "read", "failed"},
     "channel": {"whatsapp"},
 }
@@ -542,23 +542,23 @@ VALUE_CONSTRAINTS = {
 ### Extractors (`extractors/`)
 
 Extratores de entidades:
-- `cpf.py` — CPF brasileiro (regex + validacao digitos)
+- `cpf.py` — CPF brasileiro (regex + validacáo digitos)
 - `phone.py` — Telefones BR
 - `email.py` — Enderecos de email
 - `cep.py` — CEP
-- `plate.py` — Placas de veiculo
-- `vehicle.py` — Marcas/modelos
+- `plate.py` — Placás de veiculo
+- `véicle.py` — Marcás/modelos
 - `price.py` — Valores monetarios
 - `competitor.py` — Nomes de concorrentes
 
 ### Masking (`masking/`)
 
-Mascaramento PII:
-- `hash_based.py` — HMAC-SHA256 (obrigatorio, sem fallback)
-- `redaction.py` — Redacao de texto sensivel
-- `format_preserving.py` — Mascaramento preservando formato
+Mascáramento PII:
+- `hash_based.py` — HMAC-SHA256 (obrigatório, sem fallback)
+- `redaction.py` — Redacáo de texto sensivel
+- `format_preserving.py` — Mascáramento preservando formato
 
-> **REGRA:** HMAC eh obrigatorio. Nunca usar hash simples sem chave secreta.
+> **REGRA:** HMAC é obrigatório. Nuncá usar hash simples sem chave secreta.
 > A chave vem de `MASKING_SECRET` no .env / Databricks Secrets.
 
 ---
@@ -567,10 +567,10 @@ Mascaramento PII:
 
 ### Scripts de Deploy (`deploy/`)
 
-Todos os scripts usam `databricks-sdk` e variaveis de ambiente:
+Todos os scripts usam `databricks-sdk` e variáveis de ambiente:
 
 ```bash
-# Variaveis obrigatorias
+# Variaveis obrigatórias
 export DATABRICKS_HOST="https://<your-workspace>.cloud.databricks.com"
 export DATABRICKS_TOKEN="dapi..."
 
@@ -580,22 +580,22 @@ python pipelines/pipeline-seguradora-whatsapp/deploy/create_workflow.py
 # Criar workflow Observer
 python observer-framework/deploy/create_observer_workflow.py
 
-# Setup Unity Catalog (catalog + schemas)
-python pipelines/pipeline-seguradora-whatsapp/deploy/setup_catalog.py
+# Setup Unity Catalog (cátalog + schemas)
+python pipelines/pipeline-seguradora-whatsapp/deploy/setup_cátalog.py
 
 # Upload dados para S3
 python pipelines/pipeline-seguradora-whatsapp/deploy/upload_data.py
 
-# Disparar execucao
+# Disparar execução
 python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_run.py
 
 # Disparar chaos test
 python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_schema
 ```
 
-### Parametrizacao por Empresa
+### Parametrizacáo por Empresa
 
-Scripts NUNCA tem valores hardcoded. Tudo via variaveis de ambiente:
+Scripts NUNCA tem valores hardcoded. Tudo via variáveis de ambiente:
 
 ```python
 DATABRICKS_HOST = os.environ["DATABRICKS_HOST"]
@@ -607,7 +607,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 ### create_workflow.py - Detalhes
 
 - Cria job ETL com 6 tasks sequenciais
-- Usa `existing_cluster_id` (nao serverless, nao job cluster)
+- Usa `existing_cluster_id` (não serverless, não job cluster)
 - Schedule: diario as 6 AM Sao Paulo
 - Tags: `project=medallion-pipeline`, `env=production`
 - Timeout: 3600 segundos
@@ -621,11 +621,11 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 - Disparado via SDK quando pipeline falha
 - `max_concurrent_runs = 3`
 - Timeout: 900 segundos
-- Parameters: `source_run_id`, `source_job_id`, `source_job_name`, `failed_tasks`, `catalog`, `scope`, `llm_provider`, `git_provider`
+- Parameters: `source_run_id`, `source_job_id`, `source_job_name`, `failed_tasks`, `cátalog`, `scope`, `llm_provider`, `git_provider`
 
 ### Databricks Workspace
 
-- **Workspace:** `data-capture-engine-prd`
+- **Workspace:** `data-cápture-engine-prd`
 - **URL:** `https://<your-workspace>.cloud.databricks.com`
 - **Cluster:** `<your-cluster-id>` (m5d.large, Databricks trial)
 - **Repo path:** `/Repos/admin@your-domain.com/agentic-workflow-medallion-pipeline`
@@ -633,7 +633,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "RodrigoSiliunas/agentic-workflow-me
 
 ### Databricks Secrets (Scope: `medallion-pipeline`)
 
-| Key | Descricao |
+| Key | Descrição |
 |-----|-----------|
 | `aws-access-key-id` | IAM access key |
 | `aws-secret-access-key` | IAM secret key |
@@ -683,8 +683,8 @@ env:
 
 ```
 Branches:
-  main  ─── branch de producao (CD deploya automaticamente)
-  dev   ─── branch de desenvolvimento (PRs do agente AI vao para ca)
+  main  ─── branch de produção (CD deploya automaticamente)
+  dev   ─── branch de desenvolvimento (PRs do agente AI vão para cá)
   fix/* ─── branches criadas pelo Observer Agent
   feat/*─── branches de feature
 
@@ -694,7 +694,7 @@ Fluxo normal:
 Fluxo do agente:
   Observer detecta falha → cria branch fix/agent-auto-xxx → PR para dev
   → CI valida (ruff + pytest) → humano revisa → merge para dev
-  → dev → PR para main (manual ou automatico)
+  → dev → PR para main (manual ou automático)
 ```
 
 ---
@@ -704,16 +704,16 @@ Fluxo do agente:
 ### Objetivo
 
 Injetar bugs controlados para testar que o agente AI funciona end-to-end:
-deteccao → Claude API diagnostics → GitHub PR para dev.
+detecção → Claude API diagnostics → GitHub PR para dev.
 
-### 4 Cenarios
+### 4 Cenários
 
-| Modo | Injecao | Efeito |
+| Modo | Injeção | Efeito |
 |------|---------|--------|
-| `bronze_schema` | Coluna `_chaos_invalid_col` com tipo incompativel | Schema validation falha |
+| `bronze_schema` | Coluna `_chaos_invalid_col` com tipo incompatível | Schema validation falha |
 | `silver_null` | NULLs em `conversation_id` | Dedup/groupBy falha |
 | `gold_divide_zero` | `F.lit(1) / F.lit(0)` | ArithmeticException |
-| `validation_strict` | Threshold impossivel | Quality check FAIL |
+| `validation_strict` | Threshold impossível | Quality check FAIL |
 
 ### Como Usar
 
@@ -734,11 +734,11 @@ python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_sch
 4. Notebooks downstream → UPSTREAM_FAILED
 5. observer_trigger (run_if: AT_LEAST_ONE_FAILED):
    a. Recebe o parent run do workflow
-   b. Identifica as tasks que falharam de verdade (ignora UPSTREAM_FAILED em cascata)
+   b. Identifica as tasks que falharam de verdade (ignora UPSTREAM_FAILED em cáscáta)
    c. Dispara o workflow_observer_agent com source_run_id + failed_tasks
 6. Observer Agent (job separado):
-   a. Coleta codigo do notebook + erro + schema
-   b. Claude Opus analisa e propoe fix
+   a. Coleta código do notebook + erro + schema
+   b. Claude Opus analisa e propõe fix
    c. GitHub PR criado em branch fix/agent-auto-*
 7. Verificar: PR no GitHub? Diagnostico correto? Fix faz sentido?
 ```
@@ -768,16 +768,16 @@ python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_chaos.py bronze_sch
 | Cache | Redis |
 | Padroes | Service layer, domain exceptions, Pydantic Settings, lifespan hooks |
 
-### Padroes do idlehub
+### Padroes do idléub
 
-O Rodrigo segue os padroes do idlehub:
-- `useApiClient` com token refresh automatico e request queue
+O Rodrigo segue os padroes do idléub:
+- `useApiClient` com token refresh automático e request queue
 - Multi-tenancy com DB isolation (master + tenant DBs)
 - AuthContext dataclass para JWT + API Key
 - Service layer pattern (async)
 - Domain exceptions mapeadas para HTTP status
 - Redis rate limiting com fallback in-memory
-- SWR caching via useDataCache
+- SWR cáching via useDataCache
 - Global middleware para auth
 
 ---
@@ -807,10 +807,10 @@ infra/aws/
 
 ### Detalhes Importantes
 
-- Account ID dinamico via `data.aws_caller_identity.current.account_id`
-- NAO hardcodar account ID em nenhum lugar
+- Account ID dinâmico via `data.aws_cáller_identity.current.account_id`
+- NÃO hardcodar account ID em nenhum lugar
 - S3 buckets: `flowertex-databricks-root` (Databricks), `flowertex-medallion-datalake` (dados)
-- Lifecycle rules: Glacier apos 90 dias para bronze
+- Lifecycle rules: Glacier após 90 dias para bronze
 - Databricks workspace criado manualmente (trial) — Terraform gerencia o resto
 
 ### Workspace Setup
@@ -821,7 +821,7 @@ infra/aws/
 
 ---
 
-## 12. Convencoes de Codigo
+## 12. Convenções de Código
 
 ### Commits
 
@@ -831,7 +831,7 @@ feat: adiciona analise de sentimento na Gold
 fix: corrige dedup ignorando NULLs no conversation_id
 refactor: extrai S3Lake para pipeline_lib/storage
 docs: atualiza README com arquitetura do Observer
-test: adiciona testes para mascaramento HMAC
+test: adiciona testes para mascáramento HMAC
 ```
 
 ### Python (ruff)
@@ -840,7 +840,7 @@ test: adiciona testes para mascaramento HMAC
 # ruff config
 line-length = 100
 target-version = "py311"
-# Notebooks excluidos do lint
+# Notebooks excluídos do lint
 ```
 
 ### JS/TS (ESLint + Prettier)
@@ -852,16 +852,16 @@ target-version = "py311"
 
 | Branch | Uso |
 |--------|-----|
-| `main` | Producao (CD auto-deploy) |
+| `main` | Produção (CD auto-deploy) |
 | `dev` | Desenvolvimento |
 | `fix/agent-auto-*` | Criadas automaticamente pelo Observer |
 | `feat/*` | Features manuais |
 
-### Dados Sensiveis
+### Dados Sensíveis
 
-- Mascaramento na Silver com HMAC (obrigatorio, sem fallback)
-- message_body eh redacted na Silver
-- Nunca commitar .env, credenciais, tokens
+- Mascáramento na Silver com HMAC (obrigatório, sem fallback)
+- message_body é redacted na Silver
+- Nuncá commitar .env, credenciais, tokens
 - Secrets via Databricks Secret Scope
 
 ---
@@ -892,10 +892,10 @@ BRONZE_SCHEMA=bronze
 SILVER_SCHEMA=silver
 GOLD_SCHEMA=gold
 
-# Mascaramento
+# Mascáramento
 MASKING_SECRET=your-secret-key-here
 
-# Cluster (opcional, se nao usar serverless)
+# Cluster (opcional, se não usar serverless)
 PIPELINE_CLUSTER_ID=<your-cluster-id>
 ```
 
@@ -910,37 +910,37 @@ PIPELINE_CLUSTER_ID=<your-cluster-id>
 ### AWS Account
 
 - Account ID: `051457670776`
-- Regiao: `us-east-2`
+- Região: `us-east-2`
 - IAM user: criado via Terraform
 - Buckets: `flowertex-medallion-datalake`, `flowertex-databricks-root`
 
 ---
 
-## 14. Erros Comuns e Solucoes
+## 14. Erros Comuns e Soluções
 
 ### Databricks
 
-| Erro | Causa | Solucao |
+| Erro | Causa | Solução |
 |------|-------|---------|
 | `CONFIG_NOT_AVAILABLE` | `spark.conf.get()` em serverless | Usar `dbutils.widgets.get()` |
-| `CANNOT_RESOLVE_DATAFRAME_COLUMN` | `spark.table(X)["col"]` ambiguo | Usar `F.col("coluna")` |
+| `CANNOT_RESOLVE_DATAFRAME_COLUMN` | `spark.table(X)["col"]` ambíguo | Usar `F.col("coluna")` |
 | `DBFS_DISABLED` | `/tmp` em serverless | Usar BytesIO in-memory |
-| `ArrayType(NullType())` | Arrays vazios | Schema explicito com StructType |
+| `ArrayType(NullType())` | Arrays vazios | Schema explícito com StructType |
 | `PlanMetrics not JSON serializable` | `toPandas()` em serverless | `collect()` + `asDict()` |
 | Lambda/UDF em `F.transform` | Serverless bloqueia UDFs | Usar `collect()` → pandas → apply |
-| `dbutils.notebook.exit()` dentro de try | Exit lanca excecao capturada | Exit FORA de try/except |
-| Repo path `[:5]` vs `[:4]` | Split do path repo_root pega nivel errado | Sempre `[:4]` = `/Repos/user/repo-name` |
+| `dbutils.notebook.exit()` dentro de try | Exit lança exceção cápturada | Exit FORA de try/except |
+| Repo path `[:5]` vs `[:4]` | Split do path repo_root pega nível errado | Sempre `[:4]` = `/Repos/user/repo-name` |
 
 ### S3
 
-| Erro | Causa | Solucao |
+| Erro | Causa | Solução |
 |------|-------|---------|
 | AccessDenied | IAM policy com bucket name errado | Verificar `var.bucket_name` |
 | OOM no write | toPandas() em dataset grande | Usar partitioned write (50k chunks) |
 
 ### Claude API
 
-| Erro | Causa | Solucao |
+| Erro | Causa | Solução |
 |------|-------|---------|
 | Streaming required | `max_tokens > X` sem stream | Usar `client.messages.stream()` |
 | Key expirada | Token rotacionado | Atualizar em Databricks Secrets |
@@ -951,24 +951,24 @@ PIPELINE_CLUSTER_ID=<your-cluster-id>
 
 8 melhorias aprovadas para o Observer Agent (em ordem de prioridade):
 
-| # | Nome | Descricao |
+| # | Nome | Descrição |
 |---|------|-----------|
-| 1 | **Trigger automatico** | Webhook/task final do Databricks dispara Observer imediatamente |
+| 1 | **Trigger automático** | Webhook/task final do Databricks dispara Observer imediatamente |
 | 7 | **Observabilidade** | Tabela `observer.diagnostics` + Dashboard SQL |
-| 2 | **Deduplicacao** | Cache de diagnosticos (hash do erro), evita PRs duplicados |
-| 9 | **Modo dry-run** | Widget `dry_run=true` — diagnostica mas nao cria PR |
-| 8 | **Config como codigo** | YAML/JSON no repo ao inves de widgets |
-| 6 | **Validacao pre-PR** | Rodar ruff + pytest antes de criar PR |
-| 5 | **Multi-file fixes** | LLM propoe changes em N arquivos |
-| 3 | **Feedback loop** | Webhook GitHub notifica quando PR eh mergeado/fechado |
+| 2 | **Deduplicácáo** | Cache de diagnósticos (hash do erro), evita PRs duplicádos |
+| 9 | **Modo dry-run** | Widget `dry_run=true` — diagnostica mas não cria PR |
+| 8 | **Config como código** | YAML/JSON no repo ao inves de widgets |
+| 6 | **Validacáo pre-PR** | Rodar ruff + pytest antes de criar PR |
+| 5 | **Multi-file fixes** | LLM propõe changes em N arquivos |
+| 3 | **Feedback loop** | Webhook GitHub notifica quando PR é mergeado/fechado |
 
-Tracks do Conductor precisam ser criados para cada melhoria.
+Tracks do Conductor precisam ser criados para cáda melhoria.
 
 ---
 
 ## 16. Comandos Frequentes
 
-### Desenvolvimento Local
+### Desenvolvimento Locál
 
 ```bash
 # Lint
@@ -985,12 +985,12 @@ ruff check pipelines/pipeline-seguradora-whatsapp/pipeline_lib/ --fix
 
 ```bash
 # Setup completo (primeira vez)
-python pipelines/pipeline-seguradora-whatsapp/deploy/setup_catalog.py
+python pipelines/pipeline-seguradora-whatsapp/deploy/setup_cátalog.py
 python pipelines/pipeline-seguradora-whatsapp/deploy/upload_data.py
 python pipelines/pipeline-seguradora-whatsapp/deploy/create_workflow.py
 python observer-framework/deploy/create_observer_workflow.py
 
-# Execucao
+# Execucáo
 python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_run.py
 
 # Chaos testing
@@ -1009,7 +1009,7 @@ git checkout -b feat/minha-feature dev
 git push -u origin feat/minha-feature
 gh pr create --base dev
 
-# Merge para main (apos PR aprovado)
+# Merge para main (após PR aprovado)
 git checkout main
 git merge dev
 git push origin main  # Triggers CD
@@ -1040,13 +1040,13 @@ output = w.jobs.get_run_output(run_id=run.run_id)
 
 ## Notas Finais para o Codex
 
-1. **Linguagem:** Comentarios e commits em PT-BR com acentuacao. Documentacao pode ser PT-BR.
-2. **Pragmatismo:** Preferir solucoes simples que funcionam. Nao over-engineer.
+1. **Linguagem:** Comentários e commits em PT-BR com acentuação. Documentação pode ser PT-BR.
+2. **Pragmatismo:** Preferir soluções simples que funcionam. Não over-engineer.
 3. **Atomicidade:** Tudo deve ser all-or-nothing. Delta Lake garante isso no pipeline.
-4. **Testes:** TDD moderado — obrigatorio para `pipeline_lib/`, flexivel para notebooks.
+4. **Testes:** TDD moderado — obrigatório para `pipeline_lib/`, flexível para notebooks.
 5. **Secrets:** NUNCA hardcodar. Sempre via `dbutils.secrets` ou env vars.
-6. **Cluster:** Pipeline roda em cluster dedicado (m5d.large), NAO em serverless.
-7. **Observer separado:** A logica de IA NUNCA fica nos notebooks ETL. Observer eh um job independente.
+6. **Cluster:** Pipeline roda em cluster dedicado (m5d.large), NÃO em serverless.
+7. **Observer separado:** A lógica de IA NUNCA fica nos notebooks ETL. Observer é um job independente.
 8. **PRs do agente:** Sempre para branch `dev`, nunca para `main` diretamente.
 9. **Schema evolution:** Colunas novas aceitas via `mergeSchema`, nunca rejeitadas.
-10. **O pacote eh `pipeline_lib`**, nao `lib` (conflito com stdlib no Windows).
+10. **O pacote é `pipeline_lib`**, não `lib` (conflito com stdlib no Windows).
