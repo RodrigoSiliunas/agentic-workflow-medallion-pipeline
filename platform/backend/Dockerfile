@@ -23,6 +23,11 @@ COPY platform/backend/scripts/ scripts/
 # bronze depende dele pra popular S3. Sem isso, bronze_ingestion falha
 # com UNABLE_TO_INFER_SCHEMA (bucket vazio).
 COPY pipelines/pipeline-seguradora-whatsapp/data/ /app/pipelines/pipeline-seguradora-whatsapp/data/
+
+# observer_config.yaml usado por scripts/vps_upload_workspace_file.py
+# pra hotpatch do config no workspace Databricks sem redeploy completo
+# da saga. Tambem util pra scripts de diag lerem defaults do pipeline.
+COPY pipelines/pipeline-seguradora-whatsapp/observer_config.yaml /app/pipelines/pipeline-seguradora-whatsapp/observer_config.yaml
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Non-root user com home directory (uv precisa de ~/.cache)
