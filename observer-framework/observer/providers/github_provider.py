@@ -83,9 +83,11 @@ class GitHubProvider(GitProvider):
         task_slug = failed_task.replace("_", "-")
         branch_name = f"fix/agent-auto-{task_slug}-{ts}"
 
-        # Criar branch a partir de main
-        main_ref = repo.get_git_ref("heads/main")
-        repo.create_git_ref(f"refs/heads/{branch_name}", main_ref.object.sha)
+        # Criar branch a partir do base_branch (default: dev). Antes
+        # criava a partir de "main" mesmo quando o PR ia para dev, o
+        # que gerava diff espurio se dev divergiu de main.
+        base_ref = repo.get_git_ref(f"heads/{self._base_branch}")
+        repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
 
         # Um commit por arquivo (todos na mesma branch). O PR final
         # agrega todas as mudancas.
@@ -116,13 +118,16 @@ class GitHubProvider(GitProvider):
                 )
             applied_files.append(file_path)
 
-        # Garantir que base branch existe
+        # Garantir que base branch existe. Se nao existir, cai pra main
+        # como referencia inicial (so acontece em repos novos onde dev
+        # ainda nao foi criado).
         try:
             repo.get_branch(self._base_branch)
         except Exception:
+            fallback_ref = repo.get_git_ref("heads/main")
             repo.create_git_ref(
                 f"refs/heads/{self._base_branch}",
-                main_ref.object.sha,
+                fallback_ref.object.sha,
             )
 
         # PR com diagnostico
