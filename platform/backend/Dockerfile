@@ -13,10 +13,11 @@ COPY observer-framework/ /app/observer-framework/
 COPY platform/backend/pyproject.toml platform/backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
-# Codigo + alembic + entrypoint
+# Codigo + alembic + entrypoint + scripts (ops/diag)
 COPY platform/backend/app/ app/
 COPY platform/backend/alembic.ini ./
 COPY platform/backend/entrypoint.sh ./
+COPY platform/backend/scripts/ scripts/
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Non-root user com home directory (uv precisa de ~/.cache)
