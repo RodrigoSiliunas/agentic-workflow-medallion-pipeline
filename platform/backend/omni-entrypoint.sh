@@ -4,10 +4,17 @@ set -e
 # Garantir ownership do home do omni (volume pode vir com root)
 chown -R omni:omni /home/omni
 
-# Rodar omni install como user omni (instala config + inicia PM2 processes)
-su-exec omni omni install \
-  --port "$OMNI_PORT" \
-  --api-key "$OMNI_API_KEY"
+# Rodar omni install so na primeira vez. Quando o volume ja tem o
+# .omni/config (deploy subsequentes), reinstalar reseta pgserve e quebra
+# o container — o healthcheck timeoutava em 5min recreating.
+if [ ! -f /home/omni/.omni/config.json ] && [ ! -f /home/omni/.omni/data/postgres/PG_VERSION ]; then
+  echo "Primeira execucao — rodando omni install"
+  su-exec omni omni install \
+    --port "$OMNI_PORT" \
+    --api-key "$OMNI_API_KEY"
+else
+  echo "Volume ja inicializado — pulando omni install"
+fi
 
 # Aguardar pgserve subir (PM2 inicia async)
 echo "Aguardando pgserve..."
