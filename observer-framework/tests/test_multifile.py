@@ -167,3 +167,70 @@ class TestGitHubProviderValidation:
 
         with pytest.raises(ValueError, match="nao contem fixes"):
             provider.create_fix_pr(empty, "bronze_ingestion")
+
+
+class TestGitHubProviderBranchBase:
+    """Branch deve ser criada a partir do base_branch (PR target), nao
+    de "main" hardcoded. Antes da correcao, criava sempre de main
+    mesmo quando o PR ia pra dev — gerava diff espurio se dev divergiu.
+    """
+
+    def _make_provider_and_mocks(self, monkeypatch, base_branch):
+        from unittest.mock import MagicMock
+
+        from observer.providers.github_provider import GitHubProvider
+
+        fake_pygithub = MagicMock()
+        fake_repo = MagicMock()
+        fake_ref = MagicMock()
+        fake_ref.object.sha = "deadbeefcafe"
+        fake_repo.get_git_ref.return_value = fake_ref
+        fake_repo.get_contents.side_effect = Exception("not found")
+        fake_pygithub.return_value.get_repo.return_value = fake_repo
+
+        # Mock do modulo github importado lazy dentro de create_fix_pr
+        import sys
+        import types
+
+        fake_module = types.ModuleType("github")
+        fake_module.Github = fake_pygithub
+        fake_module.Auth = MagicMock()
+        monkeypatch.setitem(sys.modules, "github", fake_module)
+
+        provider = GitHubProvider(
+            token="fake", repo="owner/repo", base_branch=base_branch
+        )
+        return provider, fake_repo
+
+    def test_branch_created_from_base_branch_dev(self, monkeypatch):
+        provider, fake_repo = self._make_provider_and_mocks(monkeypatch, "dev")
+
+        result = DiagnosisResult(
+            fixed_code="print('ok')",
+            file_to_fix="pipelines/pipeline-seguradora-whatsapp/notebooks/bronze/ingest.py",
+            confidence=0.9,
+        )
+
+        provider.create_fix_pr(result, "bronze_ingestion")
+
+        # Primeira chamada de get_git_ref deve ser para heads/dev
+        first_call = fake_repo.get_git_ref.call_args_list[0]
+        assert first_call.args[0] == "heads/dev", (
+            f"Branch deve sair de heads/dev mas saiu de {first_call.args[0]}"
+        )
+
+    def test_branch_created_from_base_branch_custom(self, monkeypatch):
+        provider, fake_repo = self._make_provider_and_mocks(
+            monkeypatch, "release/v2"
+        )
+
+        result = DiagnosisResult(
+            fixed_code="print('ok')",
+            file_to_fix="pipelines/pipeline-seguradora-whatsapp/notebooks/bronze/ingest.py",
+            confidence=0.9,
+        )
+
+        provider.create_fix_pr(result, "silver_dedup")
+
+        first_call = fake_repo.get_git_ref.call_args_list[0]
+        assert first_call.args[0] == "heads/release/v2"
