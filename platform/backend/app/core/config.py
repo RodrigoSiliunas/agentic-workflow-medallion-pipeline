@@ -47,9 +47,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_AUTH_PER_MINUTE: int = 5
 
-    # Registration gating — fechado por default (anti tenant-squatting).
-    # Em dev/test seta True. Em prod com self-serve seta False + token.
-    REGISTRATION_OPEN: bool = False
+    # Registration gating. Default aberto pra o deploy de demo/teste
+    # tecnico (flowertex.idlehub.com.br) — single-tenant, sem risco real
+    # de tenant-squatting. Em prod com self-serve fechado, setar
+    # REGISTRATION_OPEN=false + REGISTRATION_INVITE_TOKEN.
+    REGISTRATION_OPEN: bool = True
     REGISTRATION_INVITE_TOKEN: str = ""
 
     # Security headers (T2 Phase 3).
