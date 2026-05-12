@@ -2,6 +2,11 @@
 data/
 pipeline/data/
 *.parquet
+# Sample parquet bundled in repo + Docker image pra saga rodar bronze sem
+# depender de upload manual. 8.7MB, cabe em Git sem LFS. Exceção precisa
+# vir DEPOIS de *.parquet pra sobrescrever.
+!pipelines/*/data/
+!pipelines/*/data/*.parquet
 
 # Python
 __pycache__/
