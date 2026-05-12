@@ -38,9 +38,11 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/flowertex
-            # cwd do container = /app/platform/backend (WORKDIR do Dockerfile)
-            # — path relativo + -w garante que `from app.database...` resolve.
-            docker exec -w /app/platform/backend flowertex-backend \
+            # PYTHONPATH+cwd no /app/platform/backend (WORKDIR do Dockerfile)
+            # pra `from app.database...` resolver. cwd sozinho nao basta —
+            # Python so adiciona o dir do script (scripts/) no sys.path.
+            docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+              flowertex-backend \
               uv run python scripts/vps_databricks_diag.py \
               --user-email "$USER_EMAIL" \
               --runs "$RUNS"
