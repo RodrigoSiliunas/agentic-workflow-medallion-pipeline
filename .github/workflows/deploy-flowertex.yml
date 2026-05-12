@@ -49,7 +49,9 @@ jobs:
           username: ${{ secrets.HOSTINGER_SSH_USER }}
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           timeout: 60s
-          command_timeout: 5m
+          # Aumentado pra 10m: omni leva ate 3min pra subir (pgserve install +
+          # pm2 spawn) e o backend depende dele via service_healthy.
+          command_timeout: 10m
           envs: GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG
           script: |
             set -euo pipefail
@@ -62,11 +64,22 @@ jobs:
             # Atualiza IMAGE_TAG no .env
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${IMAGE_TAG}|" .env
 
+            # Gera OMNI_API_KEY automaticamente se ainda nao existir no .env.
+            # Compose ${OMNI_API_KEY:?...} aborta o pull se faltar — manter
+            # idempotente pro primeiro deploy depois do merge.
+            if ! grep -q '^OMNI_API_KEY=' .env; then
+                NEW_KEY="omni_sk_$(openssl rand -hex 16)"
+                echo "OMNI_API_KEY=$NEW_KEY" >> .env
+                echo "OMNI_API_KEY gerada: ${NEW_KEY:0:20}..."
+            fi
+
             docker compose pull
             docker compose up -d --remove-orphans
 
-            # Health check (6 tentativas, 10s entre tries = ate 60s)
-            for i in $(seq 1 6); do
+            # Health check do backend: 30 tentativas x 10s = ate 5min. Omni
+            # health depends-on adiciona ~3min de warmup antes do backend
+            # arrancar; aqui mede so o backend ja-up.
+            for i in $(seq 1 30); do
                 sleep 10
                 code=$(curl -fsS -o /dev/null -w "%{http_code}" https://flowertex.idlehub.com.br/health 2>/dev/null || echo "000")
                 echo "attempt $i: health=$code"
@@ -77,4 +90,5 @@ jobs:
             done
             echo "health check failed — dump logs"
             docker compose logs --tail=80 backend
+            docker compose logs --tail=40 omni
             exit 1
