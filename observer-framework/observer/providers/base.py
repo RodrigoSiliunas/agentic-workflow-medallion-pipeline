@@ -137,6 +137,12 @@ class DiagnosisRequest:
     notebook_code: str
     schema_info: str
     pipeline_state: dict = field(default_factory=dict)
+    # Versão do código no git (branch base, geralmente `main`) — usada
+    # quando o workspace foi editado e o LLM precisa de referência da
+    # ultima versão funcional pra propor fix completo. Vazio quando
+    # nao foi possivel resolver (sem GitHub token, branch nao existe,
+    # ou path repo-relative nao detectado).
+    reference_code: str = ""
 
 
 @dataclass
