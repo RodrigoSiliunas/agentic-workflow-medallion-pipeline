@@ -87,6 +87,14 @@ class ObserverConfig(BaseModel):
         default="dev",
         description="Branch base para os PRs criados pelo Observer",
     )
+    github_repo: str = Field(
+        default="",
+        description=(
+            "owner/repo do GitHub (ex: RodrigoSiliunas/agentic-workflow-medallion-pipeline). "
+            "Nao eh segredo — repo publico ou visivel pelo PAT — fica no YAML pra "
+            "evitar o auto-redact do Databricks no PR URL impresso no log."
+        ),
+    )
 
     # Resilience
     max_retries: int = Field(

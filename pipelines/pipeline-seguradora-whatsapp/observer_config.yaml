@@ -25,6 +25,10 @@ observer:
   # ---------- Git ----------
   git_provider: github
   base_branch: dev
+  # Nome do repo NAO deve ser secret (Databricks auto-redacta secrets em
+  # stdout, transformando o PR URL em https://github.com/[REDACTED]/pull/N).
+  # Token continua secret (medallion-pipeline/github-token).
+  github_repo: RodrigoSiliunas/agentic-workflow-medallion-pipeline
 
   # ---------- Resilience ----------
   # Retries em chamadas a LLM/Git providers (exponential backoff)
