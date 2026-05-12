@@ -1,0 +1,42 @@
+name: VPS Run Logs
+
+# Dump dos logs (notebook_output + stderr) de uma run Databricks especifica.
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_email:
+        description: "Email do user dono das credentials"
+        required: true
+      run_id:
+        description: "Databricks run_id"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  logs:
+    name: SSH + docker exec run logs
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH exec
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          USER_EMAIL: ${{ github.event.inputs.user_email }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 3m
+          envs: USER_EMAIL,RUN_ID
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+              flowertex-backend \
+              uv run python scripts/vps_run_logs.py \
+              --user-email "$USER_EMAIL" \
+              --run-id "$RUN_ID"
