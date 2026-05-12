@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from datetime import datetime, timedelta
 
 from databricks.sdk import WorkspaceClient
@@ -18,6 +19,13 @@ from observer.redaction import redact
 from observer.triggering import extract_failed_task_keys
 
 logger = logging.getLogger("workflow_observer")
+
+# Captura tudo após o root do repo dentro do workspace. Funciona tanto
+# pra deploy via saga (`/Shared/flowertex/<repo>/...`) quanto pra
+# Databricks Repos (`/Repos/<user>/<repo>/...`).
+_REPO_PATH_RE = re.compile(
+    r"^/(?:Shared/[^/]+|Repos/[^/]+)/(?P<repo>[^/]+)/(?P<path>.*)$"
+)
 
 
 class WorkflowObserver:
@@ -122,6 +130,76 @@ class WorkflowObserver:
 
         return codes
 
+    def collect_git_reference(
+        self,
+        run_id: int,
+        github_repo: str,
+        github_token: str,
+        branch: str = "main",
+    ) -> dict[str, str]:
+        """Busca código de cada notebook na branch base do GitHub.
+
+        Cenário-alvo: user editou notebook direto no workspace (Databricks
+        UI), código ficou divergente do git e o LLM precisa da referência
+        funcional pra propor fix completo. Sem isso, LLM com só fragmento
+        truncado se recusa a inventar o resto.
+
+        Args:
+            run_id: run Databricks que falhou
+            github_repo: "owner/repo" (ex: rodrigosiliunas/agentic-workflow-medallion-pipeline)
+            github_token: PAT classic com escopo de leitura
+            branch: branch base (default main)
+
+        Returns dict {task_key: code}. Vazio quando o path workspace nao
+        bate com `/Shared/<x>/<repo>/...` ou `/Repos/<user>/<repo>/...`.
+        """
+        refs: dict[str, str] = {}
+        if not github_repo or not github_token:
+            logger.info("Git reference: sem github_repo/token, skip")
+            return refs
+
+        try:
+            from github import Auth, Github
+        except ImportError:
+            logger.warning("Git reference: PyGithub nao instalado, skip")
+            return refs
+
+        run = self.w.jobs.get_run(run_id=run_id)
+        gh = Github(auth=Auth.Token(github_token))
+        repo = gh.get_repo(github_repo)
+
+        for task in run.tasks or []:
+            if not task.notebook_task:
+                continue
+            nb_path = task.notebook_task.notebook_path
+            m = _REPO_PATH_RE.match(nb_path)
+            if not m:
+                logger.info(
+                    f"Git reference: path {nb_path} fora do padrao "
+                    "/Shared|/Repos, skip"
+                )
+                continue
+            # `nb_path` aponta pra notebook sem extensao. Notebooks da
+            # plataforma sao salvos como .py no repo.
+            repo_path = f"{m.group('path')}.py"
+            try:
+                content = repo.get_contents(repo_path, ref=branch)
+                # Pode ser list se for diretorio — mas notebook e arquivo
+                if isinstance(content, list):
+                    continue
+                code = content.decoded_content.decode("utf-8")
+                refs[task.task_key] = code
+                logger.info(
+                    f"Git reference: {task.task_key} = "
+                    f"{repo_path}@{branch} ({len(code)} chars)"
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    f"Git reference falhou pra {repo_path}@{branch}: {exc}"
+                )
+
+        return refs
+
     def collect_schema_info(
         self,
         catalog: str = "medallion",
@@ -158,11 +236,32 @@ class WorkflowObserver:
 
         return "\n".join(parts)
 
-    def build_context(self, failure: dict, catalog: str = "medallion") -> dict:
-        """Constrói contexto completo para o LLM provider."""
+    def build_context(
+        self,
+        failure: dict,
+        catalog: str = "medallion",
+        github_repo: str = "",
+        github_token: str = "",
+        git_reference_branch: str = "main",
+    ) -> dict:
+        """Constrói contexto completo para o LLM provider.
+
+        Quando `github_repo`+`github_token` informados, tambem coleta o
+        codigo de referencia do git (branch base) — usado pelo provider
+        pra ajudar o LLM a reconstruir notebook quando workspace foi
+        editado e fragmento ficou pequeno demais.
+        """
         run_id = failure["run_id"]
         codes = self.collect_notebook_code(run_id)
         schema = self.collect_schema_info(catalog=catalog)
+        git_refs: dict[str, str] = {}
+        if github_repo and github_token:
+            git_refs = self.collect_git_reference(
+                run_id=run_id,
+                github_repo=github_repo,
+                github_token=github_token,
+                branch=git_reference_branch,
+            )
 
         first_failed = failure["failed_tasks"][0]
 
@@ -170,8 +269,10 @@ class WorkflowObserver:
             "failed_task": first_failed,
             "error_message": failure["errors"].get(first_failed, "Unknown"),
             "notebook_code": codes.get(first_failed, "[código não disponível]"),
+            "reference_code": git_refs.get(first_failed, ""),
             "schema_info": schema,
             "all_codes": codes,
+            "all_references": git_refs,
             "pipeline_state": {
                 "job_name": failure["job_name"],
                 "job_id": failure["job_id"],
