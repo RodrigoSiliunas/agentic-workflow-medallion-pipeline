@@ -3,7 +3,7 @@
 #
 # Padrao: imagens vindo de ghcr.io/rodrigosiliunas (push via release-flowertex.yml).
 # IMAGE_TAG vem do .env (sed-ado pelo deploy-flowertex.yml com o SHA do commit).
-# Sem omni, ollama, ngrok aqui — escopo curto.
+# Inclui omni gateway pra canais (WhatsApp/Discord/Telegram); sem ollama, ngrok.
 
 services:
   postgres:
@@ -38,6 +38,24 @@ services:
     networks:
       - flowertex-net
 
+  omni:
+    image: ghcr.io/rodrigosiliunas/flowertex-omni:${IMAGE_TAG:-main}
+    container_name: flowertex-omni
+    restart: unless-stopped
+    environment:
+      OMNI_API_KEY: ${OMNI_API_KEY:?Set OMNI_API_KEY in .env}
+      OMNI_PORT: 8882
+    volumes:
+      - flowertex_omnidata:/home/omni/.omni/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8882/api/v2/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 180s
+      retries: 10
+    networks:
+      - flowertex-net
+
   backend:
     image: ghcr.io/rodrigosiliunas/flowertex-backend:${IMAGE_TAG:-main}
     container_name: flowertex-backend
@@ -51,10 +69,14 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS}
       FRONTEND_URL: ${FRONTEND_URL}
       SAGA_RUNNER: ${SAGA_RUNNER:-mock}
+      OMNI_API_URL: http://omni:8882/api/v2
+      OMNI_API_KEY: ${OMNI_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      omni:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -94,6 +116,7 @@ services:
 volumes:
   flowertex_pgdata:
   flowertex_redisdata:
+  flowertex_omnidata:
 
 networks:
   # Interna — backend + frontend conversam com postgres/redis sem expor host
