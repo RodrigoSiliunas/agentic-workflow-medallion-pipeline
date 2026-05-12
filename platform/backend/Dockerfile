@@ -18,6 +18,11 @@ COPY platform/backend/app/ app/
 COPY platform/backend/alembic.ini ./
 COPY platform/backend/entrypoint.sh ./
 COPY platform/backend/scripts/ scripts/
+
+# Sample parquet (~8.7MB) usado pelo s3.py:_upload_sample_data — saga
+# bronze depende dele pra popular S3. Sem isso, bronze_ingestion falha
+# com UNABLE_TO_INFER_SCHEMA (bucket vazio).
+COPY pipelines/pipeline-seguradora-whatsapp/data/ /app/pipelines/pipeline-seguradora-whatsapp/data/
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Non-root user com home directory (uv precisa de ~/.cache)
