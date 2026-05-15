@@ -1,0 +1,52 @@
+name: VPS List Users
+
+# Lista users + empresas do Postgres do Flowertex via SQLAlchemy inline
+# no container backend. Pra confirmar email cadastrado antes de debug
+# de login/registro.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  list-users:
+    name: SSH + docker exec list users
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH exec
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            cd /opt/flowertex
+            docker exec -w /app/platform/backend -e PYTHONPATH=/app/platform/backend \
+              flowertex-backend \
+              uv run python -c '
+            import asyncio
+            from sqlalchemy import select
+            from app.database.session import AsyncSessionLocal
+            from app.models.company import Company
+            from app.models.user import User
+
+            async def main():
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(
+                        select(User, Company).join(Company, Company.id == User.company_id)
+                    )
+                    rows = result.all()
+                    if not rows:
+                        print("=== Sem users cadastrados.")
+                        return
+                    print(f"=== {len(rows)} user(s):")
+                    for user, company in rows:
+                        print(f"  email={user.email} | role={user.role} | active={user.is_active} | company={company.name} ({company.slug}) | created_at={user.created_at}")
+
+            asyncio.run(main())
+            '
