@@ -83,12 +83,12 @@ class TestStorageConfiguration:
         token_resp.json.return_value = {"access_token": "tok-1"}
         token_resp.raise_for_status = MagicMock()
 
-        # List existing — vazio
+        # Listar existentes — vazio
         list_resp = MagicMock()
         list_resp.json.return_value = []
         list_resp.raise_for_status = MagicMock()
 
-        # Create
+        # Criar
         create_resp = MagicMock()
         create_resp.json.return_value = {"storage_configuration_id": "sc-new-123"}
         create_resp.raise_for_status = MagicMock()
