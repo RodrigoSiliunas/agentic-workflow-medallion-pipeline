@@ -4,18 +4,18 @@
 
 ```
 components/
-├── atoms/          Elementos indivisiveis, sem logica de negocio
-├── molecules/      Combinacao de atoms, estado local simples
-├── organisms/      Secoes completas, usam composables e stores
-└── templates/      Layouts de pagina, combinam organisms
+├── atoms/          Elementos indivisíveis, sem lógica de negócio
+├── molecules/      Combinação de atoms, estado local simples
+├── organisms/      Seções completas, usam composables e stores
+└── templates/      Layouts de página, combinam organisms
 ```
 
-## Regras por Nivel
+## Regras por Nível
 
 ### Atoms (`components/atoms/`)
-- **Zero** dependencia de logica de negocio
+- **Zero** dependência de lógica de negócio
 - Apenas `defineProps()` + `defineEmits()`
-- **Nao** usam composables, stores, ou fetch
+- **Não** usam composables, stores, ou fetch
 - Exemplos: Button, Input, Badge, Avatar, Spinner, Icon, Tooltip
 
 ```vue
@@ -39,7 +39,7 @@ defineEmits<{ click: [] }>()
 ### Molecules (`components/molecules/`)
 - Combinam 2+ atoms
 - Podem ter estado local (`ref`, `computed`)
-- **Nao** usam stores ou chamadas API
+- **Não** usam stores ou chamadas API
 - Exemplos: SearchBar, FormField, StatusBadge, MessageBubble, ActionCard
 
 ```vue
@@ -91,7 +91,7 @@ const { messages, isStreaming, sendMessage } = useChat(toRef(props, "threadId"))
 ### Templates (`components/templates/`)
 - Definem o layout da pagina
 - Combinam organisms
-- **Nao** fazem fetch — recebem dados via props ou slots
+- **Não** fazem fetch — recebem dados via props ou slots
 - Exemplos: ChatLayout, AuthLayout, AdminLayout
 
 ```vue
@@ -118,15 +118,15 @@ const { messages, isStreaming, sendMessage } = useChat(toRef(props, "threadId"))
 ## Quando Criar Novo Componente
 
 1. **Vai ser reutilizado?** → Atom ou Molecule
-2. **Tem logica de negocio?** → Organism
+2. **Tem lógica de negócio?** → Organism
 3. **Define layout de pagina?** → Template
 4. **So aparece em uma pagina?** → Pode ficar na pagina mesmo (nao precisa de componente)
 
 ## Composables vs Components
 
-- **Composable**: logica reutilizavel SEM template (useChat, useAuth, useApiClient)
-- **Component**: template reutilizavel COM ou SEM logica
+- **Composable**: lógica reutilizavel SEM template (useChat, useAuth, useApiClient)
+- **Component**: template reutilizavel COM ou SEM lógica
 
-Se so tem logica → composable.
+Se so tem lógica → composable.
 Se so tem template → atom/molecule.
 Se tem ambos → organism.

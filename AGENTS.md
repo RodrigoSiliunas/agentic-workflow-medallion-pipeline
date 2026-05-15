@@ -6,11 +6,11 @@ Para contexto completo do projeto, consulte `CODEX_MANUAL.md`.
 ## Monorepo Structure
 
 ```
-observer-framework/              — Framework reusavel (futuro repo open-source)
+observer-framework/              — Framework reutilizável (futuro repo open-source)
   observer/                      — Pacote Python `observer`
     config, dedup, persistence, triggering, validator, workflow_observer
     providers/                   — Factory + registry (anthropic, openai, github)
-  notebooks/                     — Notebooks Databricks genericos
+  notebooks/                     — Notebooks Databricks genéricos
     collect_and_fix.py           — Job principal do Observer
     trigger_sentinel.py          — Referenciado pelos workflows dos pipelines
   deploy/create_observer_workflow.py  — Cria o job do Observer
@@ -20,10 +20,10 @@ observer-framework/              — Framework reusavel (futuro repo open-source
   docs/                          — ARCHITECTURE, USAGE, EXTENDING
   README, LICENSE, CHANGELOG, CONTRIBUTING, pyproject.toml
 
-pipelines/                       — Guarda-chuva para multiplos pipelines one-click deploy
+pipelines/                       — Guarda-chuva para múltiplos pipelines one-click deploy
   pipeline-seguradora-whatsapp/  — Pipeline WhatsApp de seguro auto (primeiro template)
     notebooks/                   — Databricks notebooks (pre_check, bronze, silver, gold, validation)
-    pipeline_lib/                — Biblioteca Python especifica (storage, schema, extractors, masking)
+    pipeline_lib/                — Biblioteca Python específica (storage, schema, extractors, masking)
     deploy/                      — Scripts de deploy Databricks (SDK)
     tests/                       — 91 testes pytest
     observer_config.yaml         — Config do Observer para esse deploy

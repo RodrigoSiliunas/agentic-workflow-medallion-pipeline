@@ -162,7 +162,7 @@ class WorkspaceProvisionStep(SagaStepBase):
                 await ctx.info(f"Workspace {workspace_name} ja RUNNING")
             else:
                 if existing:
-                    # Delete banned/failed + recreate
+                    # Deletar banidos/failed + recriar
                     await c.delete(
                         f"https://accounts.cloud.databricks.com/api/2.0/accounts/{account_id}/workspaces/{existing['workspace_id']}",
                         headers={"Authorization": f"Bearer {token}"},
@@ -290,7 +290,7 @@ class WorkspaceProvisionStep(SagaStepBase):
 
     @staticmethod
     async def _add_admin_user(c, host: str, token: str, email: str) -> None:
-        # Create user
+        # Criar usuário
         user_resp = await c.post(
             f"{host}/api/2.0/preview/scim/v2/Users",
             headers={"Authorization": f"Bearer {token}"},
@@ -317,7 +317,7 @@ class WorkspaceProvisionStep(SagaStepBase):
         else:
             user_id = user_resp.json()["id"]
 
-        # Add to admins group
+        # Adicionar ao grupo de admins
         grp_resp = await c.get(
             f"{host}/api/2.0/preview/scim/v2/Groups?filter=displayName+eq+%22admins%22",
             headers={"Authorization": f"Bearer {token}"},
