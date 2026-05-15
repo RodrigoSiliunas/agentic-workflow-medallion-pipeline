@@ -18,6 +18,45 @@
  */
 import { defineStore } from "pinia"
 
+/**
+ * Extrai mensagem util de erro da API.
+ *
+ * FastAPI retorna `detail` em 2 formatos distintos:
+ *   - String: `{"detail": "Credenciais invalidas"}` (HTTPException com detail=str)
+ *   - Array de objects: `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}`
+ *     (422 Pydantic validation errors)
+ *
+ * Antes, o catch fazia `throw new Error(e.data.detail ?? ...)` direto, que com
+ * array virava `"[object Object]"` no UI. Agora normaliza pra string legivel:
+ *   - String → usa direto
+ *   - Array → join dos `.msg` (ex: "password: ensure value has at least 8 chars")
+ *   - Fallback → e.message ou default
+ */
+function extractApiError(error: unknown, fallback: string): string {
+  const detail = (error as { data?: { detail?: unknown } })?.data?.detail
+  if (typeof detail === "string" && detail.trim()) {
+    return detail
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const messages = detail
+      .map((item: unknown) => {
+        if (typeof item === "string") return item
+        if (item && typeof item === "object" && "msg" in item) {
+          const obj = item as { msg?: string; loc?: unknown[] }
+          const field = Array.isArray(obj.loc) && obj.loc.length > 1
+            ? `${obj.loc[obj.loc.length - 1]}: `
+            : ""
+          return `${field}${obj.msg ?? ""}`
+        }
+        return ""
+      })
+      .filter(Boolean)
+    if (messages.length > 0) return messages.join("; ")
+  }
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 interface User {
   id: string
   email: string
@@ -92,10 +131,7 @@ export const useAuthStore = defineStore("auth", {
         this.accessToken = data.access_token
         await this.fetchUser()
       } catch (e: unknown) {
-        const detail =
-          (e as { data?: { detail?: string }; message?: string })?.data?.detail ??
-          (e instanceof Error ? e.message : "Login falhou")
-        throw new Error(detail)
+        throw new Error(extractApiError(e, "Login falhou"))
       }
     },
 
@@ -137,10 +173,7 @@ export const useAuthStore = defineStore("auth", {
         this.accessToken = data.access_token
         await this.fetchUser()
       } catch (e: unknown) {
-        const detail =
-          (e as { data?: { detail?: string }; message?: string })?.data?.detail ??
-          (e instanceof Error ? e.message : "Falha no registro")
-        throw new Error(detail)
+        throw new Error(extractApiError(e, "Falha no registro"))
       }
     },
 
