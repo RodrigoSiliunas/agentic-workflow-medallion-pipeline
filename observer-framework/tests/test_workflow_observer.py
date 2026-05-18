@@ -150,6 +150,64 @@ def test_collect_notebook_code_passes_export_format_enum():
     assert codes["bronze"] == "print('ok')"
 
 
+def test_restore_workspace_file_chama_import_com_format_source():  # noqa: N802
+    """restore_workspace_file usa workspace.import_ com formato SOURCE +
+    language enum, overwrite=True. base64 do content e calculado.
+    """
+    import base64
+
+    from databricks.sdk.service.workspace import ImportFormat, Language
+
+    captured: dict = {}
+
+    def fake_import_(**kwargs):
+        captured.update(kwargs)
+
+    workspace = SimpleNamespace(
+        workspace=SimpleNamespace(import_=fake_import_),
+        jobs=SimpleNamespace(),
+    )
+    observer = WorkflowObserver(workspace)
+    observer.restore_workspace_file(
+        "/Shared/x/repo/notebooks/bronze/ingest",
+        "print('hello')",
+        language="PYTHON",
+    )
+
+    assert captured["path"] == "/Shared/x/repo/notebooks/bronze/ingest"
+    assert captured["format"] is ImportFormat.SOURCE
+    assert captured["language"] is Language.PYTHON
+    assert captured["overwrite"] is True
+    assert base64.b64decode(captured["content"]).decode() == "print('hello')"
+
+
+def test_collect_notebook_workspace_paths_mapeia_task_para_path():
+    run = SimpleNamespace(
+        run_id=1,
+        tasks=[
+            SimpleNamespace(
+                task_key="bronze",
+                notebook_task=SimpleNamespace(notebook_path="/Shared/x/bronze"),
+            ),
+            SimpleNamespace(
+                task_key="silver",
+                notebook_task=SimpleNamespace(notebook_path="/Shared/x/silver"),
+            ),
+            SimpleNamespace(
+                task_key="spark_task",
+                notebook_task=None,  # Spark/python task — sem notebook
+            ),
+        ],
+    )
+    workspace = SimpleNamespace(jobs=SimpleNamespace(get_run=lambda run_id: run))
+    observer = WorkflowObserver(workspace)
+    paths = observer.collect_notebook_workspace_paths(run_id=1)
+    assert paths == {
+        "bronze": "/Shared/x/bronze",
+        "silver": "/Shared/x/silver",
+    }
+
+
 def test_repo_path_re_matches_shared_and_repos():
     """_REPO_PATH_RE extrai path repo-relative de workspace paths."""
     from observer.workflow_observer import _REPO_PATH_RE
