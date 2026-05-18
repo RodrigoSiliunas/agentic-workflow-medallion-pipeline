@@ -158,6 +158,7 @@ if not failures or not failures[0].get("failed_tasks"):
 # DBTITLE 1,Inicializar Providers via Factory
 from observer.providers import (
     DiagnosisRequest,
+    ZeroDiffError,
     create_git_provider,
     create_llm_provider,
 )
@@ -347,6 +348,43 @@ for failure in failures:
                         }
                     )
                     final_status = "success"
+                except ZeroDiffError as exc:
+                    # Workspace divergiu da base (user editou direto no UI).
+                    # Fix proposto = codigo ja em base → sem PR a abrir.
+                    # Auto-restore: sobrescreve workspace ← base.
+                    log.append(
+                        f"ZeroDiff detectado vs {exc.base_branch} — "
+                        "iniciando auto-restore workspace <- base"
+                    )
+                    nb_paths = ctx.get("notebook_workspace_paths", {})
+                    restored: list[str] = []
+                    restore_errors: list[str] = []
+                    for fix in exc.fixes:
+                        file_path = fix["file_path"]
+                        code = fix["code"]
+                        # Mapeia repo path -> workspace path. notebook = path sem .py.
+                        task_key = ctx.get("failed_task", "")
+                        ws_path = nb_paths.get(task_key, "")
+                        if not ws_path:
+                            restore_errors.append(
+                                f"{file_path}: sem workspace path mapeado pro task"
+                            )
+                            continue
+                        try:
+                            observer.restore_workspace_file(ws_path, code)
+                            restored.append(f"{ws_path} ({len(code)} chars)")
+                        except Exception as restore_exc:  # noqa: BLE001
+                            restore_errors.append(f"{ws_path}: {restore_exc}")
+                    if restored:
+                        log.append(
+                            f"AUTO-RESTORE OK ({len(restored)}): " + "; ".join(restored)
+                        )
+                    if restore_errors:
+                        for err in restore_errors[:5]:
+                            log.append(f"  restore err: {err}")
+                    final_status = (
+                        "workspace_restored" if restored else "restore_failed"
+                    )
                 except Exception as e:
                     log.append(f"ERRO PR: {e}")
                     final_status = "pr_failed"

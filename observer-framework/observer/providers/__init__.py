@@ -34,6 +34,17 @@ from observer.providers.base import (
     PRResult as PRResult,
 )
 
+# Re-export pra catch direto sem cair em string match.
+# Import lazy via contextlib pra nao quebrar quando PyGithub nao
+# instalado (dev local sem extras).
+try:
+    from observer.providers.github_provider import (
+        ZeroDiffError as ZeroDiffError,
+    )
+except Exception:  # noqa: BLE001
+    class ZeroDiffError(Exception):  # type: ignore[no-redef]
+        """Fallback quando github_provider nao pode ser importado."""
+
 # Registry de providers
 _llm_registry: dict[str, type[LLMProvider]] = {}
 _git_registry: dict[str, type[GitProvider]] = {}

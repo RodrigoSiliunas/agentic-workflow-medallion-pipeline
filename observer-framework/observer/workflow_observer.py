@@ -108,6 +108,56 @@ class WorkflowObserver:
             "timestamp": str(run.start_time),
         }
 
+    def collect_notebook_workspace_paths(self, run_id: int) -> dict[str, str]:
+        """Mapeia task_key -> notebook_path do workspace pra um run.
+
+        Usado pelo auto-restore quando o LLM propoe fix igual a base
+        e o caller precisa sobrescrever o arquivo no workspace.
+        """
+        paths: dict[str, str] = {}
+        run = self.w.jobs.get_run(run_id=run_id)
+        for task in run.tasks or []:
+            if task.notebook_task:
+                paths[task.task_key] = task.notebook_task.notebook_path
+        return paths
+
+    def restore_workspace_file(
+        self,
+        workspace_path: str,
+        content: str | bytes,
+        language: str = "PYTHON",
+    ) -> None:
+        """Sobrescreve um arquivo no workspace Databricks com `content`.
+
+        Usado pelo auto-restore quando o LLM gerou um fix identico a base
+        — significa que workspace divergiu (edicao manual via Databricks UI)
+        e a correcao certa eh restaurar o conteudo da base no workspace.
+
+        Args:
+            workspace_path: path absoluto no workspace (ex:
+                `/Shared/.../bronze/ingest`). Sem extensao .py — workspace
+                identifica como notebook pelo language.
+            content: bytes ou string do arquivo (assume UTF-8 se string).
+            language: linguagem do notebook (PYTHON, SQL, SCALA, R).
+        """
+        from databricks.sdk.service.workspace import ImportFormat, Language
+
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+        b64 = base64.b64encode(content_bytes).decode("ascii")
+        lang = getattr(Language, language.upper(), Language.PYTHON)
+
+        self.w.workspace.import_(
+            path=workspace_path,
+            content=b64,
+            format=ImportFormat.SOURCE,
+            language=lang,
+            overwrite=True,
+        )
+        logger.info(
+            f"Workspace restaurado: {workspace_path} "
+            f"({len(content_bytes)} bytes, language={lang.value})"
+        )
+
     def collect_notebook_code(self, run_id: int) -> dict[str, str]:
         """Lê código fonte de cada notebook via Workspace API."""
         codes = {}
@@ -275,16 +325,18 @@ class WorkflowObserver:
         # tentando combinar exemplo do prompt com o real (`/pipeline/`
         # segments extra apareciam).
         file_to_fix_hint = ""
+        notebook_workspace_paths: dict[str, str] = {}
         try:
             run = self.w.jobs.get_run(run_id=run_id)
             for task in run.tasks or []:
-                if task.task_key != first_failed or not task.notebook_task:
+                if not task.notebook_task:
                     continue
                 nb_path = task.notebook_task.notebook_path
-                m = _REPO_PATH_RE.match(nb_path)
-                if m:
-                    file_to_fix_hint = f"{m.group('path')}.py"
-                break
+                notebook_workspace_paths[task.task_key] = nb_path
+                if task.task_key == first_failed:
+                    m = _REPO_PATH_RE.match(nb_path)
+                    if m:
+                        file_to_fix_hint = f"{m.group('path')}.py"
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"Falha ao resolver file_to_fix_hint: {exc}")
 
@@ -294,6 +346,7 @@ class WorkflowObserver:
             "notebook_code": codes.get(first_failed, "[código não disponível]"),
             "reference_code": git_refs.get(first_failed, ""),
             "file_to_fix_hint": file_to_fix_hint,
+            "notebook_workspace_paths": notebook_workspace_paths,
             "schema_info": schema,
             "all_codes": codes,
             "all_references": git_refs,

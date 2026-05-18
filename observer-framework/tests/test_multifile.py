@@ -283,8 +283,15 @@ class TestGitHubProviderBranchBase:
             confidence=0.9,
         )
 
-        with pytest.raises(ValueError, match="identico a dev"):
+        from observer.providers.github_provider import ZeroDiffError
+
+        with pytest.raises(ZeroDiffError) as exc_info:
             provider.create_fix_pr(result, "bronze_ingestion")
+
+        # Caller deve receber base_branch + fixes pra auto-restore
+        assert exc_info.value.base_branch == "dev"
+        assert len(exc_info.value.fixes) == 1
+        assert exc_info.value.fixes[0]["code"] == "print('ok')"
 
         # PR nunca chega a ser criado
         fake_repo.create_pull.assert_not_called()
