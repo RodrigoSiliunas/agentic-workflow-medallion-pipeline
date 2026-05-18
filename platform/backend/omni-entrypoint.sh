@@ -43,7 +43,12 @@ if [ "$is_first_run" = "1" ]; then
   # omni install inicia pgserve + omni server via PM2 daemon
 else
   echo "Restart — restaurando config + pm2 dump do backup"
-  su-exec omni mkdir -p /home/omni/.omni /home/omni/.pm2
+  # pm2 dump tem paths absolutos pros log files (.omni/logs/*.log).
+  # No recreate o container vem fresh: so o volume .omni/data/ persiste,
+  # entao a pasta logs/ some e pm2 resurrect falha com ENOENT silencioso
+  # (tabela de processos fica vazia, pgserve nunca sobe e healthcheck
+  # do compose estoura em 5min). Pre-criar a pasta resolve.
+  su-exec omni mkdir -p /home/omni/.omni /home/omni/.omni/logs /home/omni/.pm2
   if [ -f "$CONFIG_BAK" ]; then
     su-exec omni cp "$CONFIG_BAK" "$CONFIG_PATH"
   else
