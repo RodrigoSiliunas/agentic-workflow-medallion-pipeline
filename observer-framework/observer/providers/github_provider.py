@@ -21,6 +21,32 @@ from observer.redaction import redact
 logger = logging.getLogger(__name__)
 
 
+class ZeroDiffError(ValueError):
+    """Levantada quando o fix proposto pelo LLM e identico ao codigo
+    da base branch — sinaliza que workspace divergiu da base e o
+    caller pode optar por restaurar workspace <- base ao inves de
+    abrir PR vazio.
+
+    Herda de ValueError pra que o decorator `with_retry` nao retente
+    (nao eh erro transient — eh estado valido detectado).
+
+    Atributos:
+      base_branch: branch base usada na comparacao (ex: dev)
+      fixes: lista de {file_path, code} que o LLM propos — code aqui
+             eh a versao "certa" (igual a base) que pode ser usada
+             pra restaurar o workspace.
+    """
+
+    def __init__(self, base_branch: str, fixes: list[dict]):
+        self.base_branch = base_branch
+        self.fixes = fixes
+        super().__init__(
+            f"LLM propos conteudo identico a {base_branch} — workspace "
+            "divergiu mas nao ha diff novo a aplicar. Caller deve restaurar "
+            "workspace <- base usando os fixes anexados a esta exception."
+        )
+
+
 @register_git_provider("github")
 class GitHubProvider(GitProvider):
     """Cria branches e PRs no GitHub via PyGithub."""
@@ -163,11 +189,7 @@ class GitHubProvider(GitProvider):
                 logger.warning(
                     f"Falha ao limpar branch zero-diff {branch_name}: {exc}"
                 )
-            raise ValueError(
-                f"LLM propos conteudo identico a {self._base_branch} — "
-                "nao ha diff a aplicar. Provavelmente workspace.export falhou "
-                "e o LLM caiu pra restaurar reference_code que ja esta na base."
-            )
+            raise ZeroDiffError(self._base_branch, fixes)
 
         # PR com diagnostico
         conf = diagnosis.confidence
