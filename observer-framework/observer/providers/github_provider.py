@@ -20,6 +20,27 @@ from observer.redaction import redact
 
 logger = logging.getLogger(__name__)
 
+# Limite de chars do payload do fix dentro do `<details>` no body do PR
+# de relatorio. GitHub corta body em 65_536 bytes; deixamos margem grande
+# pra texto + metricas ficarem confortaveis.
+_REPORT_PAYLOAD_LIMIT = 4096
+
+REPORT_REASON_EXPLANATIONS: dict[str, str] = {
+    "zero_diff": (
+        "O workspace divergiu da base (provavelmente edicao manual via "
+        "Databricks UI). O LLM propos conteudo identico ao que ja existe "
+        "em `{base_branch}`."
+    ),
+    "low_confidence": (
+        "Confianca do diagnostico abaixo do threshold configurado. "
+        "Publicado para revisao humana antes de aplicar fix."
+    ),
+    "validation_failed": (
+        "Fix proposto pelo LLM falhou na validacao estatica (syntax/imports). "
+        "Detalhes acima."
+    ),
+}
+
 
 class ZeroDiffError(ValueError):
     """Levantada quando o fix proposto pelo LLM e identico ao codigo
@@ -193,7 +214,7 @@ class GitHubProvider(GitProvider):
 
         # PR com diagnostico
         conf = diagnosis.confidence
-        emoji = "🟢" if conf >= 0.8 else "🟡" if conf >= 0.5 else "🔴"
+        emoji, _ = self._confidence_meta(conf)
 
         files_section = "\n".join(f"- `{p}`" for p in applied_files)
         title_suffix = (
@@ -256,3 +277,185 @@ class GitHubProvider(GitProvider):
         except Exception as exc:
             logger.warning(f"Falha ao consultar PR #{pr_number}: {exc}")
             return "unknown"
+
+    @staticmethod
+    def _confidence_meta(conf: float) -> tuple[str, str]:
+        """Retorna (emoji, label) para uma confianca [0.0-1.0]."""
+        if conf >= 0.8:
+            return "🟢", "confidence-high"
+        if conf >= 0.5:
+            return "🟡", "confidence-medium"
+        return "🔴", "confidence-low"
+
+    def _build_report_body(
+        self,
+        diagnosis: DiagnosisResult,
+        failed_task: str,
+        reason: str,
+        cost_usd: float,
+    ) -> str:
+        """Monta o markdown do PR de relatorio (tambem usado como conteudo
+        do arquivo `.observer/reports/*.md`)."""
+        emoji, _ = self._confidence_meta(diagnosis.confidence)
+        conf = diagnosis.confidence
+
+        # PII redact nos campos do LLM antes de publicar no body do PR.
+        safe_diagnosis = redact(diagnosis.diagnosis or "")
+        safe_root_cause = redact(diagnosis.root_cause or "")
+        safe_fix_desc = redact(diagnosis.fix_description or "")
+
+        reason_explanation = REPORT_REASON_EXPLANATIONS.get(
+            reason,
+            "Diagnostico publicado para revisao humana.",
+        ).format(base_branch=self._base_branch)
+
+        # Payload do fix proposto vira referencia (truncado em 4KB).
+        fixes = diagnosis.normalized_fixes()
+        if fixes:
+            parts: list[str] = []
+            for f in fixes:
+                parts.append(f"# === {f['file_path']} ===\n{f['code']}")
+            full_payload = "\n\n".join(parts)
+            safe_payload = redact(full_payload)
+            truncated = False
+            if len(safe_payload) > _REPORT_PAYLOAD_LIMIT:
+                safe_payload = safe_payload[:_REPORT_PAYLOAD_LIMIT]
+                truncated = True
+            trunc_marker = (
+                f"\n\n... (truncado em {_REPORT_PAYLOAD_LIMIT} chars)"
+                if truncated
+                else ""
+            )
+            payload_section = (
+                "<details>\n"
+                "<summary>Payload do fix proposto (referencia)</summary>\n\n"
+                "```\n"
+                f"{safe_payload}{trunc_marker}\n"
+                "```\n"
+                "</details>"
+            )
+        else:
+            payload_section = "_Sem fix proposto pelo LLM._"
+
+        return (
+            f"## Diagnostico Observer Agent — Report-Only\n\n"
+            f"{emoji} **Confianca: {conf:.0%}** "
+            f"(provider: {diagnosis.provider}, model: {diagnosis.model})\n\n"
+            f"> **Por que nao ha code change?** {reason_explanation}\n\n"
+            f"### Problema\n{safe_diagnosis}\n\n"
+            f"### Causa Raiz\n{safe_root_cause}\n\n"
+            f"### Fix proposto (descricao)\n{safe_fix_desc}\n\n"
+            f"### Metricas\n"
+            f"- Custo estimado: ${cost_usd:.4f}\n"
+            f"- Tokens: in={diagnosis.input_tokens}, "
+            f"out={diagnosis.output_tokens}\n"
+            f"- Task: `{failed_task}`\n"
+            f"- Reason code: `{reason}`\n\n"
+            f"{payload_section}\n\n"
+            f"---\n"
+            f"Este PR e apenas um relatorio. Nao ha codigo a aplicar.\n"
+            f"O workspace do Databricks permanece como esta — revise o "
+            f"diagnostico e decida se quer alinhar manualmente.\n\n"
+            f"🤖 Report criado pelo Observer Agent "
+            f"({diagnosis.provider}/{diagnosis.model})"
+        )
+
+    def create_report_pr(
+        self,
+        diagnosis: DiagnosisResult,
+        failed_task: str,
+        reason: str,
+        cost_usd: float = 0.0,
+    ) -> PRResult:
+        """Abre PR de relatorio (sem code change aplicavel).
+
+        Commita 1 arquivo MD em `.observer/reports/{ts}-{task}-{reason}.md`
+        em branch dedicada `observer/report-{reason}-{task}-{ts}` e abre
+        PR rotulado `observer-report` + `no-code-change` + confianca.
+
+        Diferente de create_fix_pr:
+        - Sem @with_retry (caller decide retry; queremos sinal claro de falha).
+        - Sem path_allowlist (path interno controlado pelo Observer).
+        - Labels aplicadas em try/except (falha de label nao invalida o PR).
+        """
+        try:
+            # Lazy import: optional dependency
+            from github import Auth, Github
+        except ImportError as e:
+            raise ImportError(
+                "PyGithub nao instalado. Instale com: pip install PyGithub"
+            ) from e
+
+        gh = Github(auth=Auth.Token(self._token))
+        repo = gh.get_repo(self._repo_name)
+
+        # Garantir que base branch existe (mesma logica do create_fix_pr).
+        try:
+            repo.get_branch(self._base_branch)
+        except Exception:
+            fallback_ref = repo.get_git_ref("heads/main")
+            repo.create_git_ref(
+                f"refs/heads/{self._base_branch}",
+                fallback_ref.object.sha,
+            )
+
+        # Branch unica baseada em timestamp.
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        task_slug = (failed_task or "unknown").replace("_", "-")
+        reason_slug = (reason or "unknown").replace("_", "-")
+        branch_name = f"observer/report-{reason_slug}-{task_slug}-{ts}"
+
+        base_ref = repo.get_git_ref(f"heads/{self._base_branch}")
+        repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
+
+        # Monta corpo do relatorio (markdown) — mesmo conteudo vai no
+        # arquivo committado e no body do PR.
+        report_md = self._build_report_body(
+            diagnosis=diagnosis,
+            failed_task=failed_task,
+            reason=reason,
+            cost_usd=cost_usd,
+        )
+
+        report_path = (
+            f".observer/reports/{ts}-{task_slug}-{reason_slug}.md"
+        )
+        commit_msg = (
+            f"report: [{failed_task}] diagnostico Observer ({reason})"
+        )
+        repo.create_file(
+            path=report_path,
+            message=commit_msg,
+            content=report_md,
+            branch=branch_name,
+        )
+
+        pr = repo.create_pull(
+            title=(
+                f"report: [{failed_task}] diagnostico sem code-change "
+                f"({reason})"
+            ),
+            body=report_md,
+            head=branch_name,
+            base=self._base_branch,
+        )
+
+        # Labels — best-effort, falha aqui nao invalida o PR.
+        _, conf_label = self._confidence_meta(diagnosis.confidence)
+        try:
+            repo.get_issue(pr.number).set_labels(
+                "observer-report",
+                "no-code-change",
+                conf_label,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"Falha ao aplicar labels no report PR #{pr.number}: "
+                f"{exc}. PR criado sem labels."
+            )
+
+        return PRResult(
+            pr_url=pr.html_url,
+            pr_number=pr.number,
+            branch_name=branch_name,
+        )
