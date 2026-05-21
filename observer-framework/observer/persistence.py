@@ -115,6 +115,11 @@ class DiagnosticRecord:
     estimated_cost_usd: float = 0.0
     duration_seconds: float = 0.0
     status: str = "unknown"
+    # Discrimina tipo de PR (quando aplicavel):
+    #   "fix"    — PR com code change (criado por create_fix_pr)
+    #   "report" — PR de relatorio (criado por create_report_pr)
+    #   ""       — sem PR associado a esta linha
+    pr_kind: str = ""
 
     def to_row_dict(self) -> dict[str, Any]:
         """Converte para dict pronto para spark.createDataFrame."""
@@ -152,7 +157,8 @@ class ObserverDiagnosticsStore:
         pr_status              STRING,
         pr_resolved_at         TIMESTAMP,
         resolution_time_hours  DOUBLE,
-        feedback               STRING
+        feedback               STRING,
+        pr_kind                STRING
     """
 
     # Colunas adicionadas por migracoes apos a criacao inicial da tabela.
@@ -162,6 +168,7 @@ class ObserverDiagnosticsStore:
         ("pr_resolved_at", "TIMESTAMP"),
         ("resolution_time_hours", "DOUBLE"),
         ("feedback", "STRING"),
+        ("pr_kind", "STRING"),
     ]
 
     def __init__(self, spark: Any, catalog: str = "medallion"):
@@ -239,11 +246,16 @@ class ObserverDiagnosticsStore:
         duration_seconds: float,
         diagnosis: Any | None = None,
         pr_result: Any | None = None,
+        pr_kind: str = "",
     ) -> DiagnosticRecord:
         """Constroi um DiagnosticRecord a partir de DiagnosisResult + PRResult.
 
         Aceita diagnosis/pr_result como None para registrar falhas (LLM falhou,
         nenhum fix gerado, etc).
+
+        Args:
+            pr_kind: tipo de PR associado a este registro — "fix" (com code
+                change), "report" (relatorio sem code change), ou "" (sem PR).
         """
         record = DiagnosticRecord(
             id=str(uuid.uuid4()),
@@ -256,6 +268,7 @@ class ObserverDiagnosticsStore:
             error_hash=error_hash(error_message),
             duration_seconds=round(duration_seconds, 3),
             status=status,
+            pr_kind=pr_kind or "",
         )
 
         if diagnosis is not None:

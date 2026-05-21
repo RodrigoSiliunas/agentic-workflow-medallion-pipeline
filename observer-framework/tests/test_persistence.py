@@ -192,6 +192,39 @@ class TestBuildRecord:
         assert record.provider == ""
         assert record.estimated_cost_usd == 0.0
 
+    def test_build_record_propagates_pr_kind(self):
+        """pr_kind passado pelo caller deve aparecer no DiagnosticRecord."""
+        store = self._store()
+        record = store.build_record(
+            job_id=777,
+            job_name="medallion_pipeline_whatsapp",
+            run_id=42,
+            failed_task="bronze_ingestion",
+            error_message="SyntaxError",
+            status="report_pr_created",
+            duration_seconds=8.2,
+            diagnosis=FakeDiagnosis(),
+            pr_result=FakePR(),
+            pr_kind="report",
+        )
+        assert record.pr_kind == "report"
+
+    def test_build_record_pr_kind_defaults_empty(self):
+        """Quando pr_kind nao e passado, fica vazio (semantica de legado)."""
+        store = self._store()
+        record = store.build_record(
+            job_id=1,
+            job_name="x",
+            run_id=1,
+            failed_task="x",
+            error_message="x",
+            status="success",
+            duration_seconds=1.0,
+            diagnosis=None,
+            pr_result=None,
+        )
+        assert record.pr_kind == ""
+
 
 # ================================================================
 # DiagnosticRecord
@@ -209,14 +242,14 @@ class TestDiagnosticRecord:
         assert row["id"] == "abc"
         assert row["job_id"] == 123
         assert row["failed_task"] == "bronze_ingestion"
-        # Todos os 24 campos devem estar no dict
+        # Todos os 25 campos devem estar no dict
         expected_fields = {
             "id", "timestamp", "job_id", "job_name", "run_id", "failed_task",
             "error_message", "error_hash", "diagnosis", "root_cause",
             "fix_description", "file_to_fix", "confidence",
             "requires_human_review", "pr_url", "pr_number", "branch_name",
             "provider", "model", "input_tokens", "output_tokens",
-            "estimated_cost_usd", "duration_seconds", "status",
+            "estimated_cost_usd", "duration_seconds", "status", "pr_kind",
         }
         assert set(row.keys()) == expected_fields
 
@@ -243,7 +276,13 @@ class TestObserverDiagnosticsStoreStructure:
             "fix_description", "file_to_fix", "confidence",
             "requires_human_review", "pr_url", "pr_number", "branch_name",
             "provider", "model", "input_tokens", "output_tokens",
-            "estimated_cost_usd", "duration_seconds", "status",
+            "estimated_cost_usd", "duration_seconds", "status", "pr_kind",
         ]
         for col in expected_columns:
             assert col in ddl
+
+    def test_pr_kind_in_migrated_columns(self):
+        """pr_kind deve estar em MIGRATED_COLUMNS para upgrade de tabelas
+        existentes via ALTER TABLE ADD COLUMNS."""
+        cols = dict(ObserverDiagnosticsStore.MIGRATED_COLUMNS)
+        assert cols.get("pr_kind") == "STRING"

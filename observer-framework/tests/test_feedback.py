@@ -130,7 +130,7 @@ class TestSchemaIncludesFeedbackColumns:
 
 class TestMigrateColumns:
     def test_skips_columns_that_already_exist(self):
-        # DESCRIBE retorna todas as colunas ja — nao deve rodar ALTER TABLE
+        # DESCRIBE retorna todas as colunas migradas — nao deve rodar ALTER TABLE
         existing_cols = [
             {"col_name": "id"},
             {"col_name": "timestamp"},
@@ -138,6 +138,7 @@ class TestMigrateColumns:
             {"col_name": "pr_resolved_at"},
             {"col_name": "resolution_time_hours"},
             {"col_name": "feedback"},
+            {"col_name": "pr_kind"},
         ]
         spark = FakeSparkSession(describe_rows=existing_cols)
         store = ObserverDiagnosticsStore(spark, catalog="medallion")
@@ -148,7 +149,7 @@ class TestMigrateColumns:
         assert alters == []  # nada a adicionar
 
     def test_adds_missing_columns(self):
-        # DESCRIBE retorna tabela "antiga" sem os campos de feedback
+        # DESCRIBE retorna tabela "antiga" sem nenhuma coluna migrada
         existing_cols = [
             {"col_name": "id"},
             {"col_name": "timestamp"},
@@ -160,12 +161,14 @@ class TestMigrateColumns:
         store._migrate_columns()
 
         alters = [q for q in spark.queries if q.startswith("ALTER TABLE")]
-        assert len(alters) == 4  # 4 colunas de feedback
+        # 5 colunas migradas: 4 de feedback + pr_kind
+        assert len(alters) == len(ObserverDiagnosticsStore.MIGRATED_COLUMNS)
         joined = " ".join(alters)
         assert "pr_status" in joined
         assert "pr_resolved_at" in joined
         assert "resolution_time_hours" in joined
         assert "feedback" in joined
+        assert "pr_kind" in joined
 
     def test_ignores_header_rows(self):
         # DESCRIBE TABLE inclui linhas como "# Partitioning" que devem ser ignoradas
@@ -180,5 +183,5 @@ class TestMigrateColumns:
         store._migrate_columns()
 
         alters = [q for q in spark.queries if q.startswith("ALTER TABLE")]
-        # pr_status existe, faltam 3
-        assert len(alters) == 3
+        # pr_status existe, faltam o restante das MIGRATED_COLUMNS
+        assert len(alters) == len(ObserverDiagnosticsStore.MIGRATED_COLUMNS) - 1
