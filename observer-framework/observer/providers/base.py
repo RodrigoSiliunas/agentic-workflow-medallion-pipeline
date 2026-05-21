@@ -218,3 +218,34 @@ class GitProvider(ABC):
         (PR closed sem merge).
         """
         return "unknown"
+
+    def create_report_pr(
+        self,
+        diagnosis: DiagnosisResult,
+        failed_task: str,
+        reason: str,
+        cost_usd: float = 0.0,
+    ) -> PRResult:
+        """Abre um PR de relatorio (sem code change aplicavel).
+
+        Usado quando o diagnostico do LLM existe e e valido mas nao ha
+        diff a aplicar — tipicamente porque o workspace divergiu da base
+        e o fix proposto e identico ao codigo ja em base (ZeroDiff). O
+        report PR vira a superficie humana unica do fluxo do Observer.
+
+        Args:
+            diagnosis: resultado do LLM com diagnosis/root_cause/fix_description.
+            failed_task: nome do task que falhou (usado no titulo/branch).
+            reason: codigo curto do motivo (ex: 'zero_diff', 'low_confidence').
+            cost_usd: custo estimado do diagnostico (calculado pelo caller).
+
+        Returns:
+            PRResult com url/numero/branch do PR de relatorio criado.
+
+        Raises:
+            NotImplementedError: providers que nao suportam report PR
+                (caller deve tratar essa excecao e degradar com graca).
+        """
+        raise NotImplementedError(
+            f"Provider '{self.name}' nao suporta create_report_pr"
+        )
