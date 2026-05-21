@@ -34,6 +34,7 @@ sys.path.insert(0, FRAMEWORK_ROOT)
 from observer import (
     ObserverDiagnosticsStore,
     WorkflowObserver,
+    calculate_cost_usd,
     check_duplicate,
     load_observer_config,
     parse_failed_tasks_param,
@@ -189,11 +190,15 @@ def persist_diagnostic(
     duration_seconds: float,
     diagnosis=None,
     pr_result=None,
+    pr_kind: str = "",
 ) -> None:
     """Monta DiagnosticRecord e grava na tabela observer.diagnostics.
 
     Falhas do store sao logadas mas nao interrompem o fluxo principal do
     Observer — persistencia e um diferencial, nao um bloqueio.
+
+    Args:
+        pr_kind: tipo de PR associado — "fix", "report", ou "" (sem PR).
     """
     try:
         record = store.build_record(
@@ -206,6 +211,7 @@ def persist_diagnostic(
             duration_seconds=duration_seconds,
             diagnosis=diagnosis,
             pr_result=pr_result,
+            pr_kind=pr_kind,
         )
         store.save(record)
         log.append(
@@ -288,6 +294,7 @@ for failure in failures:
         # ponto e persistido no final do bloco. Suporta fixes singular
         # (fixed_code/file_to_fix) ou multi-file (lista fixes).
         pr_result = None
+        pr_kind = ""
         final_status = "unknown"
         proposed_files = diagnosis.normalized_fixes()
         files_summary = ", ".join(f["file_path"] for f in proposed_files) or "(nenhum)"
@@ -348,43 +355,55 @@ for failure in failures:
                         }
                     )
                     final_status = "success"
+                    pr_kind = "fix"
                 except ZeroDiffError as exc:
-                    # Workspace divergiu da base (user editou direto no UI).
-                    # Fix proposto = codigo ja em base → sem PR a abrir.
-                    # Auto-restore: sobrescreve workspace ← base.
+                    # Workspace divergiu da base (LLM propos codigo identico
+                    # a base). Auto-restore foi removido por design: humano
+                    # decide via PR de relatorio se quer alinhar workspace.
+                    # Abrimos report PR pra concentrar fluxo de revisao no
+                    # GitHub — log do Databricks nao e superficie humana.
                     log.append(
                         f"ZeroDiff detectado vs {exc.base_branch} — "
-                        "iniciando auto-restore workspace <- base"
+                        "abrindo report PR (auto-restore desativado por design)"
                     )
-                    nb_paths = ctx.get("notebook_workspace_paths", {})
-                    restored: list[str] = []
-                    restore_errors: list[str] = []
-                    for fix in exc.fixes:
-                        file_path = fix["file_path"]
-                        code = fix["code"]
-                        # Mapeia repo path -> workspace path. notebook = path sem .py.
-                        task_key = ctx.get("failed_task", "")
-                        ws_path = nb_paths.get(task_key, "")
-                        if not ws_path:
-                            restore_errors.append(
-                                f"{file_path}: sem workspace path mapeado pro task"
-                            )
-                            continue
-                        try:
-                            observer.restore_workspace_file(ws_path, code)
-                            restored.append(f"{ws_path} ({len(code)} chars)")
-                        except Exception as restore_exc:  # noqa: BLE001
-                            restore_errors.append(f"{ws_path}: {restore_exc}")
-                    if restored:
-                        log.append(
-                            f"AUTO-RESTORE OK ({len(restored)}): " + "; ".join(restored)
+                    cost_usd = calculate_cost_usd(
+                        diagnosis.provider,
+                        diagnosis.model,
+                        diagnosis.input_tokens,
+                        diagnosis.output_tokens,
+                    )
+                    try:
+                        pr_result = git.create_report_pr(
+                            diagnosis,
+                            ctx["failed_task"],
+                            reason="zero_diff",
+                            cost_usd=cost_usd,
                         )
-                    if restore_errors:
-                        for err in restore_errors[:5]:
-                            log.append(f"  restore err: {err}")
-                    final_status = (
-                        "workspace_restored" if restored else "restore_failed"
-                    )
+                        log.append(
+                            f"REPORT PR #{pr_result.pr_number}: "
+                            f"{pr_result.pr_url}"
+                        )
+                        results.append(
+                            {
+                                "job": failure["job_name"],
+                                "task": ctx["failed_task"],
+                                "pr": pr_result.pr_url,
+                                "files": 0,
+                                "confidence": diagnosis.confidence,
+                                "kind": "report",
+                            }
+                        )
+                        final_status = "report_pr_created"
+                        pr_kind = "report"
+                    except NotImplementedError:
+                        log.append(
+                            f"Provider {git.name} sem create_report_pr — "
+                            "pulando report"
+                        )
+                        final_status = "report_skipped"
+                    except Exception as report_exc:  # noqa: BLE001
+                        log.append(f"ERRO report PR: {report_exc}")
+                        final_status = "report_failed"
                 except Exception as e:
                     log.append(f"ERRO PR: {e}")
                     final_status = "pr_failed"
@@ -396,6 +415,7 @@ for failure in failures:
             duration_seconds=time.time() - diag_start,
             diagnosis=diagnosis,
             pr_result=pr_result,
+            pr_kind=pr_kind,
         )
 
     except Exception as e:
