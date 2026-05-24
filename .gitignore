@@ -67,6 +67,8 @@ e2e-*.png
 docs/*
 !docs/chaos_mode_via_databricks_ui.md
 !docs/self_hosted_llm.md
+!docs/design/
+!docs/design/**
 conductor/
 
 # Documentação pessoal não-técnica (Word/PPT/diagramas, fora do versionamento).
