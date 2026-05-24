@@ -30,10 +30,10 @@
         <AppButton
           v-if="deployment.status === 'success' && deployment.pipelineId"
           size="sm"
-          icon="i-heroicons-chat-bubble-left-right"
-          @click="openPipelineChat"
+          icon="i-heroicons-pencil-square"
+          @click="openPipelineWorkspace"
         >
-          Abrir chat
+          Abrir pipeline
         </AppButton>
         <AppButton
           v-else-if="deployment.status === 'running'"
@@ -177,12 +177,12 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${rem}s`
 }
 
-async function openPipelineChat() {
+async function openPipelineWorkspace() {
   if (!props.deployment.pipelineId) return
   // Refresca a lista de pipelines pra incluir o novo criado pela saga
   await pipelinesStore.load(true)
   pipelinesStore.setActive(props.deployment.pipelineId)
-  navigateTo("/chat")
+  navigateTo(`/pipelines/${props.deployment.pipelineId}`)
 }
 
 function scrollToBottom() {

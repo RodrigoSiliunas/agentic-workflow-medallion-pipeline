@@ -75,6 +75,32 @@ export function useApiClient() {
     return response.json()
   }
 
+  async function downloadBlob(path: string, filename?: string) {
+    const url = new URL(`${baseURL}${path}`)
+    const headers: Record<string, string> = {}
+    if (auth.accessToken) {
+      headers.Authorization = `Bearer ${auth.accessToken}`
+    }
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers,
+      credentials: "include",
+    })
+
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
+
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+    anchor.href = objectUrl
+    anchor.download = filename || path.split("/").pop() || "download"
+    anchor.click()
+    URL.revokeObjectURL(objectUrl)
+  }
+
   return {
     baseURL,
     get: <T>(path: string, params?: Record<string, string>) =>
@@ -84,5 +110,6 @@ export function useApiClient() {
     put: <T>(path: string, body?: unknown) =>
       request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
     delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+    downloadBlob,
   }
 }

@@ -12,6 +12,7 @@ T7 F3+F4:
 import json
 import uuid
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 import structlog
 from observer.chat import (
@@ -25,6 +26,7 @@ from observer.chat import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.audit import AuditLog
 from app.models.company import Company
 from app.services.context_engine import ContextEngine
 from app.services.credential_service import (
@@ -40,9 +42,26 @@ from app.services.tools import (
     all_tool_specs,
 )
 
+if TYPE_CHECKING:
+    from app.api.deps import AuthContext
+
 logger = structlog.get_logger()
 
 MAX_TOOL_ROUNDS = 10
+
+TOOL_PERMISSION_MAP = {
+    "create_pull_request": "create_pr",
+    "trigger_pipeline_run": "trigger_run",
+    "update_job_schedule": "manage_pipelines",
+    "update_job_settings": "manage_pipelines",
+}
+
+TOOL_AUDIT_ACTION_MAP = {
+    "create_pull_request": "pr_created",
+    "trigger_pipeline_run": "pipeline_trigger",
+    "update_job_schedule": "pipeline_schedule_update",
+    "update_job_settings": "pipeline_settings_update",
+}
 
 
 class LLMOrchestrator:
@@ -69,11 +88,19 @@ class LLMOrchestrator:
     }
 
     def __init__(
-        self, db: AsyncSession, company_id: uuid.UUID, user_name: str
+        self,
+        db: AsyncSession,
+        company_id: uuid.UUID,
+        user_name: str,
+        auth: "AuthContext | None" = None,
+        pipeline_id: uuid.UUID | None = None,
     ):
         self.db = db
         self.company_id = company_id
         self.user_name = user_name
+        self.auth = auth
+        self.pipeline_id = pipeline_id
+        self.permissions = frozenset(getattr(auth, "permissions", []) or [])
         self.databricks = DatabricksService(db, company_id)
         self.github = GitHubService(db, company_id)
         self.context_engine = ContextEngine(db, company_id)
@@ -170,6 +197,9 @@ class LLMOrchestrator:
             github=self.github,
             company_id=self.company_id,
             user_name=self.user_name,
+            auth=self.auth,
+            pipeline_id=self.pipeline_id,
+            permissions=self.permissions,
         )
 
     async def process_message(
@@ -287,8 +317,54 @@ class LLMOrchestrator:
         cls = TOOL_REGISTRY.get(name)
         if cls is None:
             return {"error": f"Tool desconhecida: {name}"}
+        required_permission = TOOL_PERMISSION_MAP.get(name)
+        if (
+            required_permission
+            and self.auth is not None
+            and required_permission not in self.permissions
+        ):
+            return {"error": f"Permissao necessaria: {required_permission}"}
+        if getattr(cls, "requires_confirmation", False) and not input_data.get("confirmed"):
+            return {
+                "awaiting_confirmation": True,
+                "tool": name,
+                "input": input_data,
+                "message": "Esta acao altera recursos do pipeline. Deseja prosseguir? (sim/nao)",
+            }
         try:
-            return await cls().run(self._tool_context(), input_data)
+            result = await cls().run(self._tool_context(), input_data)
+            await self._record_tool_audit(name, input_data, result)
+            return result
         except Exception as exc:  # noqa: BLE001
             logger.error("Tool execution failed", tool=name, error=str(exc))
             return {"error": str(exc)}
+
+    async def _record_tool_audit(
+        self,
+        tool_name: str,
+        input_data: dict,
+        result: dict,
+    ) -> None:
+        """Registra auditoria best-effort para tools destrutivas."""
+        action = TOOL_AUDIT_ACTION_MAP.get(tool_name)
+        if not action or self.auth is None:
+            return
+        details = {
+            "tool": tool_name,
+            "pipeline_id": str(self.pipeline_id) if self.pipeline_id else None,
+            "input": {k: v for k, v in input_data.items() if k != "confirmed"},
+            "result": result,
+        }
+        try:
+            self.db.add(
+                AuditLog(
+                    company_id=self.company_id,
+                    user_id=self.auth.user_id,
+                    action=action,
+                    details=json.dumps(details, default=str),
+                    channel="web",
+                )
+            )
+            await self.db.flush()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("audit log failed", tool=tool_name, error=str(exc))

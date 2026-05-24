@@ -109,6 +109,28 @@ class GitHubService:
                 "files": files,
             }
 
+    async def close_pull_request(self, pr_number: int) -> dict:
+        """Fecha PR aberto no repositorio configurado."""
+        await self._ensure_credentials()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.patch(
+                f"https://api.github.com/repos/{self._repo}/pulls/{pr_number}",
+                json={"state": "closed"},
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            pr = resp.json()
+            logger.info(
+                "github_pr_closed",
+                company_id=str(self.company_id),
+                pr_number=pr_number,
+            )
+            return {
+                "pr_number": pr["number"],
+                "pr_url": pr.get("html_url"),
+                "state": pr.get("state"),
+            }
+
     async def create_pr(
         self, title: str, body: str, branch: str,
         base: str = "dev", files: dict[str, str] | None = None

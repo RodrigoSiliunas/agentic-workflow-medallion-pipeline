@@ -63,5 +63,8 @@ class Settings(BaseSettings):
     # localhost (Ollama em 11434). Em prod sempre False.
     ALLOW_LOOPBACK_LLM_ENDPOINTS: bool = False
 
+    # Pipeline Editor — agente NL separado; fallback deterministico se False/erro
+    PIPELINE_EDITOR_LLM_ENABLED: bool = True
+
 
 settings = Settings()

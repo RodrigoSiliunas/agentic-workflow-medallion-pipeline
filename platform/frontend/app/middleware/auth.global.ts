@@ -17,6 +17,10 @@ export default defineNuxtRouteMiddleware((to) => {
   }
 
   const publicRoutes = ["/", "/login", "/register"]
+  const isSharedRoute = to.path.startsWith("/shared/")
+  if (isSharedRoute) {
+    return
+  }
   if (publicRoutes.includes(to.path)) {
     // Se ja logado, pula rotas publicas (login, register, landing).
     //

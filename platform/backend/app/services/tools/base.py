@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from observer.chat import ToolSpec
 
 if TYPE_CHECKING:
+    from app.api.deps import AuthContext
     from app.services.databricks_service import DatabricksService
     from app.services.github_service import GitHubService
 
@@ -21,6 +22,9 @@ class ToolContext:
     github: GitHubService
     company_id: uuid.UUID
     user_name: str
+    auth: AuthContext | None = None
+    pipeline_id: uuid.UUID | None = None
+    permissions: frozenset[str] = field(default_factory=frozenset)
 
 
 class ToolHandler(Protocol):

@@ -18,6 +18,7 @@ from app.api.routes import (
     databricks,
     deployments,
     observability,
+    pipeline_editor,
     pipelines,
     settings,
     templates,
@@ -132,6 +133,16 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["pipelines"])
+app.include_router(
+    pipeline_editor.router,
+    prefix="/api/v1/pipelines",
+    tags=["pipeline-editor"],
+)
+app.include_router(
+    pipeline_editor.share_router,
+    prefix="/api/v1/shared",
+    tags=["pipeline-editor-share"],
+)
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(templates.router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["deployments"])

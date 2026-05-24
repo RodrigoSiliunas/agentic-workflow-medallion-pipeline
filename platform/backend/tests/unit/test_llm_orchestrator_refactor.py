@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,6 +19,19 @@ def _make_orchestrator() -> LLMOrchestrator:
         company_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
         user_name="tester",
     )
+
+
+@dataclass
+class _FakeAuth:
+    user_id: uuid.UUID = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    company_id: uuid.UUID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    email: str = "tester@example.com"
+    name: str = "tester"
+    role: str = "editor"
+    permissions: list[str] | None = None
+
+    def has_permission(self, permission: str) -> bool:
+        return permission in (self.permissions or [])
 
 
 class _FakeContext:
@@ -179,6 +193,90 @@ class TestExecuteTool:
         ):
             result = await orch._execute_tool("get_job_details", {"job_id": 1})
             assert result == {"error": "api down"}
+
+    @pytest.mark.anyio
+    async def test_destructive_tool_requires_confirmation_before_run(self):
+        orch = LLMOrchestrator(
+            db=MagicMock(),
+            company_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+            user_name="tester",
+            auth=_FakeAuth(permissions=["create_pr"]),
+            pipeline_id=uuid.UUID("33333333-3333-3333-3333-333333333333"),
+        )
+
+        with patch(
+            "app.services.tools.github_tools.CreatePullRequest.run",
+            new_callable=AsyncMock,
+            return_value={"url": "https://example.com/pr/1"},
+        ) as mock_run:
+            result = await orch._execute_tool(
+                "create_pull_request",
+                {
+                    "title": "Edit pipeline",
+                    "description": "Change",
+                    "branch": "pipeline-edit",
+                },
+            )
+
+        assert result["awaiting_confirmation"] is True
+        assert result["tool"] == "create_pull_request"
+        mock_run.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_destructive_tool_denies_missing_permission_even_when_confirmed(self):
+        orch = LLMOrchestrator(
+            db=MagicMock(),
+            company_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+            user_name="viewer",
+            auth=_FakeAuth(role="viewer", permissions=["chat"]),
+            pipeline_id=uuid.UUID("33333333-3333-3333-3333-333333333333"),
+        )
+
+        with patch(
+            "app.services.tools.github_tools.CreatePullRequest.run",
+            new_callable=AsyncMock,
+            return_value={"url": "https://example.com/pr/1"},
+        ) as mock_run:
+            result = await orch._execute_tool(
+                "create_pull_request",
+                {
+                    "title": "Edit pipeline",
+                    "description": "Change",
+                    "branch": "pipeline-edit",
+                    "confirmed": True,
+                },
+            )
+
+        assert result == {"error": "Permissao necessaria: create_pr"}
+        mock_run.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_destructive_tool_runs_after_confirmation_and_permission(self):
+        orch = LLMOrchestrator(
+            db=MagicMock(),
+            company_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+            user_name="editor",
+            auth=_FakeAuth(permissions=["create_pr"]),
+            pipeline_id=uuid.UUID("33333333-3333-3333-3333-333333333333"),
+        )
+
+        with patch(
+            "app.services.tools.github_tools.CreatePullRequest.run",
+            new_callable=AsyncMock,
+            return_value={"url": "https://example.com/pr/1"},
+        ) as mock_run:
+            result = await orch._execute_tool(
+                "create_pull_request",
+                {
+                    "title": "Edit pipeline",
+                    "description": "Change",
+                    "branch": "pipeline-edit",
+                    "confirmed": True,
+                },
+            )
+
+        assert result == {"url": "https://example.com/pr/1"}
+        mock_run.assert_awaited_once()
 
 
 @pytest.mark.anyio

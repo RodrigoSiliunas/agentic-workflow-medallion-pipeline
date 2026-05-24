@@ -1,0 +1,193 @@
+"""Manifesto editavel por template de pipeline."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+SILVER_LAYER = "silver"
+EDITOR_LAYERS = (SILVER_LAYER,)
+
+
+class PipelineManifestNode(BaseModel):
+    id: str
+    layer: str
+    task_key: str
+    file_path: str
+    input_tables: list[str] = Field(default_factory=list)
+    output_tables: list[str] = Field(default_factory=list)
+    supported_operations: list[str] = Field(default_factory=list)
+    insertion_marker: str
+
+
+class PipelineManifest(BaseModel):
+    template_slug: str
+    display_name: str
+    nodes: list[PipelineManifestNode]
+    source: str = "embedded"
+    editor_layers: list[str] = Field(default_factory=lambda: list(EDITOR_LAYERS))
+
+    def resolve_node(self, node_id: str) -> PipelineManifestNode:
+        for node in self.nodes:
+            if node.id == node_id:
+                return node
+        raise KeyError(f"Pipeline manifest node not found: {node_id}")
+
+
+def silver_nodes(manifest: PipelineManifest) -> list[PipelineManifestNode]:
+    return [node for node in manifest.nodes if node.layer == SILVER_LAYER]
+
+
+def manifest_for_editor(manifest: PipelineManifest) -> PipelineManifest:
+    """Retorna manifesto filtrado para o editor (Silver only)."""
+    return PipelineManifest(
+        template_slug=manifest.template_slug,
+        display_name=manifest.display_name,
+        nodes=silver_nodes(manifest),
+        source=manifest.source,
+        editor_layers=list(EDITOR_LAYERS),
+    )
+
+
+def ensure_silver_node(manifest: PipelineManifest, node_id: str) -> PipelineManifestNode:
+    node = manifest.resolve_node(node_id)
+    if node.layer != SILVER_LAYER:
+        raise ValueError(
+            f"No `{node_id}` pertence a camada `{node.layer}` — "
+            "Pipeline Editor aceita apenas Silver."
+        )
+    return node
+
+
+def _common_operations() -> list[str]:
+    return [
+        "drop_column",
+        "rename_column",
+        "cast_column",
+        "trim",
+        "regex_replace",
+        "coalesce",
+        "derive_column",
+        "filter_rows",
+        "date_format",
+        "json_extract",
+        "mask_pii",
+    ]
+
+
+def _whatsapp_manifest() -> PipelineManifest:
+    common_ops = _common_operations()
+    return PipelineManifest(
+        template_slug="pipeline-seguradora-whatsapp",
+        display_name="Pipeline Seguradora WhatsApp",
+        source="embedded",
+        editor_layers=list(EDITOR_LAYERS),
+        nodes=[
+            PipelineManifestNode(
+                id="bronze_ingestion",
+                layer="bronze",
+                task_key="bronze_ingestion",
+                file_path="pipelines/pipeline-seguradora-whatsapp/notebooks/bronze/ingest.py",
+                input_tables=[],
+                output_tables=["medallion.bronze.conversations"],
+                supported_operations=common_ops,
+                insertion_marker="# DBTITLE 1,Salvar Bronze Delta",
+            ),
+            PipelineManifestNode(
+                id="silver_dedup",
+                layer="silver",
+                task_key="silver_dedup",
+                file_path="pipelines/pipeline-seguradora-whatsapp/notebooks/silver/dedup_clean.py",
+                input_tables=["medallion.bronze.conversations"],
+                output_tables=["medallion.silver.messages_clean"],
+                supported_operations=common_ops,
+                insertion_marker="# DBTITLE 1,Salvar como Delta Table e Upload para S3",
+            ),
+            PipelineManifestNode(
+                id="silver_entities",
+                layer="silver",
+                task_key="silver_entities",
+                file_path="pipelines/pipeline-seguradora-whatsapp/notebooks/silver/entities_mask.py",
+                input_tables=["medallion.silver.messages_clean"],
+                output_tables=[
+                    "medallion.silver.messages_clean",
+                    "medallion.silver.leads_profile",
+                ],
+                supported_operations=common_ops,
+                insertion_marker="# DBTITLE 1,Salvar Outputs",
+            ),
+            PipelineManifestNode(
+                id="silver_enrichment",
+                layer="silver",
+                task_key="silver_enrichment",
+                file_path="pipelines/pipeline-seguradora-whatsapp/notebooks/silver/enrichment.py",
+                input_tables=["medallion.silver.messages_clean"],
+                output_tables=["medallion.silver.conversations_enriched"],
+                supported_operations=common_ops,
+                insertion_marker="# DBTITLE 1,Salvar Silver Enriched",
+            ),
+            PipelineManifestNode(
+                id="gold_analytics",
+                layer="gold",
+                task_key="gold_analytics",
+                file_path="pipelines/pipeline-seguradora-whatsapp/notebooks/gold/analytics.py",
+                input_tables=[
+                    "medallion.silver.leads_profile",
+                    "medallion.silver.conversations_enriched",
+                ],
+                output_tables=["medallion.gold.*"],
+                supported_operations=common_ops,
+                insertion_marker="# DBTITLE 1,Executar Fases Gold",
+            ),
+        ],
+    )
+
+
+def _manifest_from_config(
+    template_slug: str,
+    config_manifest: dict[str, Any],
+    *,
+    template_name: str | None = None,
+) -> PipelineManifest:
+    raw_nodes = config_manifest.get("nodes") or []
+    nodes = [PipelineManifestNode.model_validate(node) for node in raw_nodes]
+    return PipelineManifest(
+        template_slug=template_slug,
+        display_name=str(
+            config_manifest.get("display_name") or template_name or template_slug
+        ),
+        nodes=nodes,
+        source="pipeline_config",
+        editor_layers=list(EDITOR_LAYERS),
+    )
+
+
+def load_manifest_for_template(
+    template_slug: str,
+    *,
+    template_name: str | None = None,
+    config_manifest: dict[str, Any] | None = None,
+) -> PipelineManifest:
+    """Carrega manifesto do template.
+
+    Prioridade: `pipeline.config.manifest` > manifesto embutido WhatsApp > fallback vazio.
+    O editor continua filtrando apenas nos Silver via `manifest_for_editor`.
+    """
+    if config_manifest and config_manifest.get("nodes"):
+        return _manifest_from_config(
+            template_slug,
+            config_manifest,
+            template_name=template_name,
+        )
+
+    if template_slug == "pipeline-seguradora-whatsapp":
+        return _whatsapp_manifest()
+
+    return PipelineManifest(
+        template_slug=template_slug,
+        display_name=template_name or template_slug,
+        nodes=[],
+        source="fallback",
+        editor_layers=list(EDITOR_LAYERS),
+    )

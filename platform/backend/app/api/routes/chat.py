@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import AuthContext, get_current_user
+from app.api.deps import AuthContext, get_current_user, require_permission
 from app.database.session import get_db
 from app.models.chat import Message, Thread
 from app.models.pipeline import Pipeline
@@ -118,7 +118,7 @@ async def delete_thread(
 @router.post("/message")
 async def send_message(
     data: SendMessageRequest,
-    auth: AuthContext = Depends(get_current_user),
+    auth: AuthContext = Depends(require_permission("chat")),
     db: AsyncSession = Depends(get_db),
 ):
     """Envia mensagem e retorna resposta do LLM via SSE streaming."""
@@ -162,9 +162,17 @@ async def send_message(
 
     # Obter pipeline para job_id
     pipeline_result = await db.execute(
-        select(Pipeline).where(Pipeline.id == thread.pipeline_id)
+        select(Pipeline).where(
+            Pipeline.id == thread.pipeline_id,
+            Pipeline.company_id == auth.company_id,
+        )
     )
-    pipeline = pipeline_result.scalar_one()
+    pipeline = pipeline_result.scalar_one_or_none()
+    if not pipeline:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pipeline nao encontrado",
+        )
     job_id = data.pipeline_job_id or pipeline.databricks_job_id or 0
 
     # Salvar mensagem do usuario
@@ -198,7 +206,13 @@ async def send_message(
     ]
 
     # Stream response via SSE
-    orchestrator = LLMOrchestrator(db, auth.company_id, auth.name)
+    orchestrator = LLMOrchestrator(
+        db,
+        auth.company_id,
+        auth.name,
+        auth=auth,
+        pipeline_id=pipeline.id,
+    )
 
     orchestrator_model = "unknown"
 

@@ -9,5 +9,12 @@ from app.models.credential import CompanyCredential  # noqa: F401
 from app.models.custom_llm_endpoint import CustomLLMEndpoint  # noqa: F401
 from app.models.deployment import Deployment, DeploymentLog, DeploymentStep  # noqa: F401
 from app.models.pipeline import Pipeline, PipelineContextCache  # noqa: F401
+from app.models.pipeline_editor import (  # noqa: F401
+    PipelineEditArtifact,
+    PipelineEditMessage,
+    PipelineEditSession,
+    PipelineEditVersion,
+    PipelineShare,
+)
 from app.models.template import Template  # noqa: F401
 from app.models.user import User  # noqa: F401
