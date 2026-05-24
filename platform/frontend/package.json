@@ -30,8 +30,10 @@
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.15.2",
+    "@nuxt/test-utils": "^4.0.3",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.9.0",
     "typescript": "^5.8.0",
     "vitest": "^4.1.0"
   }
