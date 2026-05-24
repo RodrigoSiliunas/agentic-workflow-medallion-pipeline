@@ -80,27 +80,46 @@ else
 fi
 
 TABLES="$(docker exec flowertex-postgres psql -U flowertex -d flowertex -tAc \
-  "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'pipeline_edit%'" 2>/dev/null | tr -d ' ' || true)"
+  "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'pipeline_edit%' OR table_name = 'pipeline_shares'" 2>/dev/null | tr -d ' ' || true)"
 if [ "${TABLES:-0}" -ge 5 ]; then
-  ok "tabelas pipeline_edit* no Postgres (${TABLES})"
+  ok "tabelas pipeline editor no Postgres (${TABLES})"
 elif [ "${TABLES:-0}" -gt 0 ]; then
-  warn "apenas ${TABLES} tabela(s) pipeline_edit*"
+  warn "apenas ${TABLES} tabela(s) pipeline editor"
 else
-  fail "nenhuma tabela pipeline_edit* — migration nao rodou"
+  fail "nenhuma tabela pipeline editor — migration nao rodou"
 fi
 
-section "5. OpenAPI / rotas"
-OPENAPI="$(curl -sf "${API}/openapi.json" 2>/dev/null || true)"
-if echo "$OPENAPI" | grep -q "edit-sessions"; then
-  ok "rotas edit-sessions no OpenAPI"
+section "5. Rotas API"
+# -s (sem -f) garante que curl nao exite com erro em 4xx — assim -w escreve
+# o code limpo e o `|| echo 000` so dispara em erro real (timeout/DNS).
+OPENAPI_CODE="$(curl -s -o /dev/null -w '%{http_code}' "${API}/openapi.json" 2>/dev/null || echo 000)"
+if [ "$OPENAPI_CODE" = "404" ] || [ "$OPENAPI_CODE" = "000" ]; then
+  warn "OpenAPI desabilitado em prod (DEBUG=false) — probe rotas protegidas"
+  # 401/403/404 autenticado = rota existe; 405 = metodo errado mas rota existe
+  EDIT_CODE="$(curl -sf -o /dev/null -w '%{http_code}' "${API}/pipelines/00000000-0000-0000-0000-000000000001/edit-sessions" 2>/dev/null || echo 000)"
+  SHARE_CODE="$(curl -sf -o /dev/null -w '%{http_code}' "${API}/shared/pipeline-edit/smoke-token" 2>/dev/null || echo 000)"
+  if [ "$EDIT_CODE" = "401" ] || [ "$EDIT_CODE" = "403" ]; then
+    ok "edit-sessions responde ${EDIT_CODE} (rota registrada)"
+  else
+    fail "edit-sessions -> ${EDIT_CODE} (esperado 401/403 sem token)"
+  fi
+  if [ "$SHARE_CODE" = "404" ] || [ "$SHARE_CODE" = "200" ]; then
+    ok "shared/pipeline-edit responde ${SHARE_CODE}"
+  else
+    fail "shared/pipeline-edit -> ${SHARE_CODE}"
+  fi
 else
-  fail "rotas edit-sessions ausentes no OpenAPI"
-fi
-
-if echo "$OPENAPI" | grep -q "shared/pipeline-edit"; then
-  ok "rota share publica no OpenAPI"
-else
-  fail "rota share ausente"
+  OPENAPI="$(curl -sf "${API}/openapi.json" 2>/dev/null || true)"
+  if echo "$OPENAPI" | grep -q "edit-sessions"; then
+    ok "rotas edit-sessions no OpenAPI"
+  else
+    fail "rotas edit-sessions ausentes no OpenAPI"
+  fi
+  if echo "$OPENAPI" | grep -q "shared/pipeline-edit"; then
+    ok "rota share publica no OpenAPI"
+  else
+    fail "rota share ausente"
+  fi
 fi
 
 section "6. Frontend (rotas Nuxt)"
@@ -117,8 +136,9 @@ done
 section "7. API autenticada (opcional)"
 if [ -z "${SMOKE_API_TOKEN:-}" ] || [ -z "${SMOKE_PIPELINE_ID:-}" ]; then
   warn "SMOKE_API_TOKEN / SMOKE_PIPELINE_ID nao definidos — pulando checks autenticados"
-  warn "Obtenha token: login em ${BASE_URL}/login -> DevTools -> localStorage access_token"
-  warn "Pipeline ID: GET ${API}/pipelines com Authorization Bearer"
+  warn "Token NAO fica em localStorage (seguranca). Opcoes:"
+  warn "  1) F12 -> Network -> request /api/v1/... -> Header Authorization: Bearer ..."
+  warn "  2) curl -X POST ${API}/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"...\",\"password\":\"...\"}'"
 else
   AUTH="Authorization: Bearer ${SMOKE_API_TOKEN}"
 

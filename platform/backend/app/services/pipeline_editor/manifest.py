@@ -115,7 +115,7 @@ def _whatsapp_manifest() -> PipelineManifest:
                     "medallion.silver.leads_profile",
                 ],
                 supported_operations=common_ops,
-                insertion_marker="# DBTITLE 1,Salvar Outputs",
+                insertion_marker="# DBTITLE 1,Salvar Leads Profile",
             ),
             PipelineManifestNode(
                 id="silver_enrichment",
@@ -125,7 +125,7 @@ def _whatsapp_manifest() -> PipelineManifest:
                 input_tables=["medallion.silver.messages_clean"],
                 output_tables=["medallion.silver.conversations_enriched"],
                 supported_operations=common_ops,
-                insertion_marker="# DBTITLE 1,Salvar Silver Enriched",
+                insertion_marker="# DBTITLE 1,Salvar no Unity Catalog e S3",
             ),
             PipelineManifestNode(
                 id="gold_analytics",
