@@ -31,62 +31,70 @@ from app.services.pipeline_editor.schemas import EditProposal, TransformDraft
 
 logger = structlog.get_logger()
 
-_SUBMIT_TOOL = ToolSpec(
-    name="submit_edit_proposal",
-    description=(
-        "Envia proposta estruturada de edicao Silver. "
-        "Use apenas operacoes suportadas pelo DSL."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "explanation": {"type": "string"},
-            "draft": {
-                "type": "object",
-                "properties": {
-                    "layer": {"type": "string", "enum": ["silver"]},
-                    "target_node": {"type": "string"},
-                    "target_table": {"type": "string"},
-                    "input_dataframe": {"type": "string"},
-                    "output_dataframe": {"type": "string"},
-                    "operations": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "op": {"type": "string"},
-                                "column": {"type": "string"},
-                                "new_name": {"type": "string"},
-                                "data_type": {"type": "string"},
-                                "pattern": {"type": "string"},
-                                "replacement": {"type": "string"},
-                                "expression": {"type": "string"},
-                                "format": {"type": "string"},
-                                "json_path": {"type": "string"},
-                                "source_columns": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
+def _build_submit_tool(manifest: PipelineManifest) -> ToolSpec:
+    """Constrói o tool spec com enum dinâmico dos nós Silver disponíveis.
+
+    Forçar `target_node` a um dos IDs do manifest impede o LLM de inventar
+    nomes ou divergir entre a explanation e o draft (bug observado: explicação
+    dizia silver_entities mas target_node vinha como silver_dedup).
+    """
+    silver_ids = [node.id for node in silver_nodes(manifest)]
+    return ToolSpec(
+        name="submit_edit_proposal",
+        description=(
+            "Envia proposta estruturada de edicao Silver. "
+            "Use apenas operacoes suportadas pelo DSL."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "explanation": {"type": "string"},
+                "draft": {
+                    "type": "object",
+                    "properties": {
+                        "layer": {"type": "string", "enum": ["silver"]},
+                        "target_node": {"type": "string", "enum": silver_ids},
+                        "target_table": {"type": "string"},
+                        "input_dataframe": {"type": "string"},
+                        "output_dataframe": {"type": "string"},
+                        "operations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "op": {"type": "string"},
+                                    "column": {"type": "string"},
+                                    "new_name": {"type": "string"},
+                                    "data_type": {"type": "string"},
+                                    "pattern": {"type": "string"},
+                                    "replacement": {"type": "string"},
+                                    "expression": {"type": "string"},
+                                    "format": {"type": "string"},
+                                    "json_path": {"type": "string"},
+                                    "source_columns": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
                                 },
+                                "required": ["op"],
                             },
-                            "required": ["op"],
+                        },
+                        "warnings": {
+                            "type": "array",
+                            "items": {"type": "string"},
                         },
                     },
-                    "warnings": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
+                    "required": ["layer", "target_node", "target_table", "operations"],
                 },
-                "required": ["layer", "target_node", "target_table", "operations"],
+                "risk_score": {"type": "integer", "minimum": 0, "maximum": 10},
+                "test_plan": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
             },
-            "risk_score": {"type": "integer", "minimum": 0, "maximum": 10},
-            "test_plan": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
+            "required": ["explanation", "draft"],
         },
-        "required": ["explanation", "draft"],
-    },
-)
+    )
 
 
 def _system_prompt(manifest: PipelineManifest) -> str:
@@ -197,7 +205,7 @@ async def _collect_tool_proposal(
         model=model,
         system=system,
         messages=messages,
-        tools=[_SUBMIT_TOOL],
+        tools=[_build_submit_tool(manifest)],
         max_tokens=4096,
         untrusted_messages=True,
     ):

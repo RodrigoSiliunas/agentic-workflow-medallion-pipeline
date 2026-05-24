@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.pipeline_editor.manifest import PipelineManifestNode
 from app.services.pipeline_editor.schemas import TransformDraft, TransformOperation
 
 
@@ -85,9 +86,14 @@ def generate_transform_block(draft: TransformDraft) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def generate_pyspark_patch(source: str, draft: TransformDraft) -> str:
-    """Insere bloco gerado antes do primeiro write Delta e troca DF de saída."""
-    marker = "# DBTITLE 1,Salvar como Delta Table e Upload para S3"
+def generate_pyspark_patch(
+    source: str,
+    draft: TransformDraft,
+    *,
+    node: PipelineManifestNode,
+) -> str:
+    """Insere bloco gerado antes do marker de write Delta e troca DF de saída."""
+    marker = node.insertion_marker
     if marker not in source:
         raise ValueError(f"Insertion marker not found: {marker}")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +15,10 @@ from app.services.pipeline_editor.manifest import (
     manifest_for_editor,
     silver_nodes,
 )
-from app.services.pipeline_editor.nl_agent import build_edit_proposal_from_nl
+from app.services.pipeline_editor.nl_agent import (
+    _build_submit_tool,
+    build_edit_proposal_from_nl,
+)
 from app.services.pipeline_editor.preview import (
     build_export_result,
     build_preview_result,
@@ -62,6 +66,8 @@ def test_codegen_adds_generated_transform_block_before_delta_write():
     .saveAsTable(SILVER_TABLE)
 )
 """
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
     draft = TransformDraft(
         layer="silver",
         target_node="silver_dedup",
@@ -74,7 +80,7 @@ def test_codegen_adds_generated_transform_block_before_delta_write():
         ],
     )
 
-    patched = generate_pyspark_patch(source, draft)
+    patched = generate_pyspark_patch(source, draft, node=node)
 
     assert "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor" in patched
     assert 'withColumnRenamed("meta_city", "cidade")' in patched
@@ -360,3 +366,74 @@ async def test_nl_agent_falls_back_when_llm_disabled():
 
     assert proposal.draft.layer == "silver"
     assert "Proposta estruturada" in proposal.explanation
+
+
+def test_codegen_uses_node_insertion_marker_not_hardcoded():
+    """Regressao: codegen ignorava node.insertion_marker e hardcodava
+    o marker de silver_dedup, derrubando edits em silver_entities/enrichment.
+    """
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_entities")
+    source = f"""
+# DBTITLE 1,Codigo anterior
+df_input = spark.table("medallion.silver.messages_clean")
+
+{node.insertion_marker}
+(
+    df_input.write.format("delta")
+    .mode("overwrite")
+    .saveAsTable("medallion.silver.leads_profile")
+)
+"""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_entities",
+        target_table="medallion.silver.leads_profile",
+        input_dataframe="df_input",
+        output_dataframe="df_editor",
+        operations=[TransformOperation(op="drop_column", column="agent_notes")],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    assert node.insertion_marker in patched
+    assert "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor" in patched
+    assert '.drop("agent_notes")' in patched
+    assert "df_editor.write.format" in patched
+
+
+def test_manifest_silver_markers_exist_in_source_files():
+    """Regressao: manifest declarava markers inexistentes em silver_entities
+    e silver_enrichment. Garante que cada node.insertion_marker do silver
+    aparece literalmente no arquivo apontado por node.file_path.
+    """
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    repo_root = Path(__file__).resolve().parents[4]
+
+    errors: list[str] = []
+    for node in silver_nodes(manifest):
+        file_path = repo_root / node.file_path
+        assert file_path.exists(), f"Arquivo do no `{node.id}` ausente: {file_path}"
+        content = file_path.read_text(encoding="utf-8")
+        if node.insertion_marker not in content:
+            errors.append(
+                f"{node.id}: marker `{node.insertion_marker}` ausente em {node.file_path}"
+            )
+
+    assert not errors, "Markers do manifest divergem dos arquivos:\n  " + "\n  ".join(errors)
+
+
+def test_nl_tool_target_node_enum_includes_silver_nodes():
+    """Regressao: target_node era string aberta; LLM podia inventar/divergir.
+    Agora o tool schema injeta enum com IDs dos nos Silver disponiveis.
+    """
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    expected_ids = {node.id for node in silver_nodes(manifest)}
+
+    tool = _build_submit_tool(manifest)
+    target_node_schema = tool.input_schema["properties"]["draft"]["properties"]["target_node"]
+
+    assert "enum" in target_node_schema
+    assert set(target_node_schema["enum"]) == expected_ids
+    assert "bronze_ingestion" not in target_node_schema["enum"]
+    assert "gold_analytics" not in target_node_schema["enum"]
