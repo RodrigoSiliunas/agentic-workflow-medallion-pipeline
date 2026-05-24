@@ -62,6 +62,8 @@ def test_codegen_adds_generated_transform_block_before_delta_write():
     .saveAsTable(SILVER_TABLE)
 )
 """
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
     draft = TransformDraft(
         layer="silver",
         target_node="silver_dedup",
@@ -74,7 +76,7 @@ def test_codegen_adds_generated_transform_block_before_delta_write():
         ],
     )
 
-    patched = generate_pyspark_patch(source, draft)
+    patched = generate_pyspark_patch(source, draft, node=node)
 
     assert "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor" in patched
     assert 'withColumnRenamed("meta_city", "cidade")' in patched

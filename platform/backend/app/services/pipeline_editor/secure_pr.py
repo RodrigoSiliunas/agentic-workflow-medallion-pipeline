@@ -59,7 +59,7 @@ def validate_generated_files(
     if source is None:
         raise ValueError(f"Arquivo base ausente para codegen: {node.file_path}")
 
-    generated = {node.file_path: generate_pyspark_patch(source, draft)}
+    generated = {node.file_path: generate_pyspark_patch(source, draft, node=node)}
     checks: list[str] = []
     errors: list[str] = []
     for path, code in generated.items():
