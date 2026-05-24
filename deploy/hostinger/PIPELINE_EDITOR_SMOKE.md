@@ -6,18 +6,13 @@ Diretório deploy: `/opt/flowertex`
 
 ---
 
-## Estado atual do VPS (baseline — verificado em 2026-05-23)
+## Estado atual do VPS (pós-deploy 2026-05-23)
 
 | Item | Resultado |
 |------|-----------|
-| Containers | ✅ backend, frontend, postgres, redis, omni healthy |
-| `/health` | ✅ HTTP 200 |
-| `IMAGE_TAG` | `7ffdb1fe1ad1cd2ad2239317e692d20e60284d30` (~5 dias) |
-| `pipeline_editor.py` no container | ❌ **ausente** |
-| OpenAPI `edit-sessions` | ❌ **ausente** |
-| Alembic current | `c0b1d2e3f4a5` — falta `d4e5f6a7b8c9` |
-
-**Conclusão:** Pipeline Editor **ainda não está no ar**. Precisa merge + release + deploy com código novo.
+| Containers | ✅ healthy |
+| `IMAGE_TAG` | `29e5c871ee6db759d4ebae649e5b44ccb16c7208` |
+| Pipeline Editor | ✅ código + migration `d4e5f6a7b8c9` |
 
 ---
 
@@ -40,14 +35,41 @@ ssh hostinger-vps 'bash -s' < deploy/hostinger/smoke-pipeline-editor.sh
 
 Com API autenticada (opcional):
 
-```bash
-# Linux/macOS — exporte token JWT e UUID do pipeline
-export SMOKE_API_TOKEN="seu-jwt"
-export SMOKE_PIPELINE_ID="uuid-do-pipeline"
-ssh hostinger-vps "SMOKE_API_TOKEN=$SMOKE_API_TOKEN SMOKE_PIPELINE_ID=$SMOKE_PIPELINE_ID bash -s" < deploy/hostinger/smoke-pipeline-editor.sh
+```powershell
+# PowerShell — substitua o JWT (ver secao abaixo)
+$env:SMOKE_API_TOKEN = "eyJ..."
+$env:SMOKE_PIPELINE_ID = "26d264ef-2877-49ef-b914-3f6ee4d71372"
+scp deploy/hostinger/smoke-pipeline-editor.sh hostinger-vps:/tmp/smoke-pipeline-editor.sh
+ssh hostinger-vps "SMOKE_API_TOKEN=$env:SMOKE_API_TOKEN SMOKE_PIPELINE_ID=$env:SMOKE_PIPELINE_ID bash /tmp/smoke-pipeline-editor.sh"
 ```
 
-**Esperado após deploy correto:** `PASS` alto, `FAIL=0`.
+### Como obter o JWT
+
+O token **nao** fica em Local Storage / Session Storage (seguranca T2). Fica **so na memoria** (Pinia) enquanto a aba esta aberta.
+
+**Metodo 1 — Network (recomendado)**
+
+1. Login em https://flowertex.idlehub.com.br
+2. F12 → **Network** (Rede) → filtro **Fetch/XHR**
+3. Abra `/pipelines/26d264ef-2877-49ef-b914-3f6ee4d71372`
+4. Clique num request `/api/v1/...`
+5. **Headers** → **Authorization** → copie so a parte `eyJ...` (depois de `Bearer `)
+
+**Metodo 2 — curl login**
+
+```bash
+curl -s -X POST https://flowertex.idlehub.com.br/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"SEU_EMAIL","password":"SUA_SENHA"}'
+```
+
+Campo `access_token` na resposta. Expira em ~15 min.
+
+**Metodo 3 — Vue DevTools**
+
+Store Pinia `auth` → campo `accessToken`.
+
+---
 
 Checks do script:
 
