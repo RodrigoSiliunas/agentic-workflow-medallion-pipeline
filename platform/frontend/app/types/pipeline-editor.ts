@@ -70,6 +70,9 @@ export interface PipelineEditSession {
   currentVersionId: string | null
   createdAt?: string | null
   updatedAt?: string | null
+  // PR aberto pela sessao (preenchido apos approve com create_pr)
+  prNumber?: number | null
+  prUrl?: string | null
 }
 
 export interface PipelineEditVersion {

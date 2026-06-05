@@ -281,9 +281,6 @@ function buildSteps(delta: SchemaDelta | undefined, ops: TransformOperation[]): 
         steps.push({ kind: "derived", column: d.name, expression: d.expression })
       }
     }
-    for (const m of delta.modified ?? []) {
-      steps.push({ kind: "modified", column: m })
-    }
   }
 
   // Passos derivados das operações (complementam o delta)

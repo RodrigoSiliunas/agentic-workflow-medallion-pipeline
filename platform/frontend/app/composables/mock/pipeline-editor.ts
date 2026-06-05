@@ -135,26 +135,14 @@ export const MOCK_PROPOSAL_J1_RESPONSE: EditorMessageResponse = {
   },
 }
 
-export const MOCK_PROPOSAL_J3_DRAFT = {
-  layer: "silver" as const,
-  targetNode: "silver_messages",
-  targetTable: "silver.messages",
-  operations: [
-    { op: "rename_column", column: "cliente_id", newName: "customer_id" },
-    { op: "drop_column", column: "ssn" },
-    { op: "trim", column: "nome_completo" },
-    { op: "mask_pii", column: "cpf" },
-    { op: "filter_rows", expression: "status != 'cancelled'" },
-  ],
-}
-
 // Preview cru do backend (snake_case) — mapeado em usePipelineEditorSession.runPreview()
 export const MOCK_PREVIEW_OK_RAW: Record<string, unknown> = {
   status: "ready",
   namespace: "preview_co_b8a1_pip_3e21_ses_a4f2",
   duration: "27.4s",
   schema_delta: {
-    removed: ["ssn"],
+    // Backend serializa `dropped`; o mapper (mapSchemaDelta) converte para `removed`.
+    dropped: ["ssn"],
     renamed: [{ from: "cliente_id", to: "customer_id" }],
     derived: [],
   },

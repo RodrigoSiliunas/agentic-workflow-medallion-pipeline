@@ -100,21 +100,26 @@ describe("EditorPrPanel — approve logic matrix", () => {
     expect(blockMsg.text()).toContain("Validação")
   })
 
-  // Case 4: pr_created → canApprove=false, blockMsg="PR já aberto", shows "Ver PR" button not approve btn
-  it("Case 4: pr_created — shows Ver PR button, not approve button", async () => {
+  // Case 4: pr_created → canApprove=false, blockMsg="PR já aberto", shows "Ver PR" link not approve btn
+  it("Case 4: pr_created — shows clickable Ver PR link, not approve button", async () => {
     const wrapper = await mountSuspended(EditorPrPanel, {
       props: {
         proposal: makeProposal(),
         preview: makePreview("ready"),
         validation: makeValidation(true),
-        session: makeSession({ status: "pr_created", prNumber: 42 }),
+        session: makeSession({
+          status: "pr_created",
+          prNumber: 42,
+          prUrl: "https://github.com/acme/repo/pull/42",
+        }),
         fileDiffs: [],
       },
     })
 
-    // "Ver PR" button should exist
-    const verPrBtn = wrapper.findAll("button").find((b) => b.text().includes("Ver PR"))
-    expect(verPrBtn).toBeDefined()
+    // "Ver PR #42" deve ser um link clicavel para o PR no GitHub
+    const verPrLink = wrapper.findAll("a").find((a) => a.text().includes("Ver PR #42"))
+    expect(verPrLink).toBeDefined()
+    expect(verPrLink!.attributes("href")).toContain("/pull/42")
 
     // Approve button should NOT be in the DOM (pr_created branch renders different template)
     const approveBtn = wrapper.findAll("button").find((b) =>

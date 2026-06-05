@@ -69,12 +69,12 @@ export interface SchemaColumn {
   note?: string
 }
 
-// Diff de schema entre antes e depois da proposta
+// Diff de schema entre antes e depois da proposta.
+// Backend serializa `dropped` (mapeado para `removed` em usePipelineEditorSession.mapPreview).
 export interface SchemaDelta {
   renamed?: Array<{ from: string; to: string }>
   removed?: string[]
   derived?: Array<string | { name: string; expression: string }>
-  modified?: string[]
 }
 
 // Resultado do preview Databricks (RF-06)

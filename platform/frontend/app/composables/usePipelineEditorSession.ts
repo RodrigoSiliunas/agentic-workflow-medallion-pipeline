@@ -19,12 +19,23 @@ import type {
   ValidationCheck,
 } from "~/types/pipeline-editor-v2"
 
+function mapSchemaDelta(raw: unknown): SchemaDelta | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const delta = raw as Record<string, unknown>
+  // Backend serializa `dropped`; o frontend usa `removed`.
+  return {
+    removed: delta.dropped as string[] | undefined,
+    renamed: delta.renamed as SchemaDelta["renamed"],
+    derived: delta.derived as SchemaDelta["derived"],
+  }
+}
+
 function mapPreview(raw: Record<string, unknown>): PreviewResultV2 {
   return {
     status: (raw.status as "ready" | "running" | "failed") || "ready",
     schemaBefore: raw.schema_before as SchemaColumn[] | undefined,
     schemaAfter: raw.schema_after as SchemaColumn[] | undefined,
-    schemaDelta: raw.schema_delta as SchemaDelta | undefined,
+    schemaDelta: mapSchemaDelta(raw.schema_delta),
     rowsAfter: raw.rows_after as Record<string, unknown>[] | undefined,
     rowsBefore: raw.rows_before as Record<string, unknown>[] | undefined,
     error: raw.error as string | undefined,
@@ -295,14 +306,21 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
       const result = await api.approveEdit(ws.id, session.id)
       if (result.validation) validation.value = mapValidation(result.validation as Record<string, unknown>)
       if (result.diff) fileDiffs.value = result.diff
+      // PR retornado pelo backend (number/url ja normalizados em usePipelinesApi)
+      const pr = result.pr as { number?: number; url?: string } | undefined
       stateMachine.value = "opening_pr"
       // Simula transição para pr_created (streaming não disponível no backend)
       await new Promise((r) => setTimeout(r, 600))
       stateMachine.value = "pr_created"
-      // Atualiza sessão na store
+      // Atualiza sessão na store, persistindo o PR aberto
       const idx = store.editSessions.findIndex((s) => s.id === session.id)
       if (idx !== -1) {
-        store.editSessions[idx] = { ...store.editSessions[idx], status: "pr_created" }
+        store.editSessions[idx] = {
+          ...store.editSessions[idx],
+          status: "pr_created",
+          prNumber: pr?.number ?? null,
+          prUrl: pr?.url ?? null,
+        }
       }
       inspectorTab.value = "pr"
     } catch (e) {
