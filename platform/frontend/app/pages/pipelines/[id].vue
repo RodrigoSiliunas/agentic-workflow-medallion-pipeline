@@ -1,19 +1,31 @@
 <template>
   <div v-if="workspace" class="flex-1 flex flex-col overflow-hidden">
+    <!-- ──────────────────────────────────────────────────────────────────
+         Header da página:
+         - Na aba edit: só back-button + tabs (identidade vem do EditorWorkspaceHeader)
+         - Nas demais abas: header completo com título e sub-título
+         ────────────────────────────────────────────────────────────────── -->
     <header class="px-8 py-4 border-b" :style="{ borderColor: 'var(--border)' }">
       <div class="flex items-center gap-3">
         <AppButton variant="ghost" size="sm" icon="i-heroicons-arrow-left" square to="/deployments" />
-        <div class="flex-1 min-w-0">
-          <h1 class="text-base font-semibold truncate" :style="{ color: 'var(--text-primary)' }">
-            {{ workspace.name }}
-          </h1>
-          <p class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
-            Workspace tenant-scoped · {{ workspace.manifest.displayName }}
-          </p>
-        </div>
-        <AppButton variant="outline" size="sm" icon="i-heroicons-chat-bubble-left-right" to="/chat">
-          Chat geral
-        </AppButton>
+
+        <!-- Header completo visível somente quando NÃO está na aba edit -->
+        <template v-if="activeTab !== 'edit'">
+          <div class="flex-1 min-w-0">
+            <h1 class="text-base font-semibold truncate" :style="{ color: 'var(--text-primary)' }">
+              {{ workspace.name }}
+            </h1>
+            <p class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
+              Workspace tenant-scoped · {{ workspace.manifest.displayName }}
+            </p>
+          </div>
+          <AppButton variant="outline" size="sm" icon="i-heroicons-chat-bubble-left-right" to="/chat">
+            Chat geral
+          </AppButton>
+        </template>
+
+        <!-- Na aba edit: spacer para empurrar tabs ao lugar certo -->
+        <div v-else class="flex-1" />
       </div>
 
       <nav class="flex gap-2 mt-4">
@@ -30,7 +42,21 @@
       </nav>
     </header>
 
-    <main class="flex-1 overflow-auto p-6">
+    <!-- ──────────────────────────────────────────────────────────────────
+         Aba Editor (V2) — altura cheia, fora do <main> padded
+         ────────────────────────────────────────────────────────────────── -->
+    <div v-if="activeTab === 'edit'" class="flex-1 min-h-0 overflow-hidden">
+      <PipelineEditorV2
+        :workspace="workspace"
+        :sessions="sessions"
+      />
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Demais abas — dentro do <main> com padding
+         ────────────────────────────────────────────────────────────────── -->
+    <main v-else class="flex-1 overflow-auto p-6">
+      <!-- Overview -->
       <section v-if="activeTab === 'overview'" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
           label="Job Databricks"
@@ -41,38 +67,27 @@
         <MetricCard label="Sessões" icon="chat-bubble-left-right" :value="String(sessions.length)" />
       </section>
 
-      <PipelineEditorWorkspace
-        v-else-if="activeTab === 'edit'"
-        :workspace="workspace"
-        :sessions="sessions"
-      />
-
+      <!-- Dados -->
       <DataPreviewGrid
         v-else-if="activeTab === 'data'"
         :preview="preview"
         @export="exportPreview"
       />
 
+      <!-- Diagrama -->
       <PipelineDiagram
         v-else-if="activeTab === 'diagram'"
         :manifest="workspace.manifest"
         :draft="activeDraft"
       />
 
-      <section v-else class="space-y-3">
-        <h2 class="text-sm font-semibold">Histórico de edição</h2>
-        <div
-          v-for="session in sessions"
-          :key="session.id"
-          class="rounded-lg border p-4"
-          :style="{ borderColor: 'var(--border)' }"
-        >
-          <p class="text-sm font-medium">{{ session.title }}</p>
-          <p class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
-            {{ session.status }} · {{ session.updatedAt || session.createdAt || "-" }}
-          </p>
-        </div>
-      </section>
+      <!-- Histórico — usa EditorHistoryView (RF-15) -->
+      <EditorHistoryView
+        v-else-if="activeTab === 'history'"
+        :sessions="sessions"
+        @select="onHistorySelect"
+        @close="activeTab = 'edit'"
+      />
     </main>
   </div>
 
@@ -95,11 +110,13 @@ const store = usePipelinesStore()
 const api = usePipelinesApi()
 
 const pipelineId = computed(() => String(route.params.id))
-const activeTab = ref("overview")
+
+// Editor é a aba padrão ao abrir o pipeline (V2)
+const activeTab = ref("edit")
 
 const tabs = [
+  { id: "edit", label: "Editor" },
   { id: "overview", label: "Overview" },
-  { id: "edit", label: "Editar" },
   { id: "data", label: "Dados" },
   { id: "diagram", label: "Diagrama" },
   { id: "history", label: "Histórico" },
@@ -130,5 +147,11 @@ async function exportPreview(format: "csv" | "parquet") {
   const sessionId = store.activeEditSessionId || sessions.value[0]?.id
   if (!workspace.value || !sessionId) return
   await api.exportPreview(workspace.value.id, sessionId, format)
+}
+
+// Histórico: seleciona sessão e volta para aba edit
+function onHistorySelect(id: string) {
+  store.setActiveEditSession(id)
+  activeTab.value = "edit"
 }
 </script>
