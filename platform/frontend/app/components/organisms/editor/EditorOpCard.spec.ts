@@ -16,14 +16,14 @@ describe("EditorOpCard — fieldsFor", () => {
     // The field labels are rendered as uppercase spans
     expect(wrapper.text()).toContain("Coluna")
     // Exactly one field section (no second label)
-    expect(wrapper.text()).not.toContain("Novo nome")
+    expect(wrapper.text()).not.toContain("Para")
     expect(wrapper.text()).not.toContain("Tipo")
   })
 
-  it("rename_column → 2 fields (column, new_name)", async () => {
-    const wrapper = await mountCard({ op: "rename_column", column: "a", new_name: "b" })
-    expect(wrapper.text()).toContain("Coluna")
-    expect(wrapper.text()).toContain("Novo nome")
+  it("rename_column → 2 fields (De, Para)", async () => {
+    const wrapper = await mountCard({ op: "rename_column", column: "a", newName: "b" })
+    expect(wrapper.text()).toContain("De")
+    expect(wrapper.text()).toContain("Para")
   })
 
   it("cast_column → 2 fields (column, data_type)", async () => {
@@ -35,20 +35,20 @@ describe("EditorOpCard — fieldsFor", () => {
   it("regex_replace → 3 fields (column, pattern, replacement)", async () => {
     const wrapper = await mountCard({ op: "regex_replace" })
     expect(wrapper.text()).toContain("Coluna")
-    expect(wrapper.text()).toContain("Padrão (regex)")
-    expect(wrapper.text()).toContain("Substituição")
+    expect(wrapper.text()).toContain("Pattern")
+    expect(wrapper.text()).toContain("Substituir")
   })
 
   it("coalesce → 2 fields (column as new_column, source_columns as multi_columns)", async () => {
     const wrapper = await mountCard({ op: "coalesce" })
-    expect(wrapper.text()).toContain("Coluna")
-    expect(wrapper.text()).toContain("Colunas de origem")
+    expect(wrapper.text()).toContain("Coluna alvo")
+    expect(wrapper.text()).toContain("Fontes")
   })
 })
 
 describe("EditorOpCard — emits", () => {
   it("emits change when a field value changes", async () => {
-    const wrapper = await mountCard({ op: "rename_column", column: "a", new_name: "b" })
+    const wrapper = await mountCard({ op: "rename_column", column: "a", newName: "b" })
     // Trigger change via child component emit
     const columnPickers = wrapper.findAllComponents({ name: "ColumnPicker" })
     if (columnPickers.length > 0) {

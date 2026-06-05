@@ -22,9 +22,7 @@ const opCount = computed(() => props.proposal.draft.operations.length)
       <div class="proposal-card__header-left">
         <AppIcon name="sparkles" size="xs" style="color: var(--brand-400)" />
         <span class="proposal-card__header-title">Proposta gerada</span>
-        <AppPill v-if="proposal.version" tone="brand" size="xs">
-          v{{ proposal.version }}
-        </AppPill>
+        <AppPill tone="brand" size="xs">v1</AppPill>
       </div>
       <span class="proposal-card__op-count">
         {{ opCount }} {{ opCount === 1 ? "operação" : "operações" }}
@@ -51,11 +49,11 @@ const opCount = computed(() => props.proposal.draft.operations.length)
         </div>
 
         <!-- Arquivos afetados -->
-        <div v-if="proposal.files_affected?.length" class="proposal-card__section">
+        <div v-if="proposal.filesAffected?.length" class="proposal-card__section">
           <span class="proposal-card__overline">Arquivos afetados</span>
           <div class="proposal-card__files">
             <AppCode
-              v-for="file in proposal.files_affected"
+              v-for="file in proposal.filesAffected"
               :key="file"
               class="proposal-card__file-chip"
             >{{ file }}</AppCode>
@@ -63,11 +61,11 @@ const opCount = computed(() => props.proposal.draft.operations.length)
         </div>
 
         <!-- Plano de teste -->
-        <div v-if="proposal.test_plan?.length" class="proposal-card__section">
+        <div v-if="proposal.testPlan?.length" class="proposal-card__section">
           <span class="proposal-card__overline">Plano de teste</span>
           <ul class="proposal-card__test-plan">
             <li
-              v-for="(step, idx) in proposal.test_plan"
+              v-for="(step, idx) in proposal.testPlan"
               :key="idx"
               class="proposal-card__test-item"
             >
@@ -83,7 +81,7 @@ const opCount = computed(() => props.proposal.draft.operations.length)
       <!-- Coluna lateral — risco -->
       <div class="proposal-card__risk">
         <span class="proposal-card__overline">Risco</span>
-        <AppRiskGauge :value="proposal.risk_score ?? 0" :size="88" />
+        <AppRiskGauge :value="proposal.riskScore ?? 0" :size="88" />
       </div>
     </div>
 
@@ -174,6 +172,9 @@ const opCount = computed(() => props.proposal.draft.operations.length)
   flex-direction: column;
   gap: 12px;
   border-right: 1px solid var(--border);
+  /* Permite que a coluna 1fr encolha; sem isso o min-width:auto do grid
+     estoura a track e empurra a coluna de risco para fora do card. */
+  min-width: 0;
 }
 
 .proposal-card__explanation {
@@ -262,7 +263,8 @@ const opCount = computed(() => props.proposal.draft.operations.length)
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.015);
+  /* Tint sutil idêntico ao protótipo (coluna de risco levemente mais escura) */
+  background: color-mix(in oklab, var(--bg) 60%, var(--surface) 40%);
 }
 
 /* Rodapé */

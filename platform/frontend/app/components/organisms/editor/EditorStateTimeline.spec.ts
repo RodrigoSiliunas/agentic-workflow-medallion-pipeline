@@ -3,12 +3,12 @@ import { describe, it, expect } from "vitest"
 import EditorStateTimeline from "./EditorStateTimeline.vue"
 
 const STATE_LABELS = [
-  "Aguardando",
+  "Rascunho",
   "Gerando proposta",
-  "Preview",
+  "Preview Databricks",
   "Validando",
   "Abrindo PR",
-  "PR criado",
+  "PR aberto",
 ]
 
 describe("EditorStateTimeline", () => {
@@ -64,7 +64,7 @@ describe("EditorStateTimeline", () => {
     // Retry button
     const retryBtn = errorBlock.find("button")
     expect(retryBtn.exists()).toBe(true)
-    expect(retryBtn.text()).toContain("Tentar novamente")
+    expect(retryBtn.text()).toContain("Tentar de novo")
   })
 
   it("applies step--errored class to current step when error is present", async () => {

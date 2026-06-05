@@ -31,7 +31,7 @@ const emit = defineEmits<{
     <div class="header-left">
       <!-- Ícone do pipeline -->
       <div class="pipeline-icon" aria-hidden="true">
-        <AppIcon name="circle-stack" size="sm" />
+        <AppIcon name="cpu-chip" size="sm" />
       </div>
 
       <div class="header-breadcrumb">
@@ -54,6 +54,7 @@ const emit = defineEmits<{
         <div class="breadcrumb-sub">
           <AppIcon name="table-cells" size="xs" />
           <span class="target-table">{{ targetTable }}</span>
+          <span class="breadcrumb-dot" aria-hidden="true">·</span>
           <span class="base-ref">base_ref: dev</span>
         </div>
       </div>
@@ -70,7 +71,7 @@ const emit = defineEmits<{
       <AppButton
         size="sm"
         variant="outline"
-        color="primary"
+        color="neutral"
         icon="plus"
         @click="emit('newSession')"
       >
@@ -150,14 +151,15 @@ const emit = defineEmits<{
 .breadcrumb-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .pipeline-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-primary);
+  letter-spacing: -0.015em;
   white-space: nowrap;
 }
 
@@ -168,25 +170,26 @@ const emit = defineEmits<{
 .breadcrumb-sub {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--fg-secondary);
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-tertiary);
 }
 
 .target-table {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-secondary);
+  font-size: 10px;
+  color: var(--fg-tertiary);
+}
+
+.breadcrumb-dot {
+  opacity: 0.4;
 }
 
 .base-ref {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--fg-tertiary);
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-elevated);
 }
 
 /* Centro */

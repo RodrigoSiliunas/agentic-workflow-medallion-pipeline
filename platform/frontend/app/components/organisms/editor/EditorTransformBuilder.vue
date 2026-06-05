@@ -35,16 +35,13 @@
     <!-- Estado vazio -->
     <div
       v-if="ops.length === 0"
-      class="flex flex-col items-center justify-center gap-[10px] rounded-[var(--radius-lg)] border border-dashed border-[var(--border)] py-[32px] text-center"
+      class="flex flex-col items-center justify-center gap-[8px] rounded-[var(--radius-lg)] border border-dashed border-[var(--border)] bg-[var(--surface)] py-[24px] text-center"
       :style="{ color: 'var(--fg-tertiary)' }"
     >
       <AppIcon name="squares-plus" size="lg" :style="{ color: 'var(--fg-tertiary)' }" />
-      <div class="flex flex-col gap-[4px]">
-        <p class="text-[13px] font-medium" :style="{ color: 'var(--fg-secondary)' }">
-          Nenhuma operação adicionada
-        </p>
-        <p class="text-[11px]">Use o botão abaixo para adicionar transformações</p>
-      </div>
+      <p class="text-[12px]">
+        Nenhuma operação ainda. Use chat NL para gerar ou adicione abaixo.
+      </p>
     </div>
 
     <!-- Lista de operações -->
@@ -54,7 +51,7 @@
       :op="op"
       :index="i"
       :total="ops.length"
-      :table-columns="[]"
+      :table-columns="tableColumns"
       @change="update(i, $event)"
       @remove="remove($event)"
       @move="move($event.index, $event.dir)"
@@ -101,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import type { TransformDraft, TransformOperation, SourceOfTruth } from "~/types/pipeline-editor-v2"
+import type { TransformDraft, TransformOperation, SourceOfTruth, SchemaColumn } from "~/types/pipeline-editor-v2"
 import { OP_TYPES } from "./constants"
 
 const props = withDefaults(
@@ -109,11 +106,13 @@ const props = withDefaults(
     draft?: TransformDraft | null
     sourceOfTruth?: SourceOfTruth
     autoSavedAt?: string | null
+    tableColumns?: SchemaColumn[]
   }>(),
   {
     draft: null,
     sourceOfTruth: null,
     autoSavedAt: null,
+    tableColumns: () => [],
   },
 )
 

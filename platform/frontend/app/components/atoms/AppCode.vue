@@ -20,7 +20,7 @@ const props = withDefaults(
 const STYLES = {
   default: {
     background: "var(--surface-elevated)",
-    color: "var(--text-primary)",
+    color: "var(--brand-400)",
     border: "1px solid var(--border)",
   },
   subtle: {

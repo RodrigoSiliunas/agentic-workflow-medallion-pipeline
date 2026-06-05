@@ -382,6 +382,16 @@ h4 {
   animation: eq-bar 0.9s ease-in-out infinite;
 }
 
+/* pulse-soft — usado pelo dot do badge "Fonte da verdade" (chat-pane) */
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* ------------------------------------------------------------
  * V2 modal animations — fade-in (backdrop) + modal-pop (painel)
  * Usados pelo EditorModalShell (PR-B). Port fiel do protótipo ea1baebb.

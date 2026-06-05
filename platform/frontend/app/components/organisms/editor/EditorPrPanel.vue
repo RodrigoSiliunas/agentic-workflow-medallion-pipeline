@@ -132,8 +132,7 @@ const defaultChecks = [
       <!-- Direita: risk gauge -->
       <div class="info-right">
         <span class="overline">Risco</span>
-        <AppRiskGauge :score="proposal?.risk_score ?? 0" :size="84" />
-        <span class="risk-label">{{ proposal?.risk_score ?? 0 }}/10</span>
+        <AppRiskGauge :value="proposal?.riskScore ?? 0" :size="84" />
       </div>
     </div>
 
@@ -300,12 +299,6 @@ const defaultChecks = [
 }
 
 .base-ref {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-secondary);
-}
-
-.risk-label {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--fg-secondary);

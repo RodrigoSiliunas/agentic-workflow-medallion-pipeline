@@ -34,25 +34,22 @@ watch(
 </script>
 
 <template>
-  <div class="chat-pane">
-    <!-- Cabeçalho da seção -->
-    <div class="chat-pane__header">
-      <AppIcon name="chat-bubble-left-ellipsis" size="xs" />
-      <span class="chat-pane__title">Chat</span>
-      <div class="chat-pane__spacer" />
-      <SourceOfTruthBadge v-if="sourceOfTruth" :source="sourceOfTruth" />
+  <div class="chat-pane" :class="{ 'chat-pane--chat-source': sourceOfTruth === 'chat' }">
+    <!-- Badge flutuante de fonte da verdade (somente quando chat é a fonte) -->
+    <div v-if="sourceOfTruth === 'chat'" class="chat-pane__source-badge">
+      <span class="chat-pane__source-dot" aria-hidden="true" />
+      Fonte da verdade · chat
     </div>
 
-    <!-- Área de mensagens -->
-    <div ref="threadRef" class="chat-pane__thread">
-      <!-- Estado zero -->
-      <EditorChatZeroState
-        v-if="showZeroState"
-        @suggestion="$emit('suggestion', $event)"
-      />
+    <!-- Estado zero — preenche e centraliza a coluna -->
+    <EditorChatZeroState
+      v-if="showZeroState"
+      @suggestion="$emit('suggestion', $event)"
+    />
 
-      <!-- Thread de mensagens -->
-      <template v-else>
+    <!-- Thread de mensagens -->
+    <div v-else ref="threadRef" class="chat-pane__thread">
+      <div class="chat-pane__thread-inner">
         <template v-for="(message, idx) in messages" :key="idx">
           <EditorMessageBubble :message="message" />
 
@@ -65,49 +62,64 @@ watch(
             @apply="emit('applyProposal')"
           />
         </template>
-      </template>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .chat-pane {
+  position: relative;
   display: flex;
   flex-direction: column;
-  height: 100%;
-}
-
-/* Cabeçalho */
-.chat-pane__header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex-shrink: 0;
-}
-
-.chat-pane__title {
-  font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-secondary);
-  letter-spacing: 0.03em;
-}
-
-.chat-pane__spacer {
   flex: 1;
+  min-height: 0;
+}
+
+/* Tint sutil quando o chat é a fonte da verdade */
+.chat-pane--chat-source {
+  background: color-mix(in oklab, var(--brand-600) 1.5%, transparent);
+}
+
+/* Badge flutuante "Fonte da verdade · chat" */
+.chat-pane__source-badge {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(142, 81, 246, 0.12);
+  border: 1px solid rgba(142, 81, 246, 0.3);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--brand-400);
+}
+
+.chat-pane__source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand-500);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand-500) 25%, transparent);
+  animation: pulse-soft 1.6s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 /* Thread */
 .chat-pane__thread {
   flex: 1;
   overflow-y: auto;
-  padding: 0 18px;
-  display: flex;
-  flex-direction: column;
+  padding: 32px 18px 12px;
   scrollbar-width: thin;
+}
+
+.chat-pane__thread-inner {
+  max-width: 720px;
+  margin: 0 auto;
 }
 </style>

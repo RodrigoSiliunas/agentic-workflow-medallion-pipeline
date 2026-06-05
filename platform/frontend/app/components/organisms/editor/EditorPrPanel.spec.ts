@@ -21,9 +21,9 @@ function makeProposal(overrides: Partial<EditProposal> = {}): EditProposal {
   return {
     explanation: "explanation",
     draft: { operations: [] },
-    files_affected: [],
-    risk_score: 2,
-    test_plan: [],
+    filesAffected: [],
+    riskScore: 2,
+    testPlan: [],
     ...overrides,
   } as EditProposal
 }

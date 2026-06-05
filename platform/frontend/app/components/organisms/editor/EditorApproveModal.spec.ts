@@ -15,9 +15,9 @@ function makeProposal(overrides: Partial<EditProposal> = {}): EditProposal {
   return {
     explanation: "Fix the pipeline",
     draft: { operations: [] },
-    files_affected: ["silver/dedup_clean.py"],
-    risk_score: 3,
-    test_plan: ["Run validation checks"],
+    filesAffected: ["silver/dedup_clean.py"],
+    riskScore: 3,
+    testPlan: ["Run validation checks"],
     ...overrides,
   } as EditProposal
 }
@@ -134,7 +134,7 @@ describe("EditorApproveModal", () => {
       props: {
         open: true,
         session: makeSession(),
-        proposal: makeProposal({ files_affected: ["silver/dedup_clean.py", "gold/analytics.py"] }),
+        proposal: makeProposal({ filesAffected: ["silver/dedup_clean.py", "gold/analytics.py"] }),
         preview: null,
       },
     })
