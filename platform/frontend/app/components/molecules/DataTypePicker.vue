@@ -23,7 +23,7 @@
       >
         <div class="max-h-[280px] overflow-y-auto p-1">
           <button
-            v-for="type in options"
+            v-for="type in effectiveOptions"
             :key="type"
             type="button"
             class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border-none px-[10px] py-[7px] text-left font-mono text-[12px] transition-colors duration-100 hover:bg-[var(--surface-elevated)]"
@@ -63,16 +63,12 @@ const SPARK_DATA_TYPES = [
   "map<string,string>",
 ]
 
-withDefaults(
-  defineProps<{
-    modelValue?: string
-    options?: string[]
-  }>(),
-  {
-    modelValue: undefined,
-    options: () => SPARK_DATA_TYPES,
-  },
-)
+const props = defineProps<{
+  modelValue?: string
+  options?: string[]
+}>()
+
+const effectiveOptions = computed(() => props.options ?? SPARK_DATA_TYPES)
 
 const emit = defineEmits<{
   "update:modelValue": [value: string]
