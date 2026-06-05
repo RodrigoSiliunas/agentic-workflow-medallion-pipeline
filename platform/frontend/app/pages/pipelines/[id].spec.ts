@@ -47,16 +47,16 @@ const stubs = {
 }
 
 describe("pipelines/[id].vue — smoke test", () => {
-  it("aba padrão é 'edit' ao abrir", async () => {
+  it("aba padrão é 'edit' — editor monta full-bleed e a barra de abas da página fica oculta", async () => {
     const wrapper = await mountSuspended(PipelineIdPage, {
       route: "/pipelines/test_pip",
       global: { stubs },
     })
-    const tabs = wrapper.findAll("button")
-    const editorTab = tabs.find((b) => b.text().includes("Editor"))
-    expect(editorTab).toBeDefined()
-    const style = editorTab!.attributes("style") || ""
-    expect(style).toContain("var(--brand-600)")
+    // Editor montado por padrão...
+    expect(wrapper.find("[data-testid='pipeline-editor-v2']").exists()).toBe(true)
+    // ...e o header da página (back + abas) é ocultado na aba Editor (full-bleed).
+    const editorTab = wrapper.findAll("button").find((b) => b.text().includes("Editor"))
+    expect(editorTab).toBeUndefined()
   })
 
   it("PipelineEditorV2 monta quando aba=edit", async () => {
@@ -67,23 +67,29 @@ describe("pipelines/[id].vue — smoke test", () => {
     expect(wrapper.find("[data-testid='pipeline-editor-v2']").exists()).toBe(true)
   })
 
-  it("PipelineEditorV2 desmonta ao trocar para aba overview", async () => {
+  it("a barra de abas da página aparece nas abas não-edit (navegação entre abas)", async () => {
     const wrapper = await mountSuspended(PipelineIdPage, {
       route: "/pipelines/test_pip",
       global: { stubs },
     })
-    const overviewTab = wrapper.findAll("button").find((b) => b.text().includes("Overview"))
-    await overviewTab!.trigger("click")
+    // Sai do editor via o método exposto changeTab.
+    ;(wrapper.vm as unknown as { changeTab: (t: string) => void }).changeTab("overview")
+    await wrapper.vm.$nextTick()
+
     expect(wrapper.find("[data-testid='pipeline-editor-v2']").exists()).toBe(false)
+    // Agora a barra de abas está visível para navegação.
+    const tabLabels = wrapper.findAll("button").map((b) => b.text())
+    expect(tabLabels.some((t) => t.includes("Editor"))).toBe(true)
+    expect(tabLabels.some((t) => t.includes("Histórico"))).toBe(true)
   })
 
-  it("EditorHistoryView aparece ao clicar em Histórico", async () => {
+  it("EditorHistoryView aparece ao selecionar a aba Histórico", async () => {
     const wrapper = await mountSuspended(PipelineIdPage, {
       route: "/pipelines/test_pip",
       global: { stubs },
     })
-    const historyTab = wrapper.findAll("button").find((b) => b.text().includes("Histórico"))
-    await historyTab!.trigger("click")
+    ;(wrapper.vm as unknown as { changeTab: (t: string) => void }).changeTab("history")
+    await wrapper.vm.$nextTick()
     expect(wrapper.find("[data-testid='editor-history-view']").exists()).toBe(true)
   })
 })

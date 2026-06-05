@@ -7,12 +7,12 @@ const mockProposal: EditProposal = {
   explanation: "Test explanation",
   draft: {
     operations: [
-      { op: "rename_column", column: "a", new_name: "b" },
+      { op: "rename_column", column: "a", newName: "b" },
     ],
   },
-  files_affected: ["file.py"],
-  risk_score: 4.5,
-  test_plan: ["Check count"],
+  filesAffected: ["file.py"],
+  riskScore: 4.5,
+  testPlan: ["Check count"],
 }
 
 describe("ProposalCard", () => {
@@ -99,7 +99,7 @@ describe("ProposalCard", () => {
       ...mockProposal,
       draft: {
         operations: [
-          { op: "rename_column", column: "a", new_name: "b" },
+          { op: "rename_column", column: "a", newName: "b" },
           { op: "drop_column", column: "x" },
         ],
       },

@@ -26,23 +26,22 @@ const examples = [
 
 <template>
   <div class="zero-state">
-    <!-- Ícone central com glow -->
+    <!-- Ícone central com glow (apenas o spark, sem wordmark) -->
     <div class="zero-state__icon-box">
       <div class="zero-state__glow" aria-hidden="true" />
-      <SafaLogo :size="34" />
+      <SafaLogo variant="icon" :size="34" />
     </div>
 
     <!-- Título principal -->
     <h1 class="zero-state__title">
-      Descreva uma mudança na
-      <em class="zero-state__title-em">camada Silver</em>
+      Descreva uma mudança na&nbsp;<em class="zero-state__title-em">camada Silver</em>
     </h1>
 
     <!-- Descrição -->
     <p class="zero-state__description">
-      Use linguagem natural ou construa visualmente no builder.
-      O agente gera uma proposta com até 11 operações DSL que você pode
-      revisar, ajustar e aplicar ao rascunho antes de abrir um PR.
+      Conte em linguagem natural o que você quer mudar — ou monte direto no
+      <strong class="zero-state__description-strong">builder low-code</strong> ao lado.
+      As 11 operações DSL cobrem desde renomear coluna até mascarar PII.
     </p>
 
     <!-- Cards de exemplo -->
@@ -61,7 +60,7 @@ const examples = [
     <div class="zero-state__info">
       <AppIcon name="information-circle" size="xs" />
       <span>
-        Só camada Silver é editável no momento. Gerencie templates em
+        Só camada Silver é suportada nesta release. Bronze/Gold continuam em
         <AppCode>/deployments</AppCode>
       </span>
     </div>
@@ -70,6 +69,7 @@ const examples = [
 
 <style scoped>
 .zero-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -92,45 +92,60 @@ const examples = [
   border: 1px solid rgba(142, 81, 246, 0.35);
   box-shadow:
     var(--shadow-focus),
-    inset 0 0 18px rgba(142, 81, 246, 0.12);
+    inset 0 0 40px rgba(127, 34, 254, 0.18);
   flex-shrink: 0;
 }
 
 /* Glow radial sobre o ícone */
 .zero-state__glow {
   position: absolute;
-  inset: -24px;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(142, 81, 246, 0.18) 0%, transparent 70%);
+  inset: -10px;
+  border-radius: calc(var(--radius-xl) + 10px);
+  background: radial-gradient(circle at center, rgba(127, 34, 254, 0.25), transparent 60%);
   pointer-events: none;
-  z-index: -1;
 }
 
 /* Título */
 .zero-state__title {
   font-family: var(--font-sans);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--fg-primary);
-  line-height: 1.25;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  /* O texto cabe em ~447px (< 520px), mas o text-wrap:balance com a fonte
+     fallback quebrava o heading em 2 linhas. Mantém em uma linha como no
+     protótipo (que usa Geist real). */
+  max-width: 520px;
+  white-space: nowrap;
   margin: 0;
 }
 
 .zero-state__title-em {
+  font-family: var(--font-display);
   font-style: italic;
-  color: var(--brand-400);
+  font-weight: 400;
   font-size: 28px;
-  font-weight: 700;
+  line-height: 1;
+  color: var(--brand-400);
+  letter-spacing: -0.03em;
+  vertical-align: baseline;
+  white-space: nowrap;
 }
 
 /* Descrição */
 .zero-state__description {
   font-family: var(--font-sans);
   font-size: 13px;
-  color: var(--fg-secondary);
+  color: var(--fg-tertiary);
   line-height: 1.6;
-  max-width: 480px;
+  max-width: 460px;
   margin: 0;
+}
+
+.zero-state__description-strong {
+  font-weight: 600;
+  color: var(--fg-secondary);
 }
 
 /* Grid de exemplos */
@@ -146,7 +161,7 @@ const examples = [
 .zero-state__info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-family: var(--font-sans);
   font-size: 11px;
   color: var(--fg-tertiary);

@@ -49,10 +49,11 @@ function handleModelChange(pId: string, mId: string) {
 </script>
 
 <template>
-  <div
-    class="composer"
-    :class="{ 'composer--listening': isListening }"
-  >
+  <div class="composer-wrap">
+    <div
+      class="composer"
+      :class="{ 'composer--listening': isListening }"
+    >
     <!-- Strip de ditado por voz -->
     <EditorListeningStrip v-if="isListening" @stop="emit('toggleListen')" />
 
@@ -63,7 +64,7 @@ function handleModelChange(pId: string, mId: string) {
       :value="modelValue"
       :disabled="disabled"
       rows="2"
-      placeholder="Descreva a mudança que você quer fazer na camada Silver…"
+      placeholder="Descreva uma mudança na camada Silver — ex: renomeie cliente_id para customer_id e remova ssn"
       @input="handleInput"
       @keydown="handleKeydown"
     />
@@ -76,9 +77,10 @@ function handleModelChange(pId: string, mId: string) {
         variant="ghost"
         size="sm"
         icon="paper-clip"
-        :disabled="true"
-        aria-label="Anexar arquivo"
-      />
+        aria-label="Anexar rascunho"
+      >
+        Anexar rascunho
+      </AppButton>
 
       <!-- Botão de microfone -->
       <button
@@ -116,13 +118,19 @@ function handleModelChange(pId: string, mId: string) {
         aria-label="Enviar mensagem"
         @click="handleSend"
       >
-        <AppIcon name="paper-airplane" size="sm" style="color: white" />
+        <AppIcon name="arrow-up" size="sm" style="color: white" />
       </button>
+    </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.composer-wrap {
+  padding: 10px 18px 14px;
+  flex-shrink: 0;
+}
+
 .composer {
   display: flex;
   flex-direction: column;
@@ -131,11 +139,17 @@ function handleModelChange(pId: string, mId: string) {
   border: 1px solid var(--border);
   background: var(--surface);
   padding: 10px 12px;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.composer:focus-within {
+  border-color: rgba(142, 81, 246, 0.5);
+  box-shadow: var(--shadow-focus);
 }
 
 .composer--listening {
-  border-color: rgba(142, 81, 246, 0.45);
+  border-color: rgba(142, 81, 246, 0.5);
+  box-shadow: var(--shadow-focus);
 }
 
 /* Textarea */
@@ -186,7 +200,7 @@ function handleModelChange(pId: string, mId: string) {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
   color: var(--fg-secondary);
@@ -194,8 +208,8 @@ function handleModelChange(pId: string, mId: string) {
 }
 
 .mic-btn--active {
-  border-color: rgba(142, 81, 246, 0.5);
-  background: rgba(142, 81, 246, 0.08);
+  border-color: rgba(142, 81, 246, 0.4);
+  background: rgba(142, 81, 246, 0.12);
   color: var(--brand-400);
 }
 

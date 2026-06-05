@@ -77,21 +77,21 @@ function mockLines(path: string): { add: number; del: number } {
         <div class="meta-item">
           <span class="meta-label">Risco</span>
           <AppPill
-            :tone="riskTone(proposal?.risk_score)"
+            :tone="riskTone(proposal?.riskScore)"
             size="xs"
             icon="exclamation-triangle"
           >
-            {{ riskLabel(proposal?.risk_score) }}
+            {{ riskLabel(proposal?.riskScore) }}
           </AppPill>
         </div>
       </div>
 
       <!-- Lista de arquivos afetados -->
-      <div v-if="proposal?.files_affected?.length" class="approve-files">
-        <p class="files-label">Arquivos alterados ({{ proposal.files_affected.length }})</p>
+      <div v-if="proposal?.filesAffected?.length" class="approve-files">
+        <p class="files-label">Arquivos alterados ({{ proposal.filesAffected.length }})</p>
         <ul class="files-list">
           <li
-            v-for="path in proposal.files_affected"
+            v-for="path in proposal.filesAffected"
             :key="path"
             class="file-item"
           >

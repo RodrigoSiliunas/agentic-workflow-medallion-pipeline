@@ -13,14 +13,14 @@ describe("EditorTransformBuilder", () => {
     const wrapper = await mountSuspended(EditorTransformBuilder, {
       props: { draft: makeDraft([]) },
     })
-    expect(wrapper.text()).toContain("Nenhuma operação adicionada")
+    expect(wrapper.text()).toContain("Nenhuma operação ainda")
   })
 
   it("does NOT render empty state when there are operations", async () => {
     const wrapper = await mountSuspended(EditorTransformBuilder, {
       props: { draft: makeDraft([{ op: "drop_column", column: "x" }]) },
     })
-    expect(wrapper.text()).not.toContain("Nenhuma operação adicionada")
+    expect(wrapper.text()).not.toContain("Nenhuma operação ainda")
   })
 
   it("renders an EditorOpCard for each operation", async () => {
@@ -28,7 +28,7 @@ describe("EditorTransformBuilder", () => {
       props: {
         draft: makeDraft([
           { op: "drop_column", column: "a" },
-          { op: "rename_column", column: "b", new_name: "c" },
+          { op: "rename_column", column: "b", newName: "c" },
         ]),
       },
     })
@@ -104,7 +104,7 @@ describe("EditorTransformBuilder", () => {
       props: {
         draft: makeDraft([
           { op: "drop_column", column: "a" },
-          { op: "rename_column", column: "b", new_name: "c" },
+          { op: "rename_column", column: "b", newName: "c" },
         ]),
       },
     })
@@ -124,7 +124,7 @@ describe("EditorTransformBuilder", () => {
       props: {
         draft: makeDraft([
           { op: "drop_column", column: "a" },
-          { op: "rename_column", column: "b", new_name: "c" },
+          { op: "rename_column", column: "b", newName: "c" },
         ]),
       },
     })
@@ -155,7 +155,7 @@ describe("EditorTransformBuilder", () => {
       props: {
         draft: makeDraft([
           { op: "drop_column", column: "a" },
-          { op: "rename_column", column: "b", new_name: "c" },
+          { op: "rename_column", column: "b", newName: "c" },
         ]),
       },
     })

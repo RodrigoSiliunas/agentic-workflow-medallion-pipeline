@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { PipelineWorkspace, PipelineEditSession } from "~/types/pipeline-editor-v2"
+import type { PipelineWorkspace, PipelineEditSession, SessionStatusV2 } from "~/types/pipeline-editor-v2"
+import { MOCK_TARGET_TABLE_COLUMNS } from "~/composables/mock/pipeline-editor"
 
 const props = defineProps<{
   workspace: PipelineWorkspace
@@ -35,7 +36,31 @@ useEditorShortcuts({
 // ── Computed helpers ───────────────────────────────────────────────────────
 const activeSession = computed(() => session.activeSession.value)
 
-const pipelineName = computed(() => props.workspace.name)
+// Status do header derivado da jornada atual (state machine), não do status
+// persistido da sessão — assim a pill fica coerente com o stepper (Rascunho=âmbar).
+const headerStatus = computed<SessionStatusV2>(() => {
+  switch (session.stateMachine.value) {
+    case "pr_created":
+      return "pr_created"
+    case "validation_failed":
+    case "error":
+      return "validation_failed"
+    default:
+      return "draft"
+  }
+})
+
+// Sessão exibida no header com status sobreposto pela jornada
+const headerSession = computed(() => ({
+  id: activeSession.value?.id ?? "",
+  status: headerStatus.value,
+}))
+
+// Nome exibido no header — usa o slug do template (ex: pipeline-seguradora-whatsapp),
+// com fallback para o nome amigável do workspace.
+const pipelineName = computed(
+  () => props.workspace.manifest?.templateSlug || props.workspace.name,
+)
 const layer = computed(() => {
   const node = props.workspace.manifest.nodes[0]
   if (!node) return "Silver"
@@ -118,7 +143,7 @@ function jumpTo(state: string) {
           :target-node="targetNode"
           :target-table="targetTable"
           :mode="session.mode.value"
-          :session="activeSession"
+          :session="headerSession"
           @new-session="session.newSession()"
           @share="session.share()"
           @history="() => {}"
@@ -214,6 +239,7 @@ function jumpTo(state: string) {
               :proposal="session.currentProposal.value"
               :operations="session.draft.value?.operations || []"
               :file-diffs="session.fileDiffs.value"
+              :table-columns="MOCK_TARGET_TABLE_COLUMNS"
               @update:inspector-tab="session.inspectorTab.value = $event"
               @update:draft="session.draft.value = $event"
               @mark-builder-active="session.markBuilderActive()"
@@ -261,6 +287,7 @@ function jumpTo(state: string) {
           <EditorTransformBuilder
             :draft="session.draft.value"
             :source-of-truth="session.sourceOfTruth.value"
+            :table-columns="MOCK_TARGET_TABLE_COLUMNS"
             @update:draft="session.draft.value = $event"
             @mark-builder-active="session.markBuilderActive()"
           />
@@ -322,6 +349,7 @@ function jumpTo(state: string) {
           <EditorTransformBuilder
             :draft="session.draft.value"
             :source-of-truth="session.sourceOfTruth.value"
+            :table-columns="MOCK_TARGET_TABLE_COLUMNS"
             @update:draft="session.draft.value = $event"
             @mark-builder-active="session.markBuilderActive()"
           />
@@ -408,7 +436,8 @@ function jumpTo(state: string) {
 }
 
 .chat-pane {
-  flex: 1;
+  /* Proto tri_pane (default): chat flex 1.15 vs inspector flex 1 */
+  flex: 1.15;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -416,12 +445,14 @@ function jumpTo(state: string) {
 }
 
 .chat-dominant {
-  flex: 2;
+  /* Proto chat_dominant: chat flex 1.6 vs inspector flex 1 */
+  flex: 1.6;
 }
 
 .inspector-pane {
-  width: 400px;
-  flex-shrink: 0;
+  /* Proto: inspector é flex 1 (não largura fixa) */
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -429,10 +460,12 @@ function jumpTo(state: string) {
 
 .inspector-conservative {
   width: 320px;
+  flex: 0 0 auto;
 }
 
 .inspector-narrow {
   width: 320px;
+  flex: 0 0 auto;
 }
 
 .wizard-step-content {

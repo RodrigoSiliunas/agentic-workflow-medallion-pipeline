@@ -21,19 +21,25 @@ describe("AppRiskGauge", () => {
   it("uses success color for low risk", async () => {
     const wrapper = await mountSuspended(AppRiskGauge, { props: { value: 2 } })
     expect(wrapper.html()).toContain("var(--status-success)")
-    expect(wrapper.text()).toContain("baixo")
+    expect(wrapper.text()).toContain("Baixo")
   })
 
   it("uses warning color for medium risk", async () => {
     const wrapper = await mountSuspended(AppRiskGauge, { props: { value: 5 } })
     expect(wrapper.html()).toContain("var(--status-warning)")
-    expect(wrapper.text()).toContain("medio")
+    expect(wrapper.text()).toContain("Médio")
   })
 
   it("uses error color for high risk", async () => {
     const wrapper = await mountSuspended(AppRiskGauge, { props: { value: 8 } })
     expect(wrapper.html()).toContain("var(--status-error)")
-    expect(wrapper.text()).toContain("alto")
+    expect(wrapper.text()).toContain("Alto")
+  })
+
+  it("renders the score with one decimal and a / 10 suffix", async () => {
+    const wrapper = await mountSuspended(AppRiskGauge, { props: { value: 2.4 } })
+    expect(wrapper.text()).toContain("2.4")
+    expect(wrapper.text()).toContain("/ 10")
   })
 
   it("sets aria-label with role=img", async () => {

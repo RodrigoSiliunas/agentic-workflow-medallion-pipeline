@@ -10,7 +10,7 @@
       <EditorTabs
         :model-value="inspectorTab"
         :tabs="[
-          { id: 'rascunho', label: 'Rascunho', icon: 'pencil-square' },
+          { id: 'rascunho', label: 'Rascunho', icon: 'pencil-square', count: operations.length },
           { id: 'preview',  label: 'Preview',  icon: 'play' },
           { id: 'pr',       label: 'PR',        icon: 'code-bracket' },
         ]"
@@ -25,6 +25,7 @@
         :draft="draft"
         :source-of-truth="sourceOfTruth"
         :auto-saved-at="null"
+        :table-columns="tableColumns"
         @update:draft="emit('update:draft', $event)"
         @mark-active="emit('markBuilderActive')"
       />
@@ -68,6 +69,7 @@ import type {
   PipelineEditSession,
   EditProposal,
   FileDiff,
+  SchemaColumn,
 } from "~/types/pipeline-editor-v2"
 
 withDefaults(
@@ -82,6 +84,7 @@ withDefaults(
     proposal?: EditProposal | null
     operations?: TransformOperation[]
     fileDiffs?: FileDiff[]
+    tableColumns?: SchemaColumn[]
   }>(),
   {
     inspectorTab: "rascunho",
@@ -94,6 +97,7 @@ withDefaults(
     proposal: null,
     operations: () => [],
     fileDiffs: () => [],
+    tableColumns: () => [],
   },
 )
 

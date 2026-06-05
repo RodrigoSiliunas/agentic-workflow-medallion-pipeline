@@ -1,31 +1,25 @@
 <template>
   <div v-if="workspace" class="flex-1 flex flex-col overflow-hidden">
     <!-- ──────────────────────────────────────────────────────────────────
-         Header da página:
-         - Na aba edit: só back-button + tabs (identidade vem do EditorWorkspaceHeader)
-         - Nas demais abas: header completo com título e sub-título
+         Header da página (back-button + título + tabs):
+         só aparece FORA da aba Editor. Na aba Editor o workspace é full-bleed
+         e o próprio EditorWorkspaceHeader assume o topo (paridade c/ protótipo).
          ────────────────────────────────────────────────────────────────── -->
-    <header class="px-8 py-4 border-b" :style="{ borderColor: 'var(--border)' }">
+    <header v-if="activeTab !== 'edit'" class="px-8 py-4 border-b" :style="{ borderColor: 'var(--border)' }">
       <div class="flex items-center gap-3">
         <AppButton variant="ghost" size="sm" icon="i-heroicons-arrow-left" square to="/deployments" />
 
-        <!-- Header completo visível somente quando NÃO está na aba edit -->
-        <template v-if="activeTab !== 'edit'">
-          <div class="flex-1 min-w-0">
-            <h1 class="text-base font-semibold truncate" :style="{ color: 'var(--text-primary)' }">
-              {{ workspace.name }}
-            </h1>
-            <p class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
-              Workspace tenant-scoped · {{ workspace.manifest.displayName }}
-            </p>
-          </div>
-          <AppButton variant="outline" size="sm" icon="i-heroicons-chat-bubble-left-right" to="/chat">
-            Chat geral
-          </AppButton>
-        </template>
-
-        <!-- Na aba edit: spacer para empurrar tabs ao lugar certo -->
-        <div v-else class="flex-1" />
+        <div class="flex-1 min-w-0">
+          <h1 class="text-base font-semibold truncate" :style="{ color: 'var(--text-primary)' }">
+            {{ workspace.name }}
+          </h1>
+          <p class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
+            Workspace tenant-scoped · {{ workspace.manifest.displayName }}
+          </p>
+        </div>
+        <AppButton variant="outline" size="sm" icon="i-heroicons-chat-bubble-left-right" to="/chat">
+          Chat geral
+        </AppButton>
       </div>
 
       <nav class="flex gap-2 mt-4">
@@ -35,7 +29,7 @@
           class="px-3 py-1.5 rounded-md text-xs"
           :class="{ 'font-semibold': activeTab === tab.id }"
           :style="tabStyle(tab.id)"
-          @click="activeTab = tab.id"
+          @click="changeTab(tab.id)"
         >
           {{ tab.label }}
         </button>
@@ -43,7 +37,8 @@
     </header>
 
     <!-- ──────────────────────────────────────────────────────────────────
-         Aba Editor (V2) — altura cheia, fora do <main> padded
+         Aba Editor (V2) — full-bleed, ocupa todo o viewport (sidebar global
+         é ocultada via `editorFullBleed`). EditorWorkspaceHeader é o topo.
          ────────────────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'edit'" class="flex-1 min-h-0 overflow-hidden">
       <PipelineEditorV2
@@ -113,6 +108,22 @@ const pipelineId = computed(() => String(route.params.id))
 
 // Editor é a aba padrão ao abrir o pipeline (V2)
 const activeTab = ref("edit")
+
+function changeTab(id: string) {
+  activeTab.value = id
+}
+
+// Exposto para navegação programática (testes / controles externos).
+defineExpose({ changeTab })
+
+// Full-bleed: na aba Editor a sidebar global é ocultada (paridade c/ protótipo).
+const editorFullBleed = useState("editorFullBleed", () => false)
+watchEffect(() => {
+  editorFullBleed.value = activeTab.value === "edit"
+})
+onBeforeUnmount(() => {
+  editorFullBleed.value = false
+})
 
 const tabs = [
   { id: "edit", label: "Editor" },

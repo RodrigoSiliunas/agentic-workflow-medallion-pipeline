@@ -23,17 +23,17 @@
         :style="{ color: opMeta.color, flexShrink: 0 }"
       />
 
-      <!-- Dropdown de tipo (botão estilizado) -->
+      <!-- Dropdown de tipo (botão borderless, fiel ao protótipo) -->
       <div class="relative flex-1 min-w-0">
         <button
           ref="typeBtnRef"
           type="button"
-          class="flex h-[24px] items-center gap-[5px] rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-[8px] font-sans text-[11px] font-semibold transition-colors duration-100 hover:bg-[var(--surface-elevated)] focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus)]"
+          class="inline-flex h-[22px] w-full items-center gap-[6px] border-none bg-transparent px-[4px] py-[2px] text-left font-sans text-[12px] font-semibold tracking-[-0.01em] outline-none focus-visible:shadow-[var(--shadow-focus)]"
           :style="{ color: 'var(--fg-primary)', cursor: 'pointer' }"
           @click="toggleTypeDropdown"
         >
-          {{ currentOpType?.label ?? op.op }}
-          <AppIcon name="chevron-down" size="xs" :style="{ color: 'var(--fg-tertiary)' }" />
+          <span class="flex-1 truncate text-left">{{ currentOpType?.label ?? op.op }}</span>
+          <AppIcon name="chevron-down" size="xs" :style="{ color: 'var(--fg-tertiary)', flexShrink: 0 }" />
         </button>
 
         <!-- Dropdown de tipos de operação (posicionado inline) -->
@@ -112,7 +112,7 @@
           class="text-[10px] font-semibold uppercase tracking-[0.06em]"
           :style="{ color: 'var(--fg-tertiary)' }"
         >
-          {{ fieldLabel(field.key) }}
+          {{ field.label }}
         </span>
 
         <!-- ColumnPicker para colunas existentes -->
@@ -206,14 +206,14 @@ function selectOpType(newType: string) {
   emit("change", {
     op: newType,
     column: undefined,
-    new_name: undefined,
-    data_type: undefined,
+    newName: undefined,
+    dataType: undefined,
     expression: undefined,
     pattern: undefined,
     replacement: undefined,
-    source_columns: undefined,
+    sourceColumns: undefined,
     format: undefined,
-    json_path: undefined,
+    jsonPath: undefined,
   })
   typeDropdownOpen.value = false
 }
@@ -225,58 +225,60 @@ const currentOpType = computed(() => OP_TYPES.find((t) => t.id === props.op.op))
 // Configuração de campos por tipo de operação
 interface FieldConfig {
   key: string
+  label: string
   kind?: "existing_column" | "new_column" | "multi_columns" | "data_type" | "text"
   placeholder?: string
   mono?: boolean
 }
 
+// Port fiel do protótipo 1f99d7a8 — labels e placeholders por tipo de operação
 function fieldsFor(type: string): FieldConfig[] {
   switch (type) {
     case "drop_column":
-      return [{ key: "column", kind: "existing_column" }]
+      return [{ key: "column", label: "Coluna", kind: "existing_column" }]
     case "rename_column":
       return [
-        { key: "column", kind: "existing_column" },
-        { key: "new_name", kind: "text", placeholder: "ex: customer_id" },
+        { key: "column", label: "De", kind: "existing_column" },
+        { key: "newName", label: "Para", kind: "text", placeholder: "ex: customer_id" },
       ]
     case "cast_column":
       return [
-        { key: "column", kind: "existing_column" },
-        { key: "data_type", kind: "data_type" },
+        { key: "column", label: "Coluna", kind: "existing_column" },
+        { key: "dataType", label: "Tipo", kind: "data_type" },
       ]
     case "trim":
-      return [{ key: "column", kind: "existing_column" }]
+      return [{ key: "column", label: "Coluna", kind: "existing_column" }]
     case "regex_replace":
       return [
-        { key: "column" },
-        { key: "pattern", kind: "text", mono: true },
-        { key: "replacement", kind: "text" },
+        { key: "column", label: "Coluna", kind: "existing_column" },
+        { key: "pattern", label: "Pattern", kind: "text", placeholder: "ex: [^0-9]", mono: true },
+        { key: "replacement", label: "Substituir", kind: "text", placeholder: 'ex: ""' },
       ]
     case "coalesce":
       return [
-        { key: "column", kind: "new_column" },
-        { key: "source_columns", kind: "multi_columns" },
+        { key: "column", label: "Coluna alvo", kind: "new_column", placeholder: "ex: email" },
+        { key: "sourceColumns", label: "Fontes", kind: "multi_columns" },
       ]
     case "derive_column":
       return [
-        { key: "column", kind: "text" },
-        { key: "expression", kind: "text", mono: true },
+        { key: "column", label: "Nova coluna", kind: "text", placeholder: "ex: full_name" },
+        { key: "expression", label: "Expressão", kind: "text", placeholder: "ex: concat(first, ' ', last)", mono: true },
       ]
     case "filter_rows":
-      return [{ key: "expression", kind: "text", mono: true }]
+      return [{ key: "expression", label: "Expressão", kind: "text", placeholder: "ex: status != 'cancelled'", mono: true }]
     case "date_format":
       return [
-        { key: "column" },
-        { key: "format", kind: "text", mono: true },
+        { key: "column", label: "Coluna", kind: "existing_column" },
+        { key: "format", label: "Formato", kind: "text", placeholder: "ex: yyyy-MM-dd", mono: true },
       ]
     case "json_extract":
       return [
-        { key: "column" },
-        { key: "json_path", kind: "text", mono: true },
-        { key: "new_name", kind: "text" },
+        { key: "column", label: "Coluna", kind: "existing_column" },
+        { key: "jsonPath", label: "JSONPath", kind: "text", placeholder: "ex: $.user.id", mono: true },
+        { key: "newName", label: "Salvar como", kind: "text", placeholder: "ex: user_id" },
       ]
     case "mask_pii":
-      return [{ key: "column", kind: "existing_column" }]
+      return [{ key: "column", label: "Coluna", kind: "existing_column" }]
     default:
       return []
   }
@@ -291,22 +293,6 @@ function getFieldString(key: string): string | undefined {
 
 function getFieldStringArray(key: string): string[] {
   return ((props.op as Record<string, unknown>)[key] as string[] | undefined) ?? []
-}
-
-// Gera label legível para o campo
-function fieldLabel(key: string): string {
-  const labels: Record<string, string> = {
-    column: "Coluna",
-    new_name: "Novo nome",
-    data_type: "Tipo",
-    expression: "Expressão",
-    pattern: "Padrão (regex)",
-    replacement: "Substituição",
-    source_columns: "Colunas de origem",
-    format: "Formato",
-    json_path: "JSON path",
-  }
-  return labels[key] ?? key
 }
 </script>
 
