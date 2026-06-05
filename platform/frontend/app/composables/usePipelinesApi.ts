@@ -13,6 +13,14 @@ import type {
   TransformDraft,
 } from "~/types/pipeline-editor"
 import { MOCK_PIPELINES } from "~/composables/mock/pipelines"
+import {
+  MOCK_WORKSPACE,
+  MOCK_SESSIONS,
+  MOCK_PROPOSAL_J1_RESPONSE,
+  MOCK_PREVIEW_OK_RAW,
+  MOCK_VALIDATION_OK,
+  MOCK_FILE_DIFFS,
+} from "~/composables/mock/pipeline-editor"
 
 interface PipelineApiDTO {
   id: string
@@ -159,6 +167,8 @@ function toMessageResponse(dto: Record<string, unknown>): EditorMessageResponse 
   }
 }
 
+let _mockSessionCounter = 0
+
 export function usePipelinesApi() {
   const api = useApiClient()
   const isMock = Boolean(useRuntimeConfig().public.mockMode)
@@ -170,6 +180,10 @@ export function usePipelinesApi() {
   }
 
   async function getWorkspace(id: string): Promise<PipelineWorkspace> {
+    if (isMock) {
+      if (id === MOCK_WORKSPACE.id) return structuredClone(MOCK_WORKSPACE)
+      return { ...structuredClone(MOCK_WORKSPACE), id }
+    }
     const data = await api.get<Record<string, unknown>>(`/pipelines/${id}`)
     return toWorkspace(data)
   }
@@ -179,13 +193,34 @@ export function usePipelinesApi() {
   }
 
   async function listEditSessions(pipelineId: string): Promise<PipelineEditSession[]> {
+    if (isMock) {
+      return structuredClone(MOCK_SESSIONS.filter(
+        (s) => s.pipelineId === pipelineId || pipelineId !== MOCK_WORKSPACE.id,
+      ))
+    }
     const data = await api.get<Record<string, unknown>[]>(
       `/pipelines/${pipelineId}/edit-sessions`,
     )
     return data.map(toSession)
   }
 
-  async function createEditSession(pipelineId: string, title?: string) {
+  async function createEditSession(pipelineId: string, title?: string): Promise<PipelineEditSession> {
+    if (isMock) {
+      _mockSessionCounter++
+      const id = `ses_mock${_mockSessionCounter.toString().padStart(4, "0")}`
+      return {
+        id,
+        pipelineId,
+        title: title || "Nova edição",
+        status: "draft",
+        targetLayers: ["bronze", "silver", "gold"],
+        baseRef: "dev",
+        draftBranch: `pipeline-editor/${id}`,
+        currentVersionId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    }
     const data = await api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions`,
       { title, target_layers: ["bronze", "silver", "gold"], base_ref: "dev" },
@@ -193,7 +228,21 @@ export function usePipelinesApi() {
     return toSession(data)
   }
 
-  async function sendEditMessage(pipelineId: string, sessionId: string, message: string, draft?: TransformDraft) {
+  async function sendEditMessage(
+    pipelineId: string,
+    sessionId: string,
+    message: string,
+    draft?: TransformDraft,
+  ): Promise<EditorMessageResponse> {
+    if (isMock) {
+      // Simula latência do LLM
+      await new Promise((r) => setTimeout(r, 1200))
+      return {
+        ...structuredClone(MOCK_PROPOSAL_J1_RESPONSE),
+        sessionId,
+        message: MOCK_PROPOSAL_J1_RESPONSE.message,
+      }
+    }
     const data = await api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/messages`,
       { message, draft: draft ? toApiDraft(draft) : undefined },
@@ -201,7 +250,20 @@ export function usePipelinesApi() {
     return toMessageResponse(data)
   }
 
-  async function updateDraft(pipelineId: string, sessionId: string, draft: TransformDraft) {
+  async function updateDraft(
+    pipelineId: string,
+    sessionId: string,
+    draft: TransformDraft,
+  ): Promise<PipelineEditVersion> {
+    if (isMock) {
+      return {
+        id: "ver_mock",
+        sessionId,
+        versionNumber: 1,
+        draft: structuredClone(draft),
+        createdAt: new Date().toISOString(),
+      }
+    }
     const data = await api.put<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/draft`,
       { draft: toApiDraft(draft) },
@@ -209,7 +271,15 @@ export function usePipelinesApi() {
     return toVersion(data)
   }
 
-  async function getPreview(pipelineId: string, sessionId: string, sampleRows = 50) {
+  async function getPreview(
+    pipelineId: string,
+    sessionId: string,
+    sampleRows = 50,
+  ): Promise<Record<string, unknown>> {
+    if (isMock) {
+      await new Promise((r) => setTimeout(r, 1800))
+      return structuredClone(MOCK_PREVIEW_OK_RAW)
+    }
     return api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/preview`,
       { sample_rows: sampleRows },
@@ -229,12 +299,35 @@ export function usePipelinesApi() {
   }
 
   async function getPromptMarkdown(pipelineId: string, sessionId: string) {
+    if (isMock) {
+      return {
+        filename: `pipeline-editor-prompt-${sessionId}.md`,
+        content: `# Pipeline Editor Prompt\n\nSessão: ${sessionId}\nPipeline: ${pipelineId}\n\n## Contexto\nPrompt gerado pelo editor V2.`,
+      }
+    }
     return api.get<{ filename: string; content: string }>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/prompt.md`,
     )
   }
 
-  async function approveEdit(pipelineId: string, sessionId: string) {
+  async function approveEdit(pipelineId: string, sessionId: string): Promise<ApproveEditResponse> {
+    if (isMock) {
+      await new Promise((r) => setTimeout(r, 800))
+      return {
+        status: "pr_created",
+        validation: {
+          ...structuredClone(MOCK_VALIDATION_OK),
+        } as unknown as Record<string, unknown>,
+        pr: {
+          number: 429,
+          url: `https://github.com/RodrigoSiliunas/agentic-workflow-medallion-pipeline/pull/429`,
+          branch: `pipeline-editor/${sessionId}`,
+          base: "dev",
+          title: "feat(pipeline-editor): auto-fix via Pipeline Editor V2",
+        },
+        diff: structuredClone(MOCK_FILE_DIFFS),
+      }
+    }
     const data = await api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/approve`,
       { create_pr: true },
@@ -253,17 +346,42 @@ export function usePipelinesApi() {
   }
 
   async function getSharedPipelineEdit(token: string) {
+    if (isMock) {
+      return {
+        token,
+        workspace: structuredClone(MOCK_WORKSPACE),
+        session: structuredClone(MOCK_SESSIONS[0]),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }
+    }
     return api.get<Record<string, unknown>>(`/shared/pipeline-edit/${token}`)
   }
 
-  async function revertEdit(pipelineId: string, sessionId: string, versionId?: string) {
+  async function revertEdit(
+    pipelineId: string,
+    sessionId: string,
+    mode: "draft" | "revert_pr" | "close_pr" = "draft",
+    versionId?: string,
+  ) {
+    if (isMock) {
+      await new Promise((r) => setTimeout(r, 400))
+      return { status: "reverted", mode, sessionId }
+    }
     return api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/revert`,
-      { mode: "draft", version_id: versionId },
+      { mode, version_id: versionId },
     )
   }
 
   async function shareArtifact(pipelineId: string, sessionId: string) {
+    if (isMock) {
+      const token = `mock_share_${sessionId}_${Date.now().toString(36)}`
+      return {
+        token,
+        url: `/share/pipeline-edit/${token}`,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }
+    }
     return api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/share`,
       { role: "viewer" },

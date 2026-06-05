@@ -92,6 +92,12 @@ export const usePipelinesStore = defineStore("pipelines", () => {
     return preview.value
   }
 
+  function setActiveEditSession(id: string) {
+    if (editSessions.value.some((s) => s.id === id)) {
+      activeEditSessionId.value = id
+    }
+  }
+
   return {
     pipelines,
     activePipelineId,
@@ -109,5 +115,6 @@ export const usePipelinesStore = defineStore("pipelines", () => {
     ensureEditSession,
     saveDraft,
     runPreview,
+    setActiveEditSession,
   }
 })
