@@ -131,6 +131,13 @@
             input-type="password"
             placeholder="ghp_..."
           />
+          <WizardCredentialField
+            v-model="config.credentials.github_repo"
+            label="GitHub Repo (owner/repo)"
+            :company-configured="isCompanyConfigured('github_repo')"
+            placeholder="owner/repo"
+            helper="Repositório onde o Observer Agent abrirá PRs automáticos. Ex.: RodrigoSiliunas/agentic-workflow-medallion-pipeline"
+          />
         </div>
 
         <!-- Step 3: Configuration -->
@@ -445,6 +452,7 @@ const config = reactive<DeploymentConfig>({
     databricks_host: "",
     databricks_token: "",
     github_token: "",
+    github_repo: "",
   },
   envVars: {},
   workspaceMode: "new",

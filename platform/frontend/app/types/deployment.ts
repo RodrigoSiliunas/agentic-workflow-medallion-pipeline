@@ -68,6 +68,7 @@ export interface DeploymentCredentialsMap {
   databricks_host: string
   databricks_token: string
   github_token: string
+  github_repo: string
   [key: string]: string
 }
 
