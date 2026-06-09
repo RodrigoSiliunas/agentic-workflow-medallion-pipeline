@@ -84,6 +84,17 @@ except Exception as e:
 
 # DBTITLE 1,Silver Checks
 # Verifica messages_clean: contagem, dedup, e PII residual
+#
+# NOTA sobre threshold Silver/Bronze:
+# O Bronze acumula dados ao longo de varias runs (append/overwrite cumulativo),
+# enquanto o Silver eh reconstruido a partir do snapshot atual de mensagens unicas
+# apos dedup agressivo (sent+delivered colapsam). Por isso, a razao Silver/Bronze
+# tende a cair naturalmente conforme o pipeline executa mais vezes — isso NAO
+# indica perda de dados.
+#
+# Mantemos um threshold critico bem baixo (1%) apenas para capturar colapsos
+# catastroficos do Silver, e validamos saude absoluta (>1000 linhas) como sinal
+# primario de que o Silver esta operacional.
 try:
     messages = spark.table(f"{CATALOG}.silver.messages_clean")
     messages_count = delta_row_count(spark, f"{CATALOG}.silver.messages_clean")
@@ -95,18 +106,27 @@ try:
             "Dedup nao removeu linhas?"
         )
 
-    # Verifica que dedup nao removeu linhas demais.
-    # O bronze acumula runs (overwrite), e o dedup remove duplicados sent+delivered,
-    # entao a reducao pode ser significativa (~50-85% eh normal).
-    # Alerta se Silver tem MENOS de 5% do Bronze (algo drastico aconteceu).
-    if bronze_count > 0 and messages_count < bronze_count * 0.05:
+    # Sanity check absoluto: Silver precisa ter um volume minimo de dados.
+    # Isso eh mais confiavel que razao Silver/Bronze, ja que o Bronze cresce a
+    # cada run mas o Silver representa o snapshot atual deduplicado.
+    MIN_SILVER_ROWS = 1000
+    if messages_count < MIN_SILVER_ROWS:
         errors.append(
-            f"Silver perdeu mais de 95% das linhas: {messages_count}/{bronze_count}"
+            f"Silver messages_clean com volume criticamente baixo: "
+            f"{messages_count} linhas (minimo esperado: {MIN_SILVER_ROWS})"
         )
-    elif bronze_count > 0 and messages_count < bronze_count * 0.10:
+
+    # Threshold critico: apenas se Silver colapsou para <1% do Bronze.
+    # Como Bronze acumula runs, razoes baixas sao esperadas e nao indicam bug.
+    if bronze_count > 0 and messages_count < bronze_count * 0.01:
+        errors.append(
+            f"Silver com menos de 1% do Bronze: {messages_count}/{bronze_count} "
+            "(possivel colapso do pipeline Silver)"
+        )
+    elif bronze_count > 0 and messages_count < bronze_count * 0.03:
         warnings.append(
-            f"Silver com menos de 10% do Bronze: {messages_count}/{bronze_count} "
-            "(pode ser normal se dedup removeu muitos duplicados)"
+            f"Silver com menos de 3% do Bronze: {messages_count}/{bronze_count} "
+            "(esperado se Bronze acumulou muitas runs ou dedup foi agressivo)"
         )
 
     # Verifica que message_body nao contem PII em texto claro (CPF)

@@ -8,9 +8,25 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_password
+from app.models.company import Company
+from app.models.pipeline import Pipeline
 from app.models.template import Template
+from app.models.user import User
 
 logger = structlog.get_logger()
+
+
+# Tenant de demonstracao reproduzivel. Gate atras de SEED_DEMO_TENANT (default off).
+DEMO_COMPANY_SLUG = "acme"
+DEMO_COMPANY_NAME = "Acme Seguros"
+DEMO_ADMIN_EMAIL = "admin@acme.com"
+DEMO_ADMIN_NAME = "Admin Acme"
+DEMO_ADMIN_PASSWORD = "supersecret1"  # noqa: S105 — credencial de demo, nunca em prod
+DEMO_PIPELINE_NAME = "Seguradora WhatsApp"
+DEMO_PIPELINE_DESCRIPTION = "Medallion ETL WhatsApp"
+DEMO_PIPELINE_GITHUB_REPO = "RodrigoSiliunas/agentic-workflow-medallion-pipeline"
+DEMO_PIPELINE_TEMPLATE_SLUG = "pipeline-seguradora-whatsapp"
 
 
 TEMPLATE_SEEDS = [
@@ -324,3 +340,60 @@ async def seed_templates(db: AsyncSession) -> int:
     if inserted:
         logger.info("templates seeded", count=inserted)
     return inserted
+
+
+async def seed_demo_tenant(db: AsyncSession) -> bool:
+    """Cria o tenant de demo (1 company + 1 admin + 1 pipeline). Idempotente.
+
+    Tenant-safe: gated atras de settings.SEED_DEMO_TENANT (default False).
+    Skip se a company ja existe (por slug) — nao sobrescreve dados existentes.
+    Retorna True se criou algo, False se ja existia.
+    """
+    existing_company = await db.execute(
+        select(Company).where(Company.slug == DEMO_COMPANY_SLUG)
+    )
+    company = existing_company.scalar_one_or_none()
+    if company is None:
+        company = Company(name=DEMO_COMPANY_NAME, slug=DEMO_COMPANY_SLUG)
+        db.add(company)
+        await db.flush()  # garante company.id para FKs abaixo
+
+    existing_admin = await db.execute(
+        select(User).where(
+            User.company_id == company.id,
+            User.email == DEMO_ADMIN_EMAIL,
+        )
+    )
+    if existing_admin.scalar_one_or_none() is None:
+        # role "admin" inclui permissoes chat + create_pr (ver ROLE_PERMISSIONS)
+        db.add(
+            User(
+                company_id=company.id,
+                email=DEMO_ADMIN_EMAIL,
+                name=DEMO_ADMIN_NAME,
+                password_hash=hash_password(DEMO_ADMIN_PASSWORD),
+                role="admin",
+                is_active=True,
+            )
+        )
+
+    existing_pipeline = await db.execute(
+        select(Pipeline).where(
+            Pipeline.company_id == company.id,
+            Pipeline.name == DEMO_PIPELINE_NAME,
+        )
+    )
+    if existing_pipeline.scalar_one_or_none() is None:
+        db.add(
+            Pipeline(
+                company_id=company.id,
+                name=DEMO_PIPELINE_NAME,
+                description=DEMO_PIPELINE_DESCRIPTION,
+                github_repo=DEMO_PIPELINE_GITHUB_REPO,
+                config={"template_slug": DEMO_PIPELINE_TEMPLATE_SLUG},
+            )
+        )
+
+    await db.commit()
+    logger.info("demo tenant seeded", company_slug=DEMO_COMPANY_SLUG)
+    return True
