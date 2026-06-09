@@ -88,4 +88,8 @@ class ApproveRequest(BaseModel):
 
 class RevertRequest(BaseModel):
     version_id: uuid.UUID | None = None
-    mode: str = Field(default="draft", pattern="^(draft|close_pr|revert_pr)$")
+    mode: str = Field(default="draft", pattern="^(draft|close_pr|revert_pr|restore_table)$")
+    # Campos para mode=restore_table
+    table: str | None = None
+    delta_version: int | None = None
+    revert_notebook_pr: bool = False

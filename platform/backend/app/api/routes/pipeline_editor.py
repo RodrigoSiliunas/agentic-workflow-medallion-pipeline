@@ -718,6 +718,91 @@ async def revert_edit_session(
             "pr": pr_result,
         }
 
+    if data.mode == "restore_table":
+        version = await _current_version(db, auth, session)
+        table = data.table or (version.draft or {}).get("target_table")
+        if not table:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="table obrigatorio para mode=restore_table",
+            )
+
+        databricks = DatabricksService(db, auth.company_id)
+        restore_result: dict | None = None
+        revert_pr_result: dict | None = None
+
+        try:
+            delta_version = data.delta_version
+            if delta_version is None:
+                history = await databricks.get_table_history(table, limit=2)
+                if len(history) >= 2:
+                    raw_version = history[1].get("version")
+                    delta_version = int(raw_version) if raw_version is not None else None
+
+            if delta_version is not None:
+                restore_result = await databricks.restore_table(table, version=delta_version)
+            else:
+                restore_result = {"status": "skipped", "reason": "sem versao anterior no historico"}
+        except Exception as exc:
+            logger.warning(
+                "pipeline_editor_restore_table_failed",
+                pipeline_id=str(pipeline_id),
+                session_id=str(session_id),
+                table=table,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Falha ao restaurar tabela {table}: {exc}",
+            ) from exc
+
+        if data.revert_notebook_pr:
+            pr_metadata = version.pr_metadata or {}
+            pr_number = pr_metadata.get("pr_number")
+            if pr_number:
+                github = GitHubService(db, auth.company_id)
+                try:
+                    revert_pr_result = await github.revert_merged_pr(int(pr_number))
+                except Exception as exc:
+                    logger.warning(
+                        "pipeline_editor_revert_notebook_pr_failed",
+                        pipeline_id=str(pipeline_id),
+                        pr_number=pr_number,
+                        error=str(exc),
+                    )
+                    revert_pr_result = {"status": "failed", "error": str(exc)}
+
+        if data.version_id:
+            session.current_version_id = data.version_id
+        session.status = "draft"
+        db.add(
+            AuditLog(
+                company_id=auth.company_id,
+                user_id=auth.user_id,
+                action="pipeline_editor_table_restored",
+                details=str(
+                    {
+                        "pipeline_id": str(pipeline_id),
+                        "session_id": str(session_id),
+                        "table": table,
+                        "delta_version": delta_version,
+                    }
+                ),
+                channel="web",
+            )
+        )
+        await db.flush()
+        return {
+            "status": "table_restored",
+            "table": table,
+            "delta_version": delta_version,
+            "restore": restore_result,
+            "revert_pr": revert_pr_result,
+            "current_version_id": (
+                str(session.current_version_id) if session.current_version_id else None
+            ),
+        }
+
     session.status = f"{data.mode}_requested"
     await db.flush()
     return {"status": session.status}
