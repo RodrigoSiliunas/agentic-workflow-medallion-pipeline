@@ -97,6 +97,49 @@ def preview_rows_for_export(preview_result: dict | None) -> list[dict]:
     return rows
 
 
+def _columns_from_rows(rows: list[dict] | None) -> list[str]:
+    """Extrai nomes de coluna preservando ordem a partir da 1a linha do preview."""
+    if not rows:
+        return []
+    first = rows[0]
+    if not isinstance(first, dict):
+        return []
+    return list(first.keys())
+
+
+def build_schema_before(rows_before: list[dict] | None) -> list[dict]:
+    """Schema real da tabela alvo, derivado das colunas das linhas amostradas."""
+    return [{"name": name, "type": "string"} for name in _columns_from_rows(rows_before)]
+
+
+def build_schema_after(schema_before: list[dict], schema_delta: dict) -> list[dict]:
+    """Aplica o schema_delta ao schema_before: dropa removidas, renomeia, adiciona derivadas."""
+    dropped = set(schema_delta.get("dropped") or [])
+    renamed = {
+        item["from"]: item["to"]
+        for item in (schema_delta.get("renamed") or [])
+        if isinstance(item, dict) and item.get("from") and item.get("to")
+    }
+    after: list[dict] = []
+    for col in schema_before:
+        name = col["name"]
+        if name in dropped:
+            continue
+        if name in renamed:
+            after.append(
+                {"name": renamed[name], "type": col["type"], "state": "renamed", "from": name}
+            )
+        else:
+            after.append({"name": name, "type": col["type"]})
+    existing = {col["name"] for col in after}
+    for derived in schema_delta.get("derived") or []:
+        derived_name = derived if isinstance(derived, str) else derived.get("name")
+        if derived_name and derived_name not in existing:
+            after.append({"name": derived_name, "type": "string", "state": "derived"})
+            existing.add(derived_name)
+    return after
+
+
 def build_preview_result(
     *,
     company_id: uuid.UUID,
@@ -116,6 +159,9 @@ def build_preview_result(
         pipeline_id=str(pipeline_id),
         session_id=str(session_id),
     )
+    schema_delta = build_schema_delta(draft.operations)
+    schema_before = build_schema_before(rows_before)
+    schema_after = build_schema_after(schema_before, schema_delta)
     result = {
         "status": status,
         "company_id": str(company_id),
@@ -125,7 +171,9 @@ def build_preview_result(
         "sample_rows": sample_rows,
         "target_table": draft.target_table,
         "operations": [op.model_dump(exclude_none=True) for op in draft.operations],
-        "schema_delta": build_schema_delta(draft.operations),
+        "schema_delta": schema_delta,
+        "schema_before": schema_before,
+        "schema_after": schema_after,
         "rows_before": rows_before or [],
         "rows_after": rows_after or [],
     }

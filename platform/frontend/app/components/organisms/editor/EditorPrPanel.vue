@@ -179,12 +179,26 @@ const defaultChecks = [
       <!-- Estado: PR já criado -->
       <template v-if="session.status === 'pr_created'">
         <AppButton
+          v-if="session.prUrl"
+          :to="session.prUrl"
+          target="_blank"
+          rel="noopener noreferrer"
           variant="outline"
           color="neutral"
           icon="arrow-top-right-on-square"
           :block="true"
         >
           Ver PR #{{ session.prNumber }} no GitHub
+        </AppButton>
+        <AppButton
+          v-else
+          variant="outline"
+          color="neutral"
+          icon="arrow-top-right-on-square"
+          :block="true"
+          disabled
+        >
+          PR aberto (URL indisponível)
         </AppButton>
 
         <AppButton

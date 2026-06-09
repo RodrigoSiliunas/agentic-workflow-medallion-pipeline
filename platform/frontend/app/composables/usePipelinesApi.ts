@@ -151,6 +151,21 @@ function toVersion(dto: Record<string, unknown>): PipelineEditVersion {
   }
 }
 
+// Backend serializa o PR como {pr_number, pr_url, branch}; o frontend usa {number, url, branch}.
+function mapPrMetadata(
+  pr: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!pr) return undefined
+  const number = pr.pr_number ?? pr.number
+  const url = pr.pr_url ?? pr.url
+  return {
+    ...pr,
+    ...(number != null ? { number } : {}),
+    ...(url != null ? { url } : {}),
+    ...(pr.branch != null ? { branch: pr.branch } : {}),
+  }
+}
+
 function toMessageResponse(dto: Record<string, unknown>): EditorMessageResponse {
   const proposal = dto.proposal as Record<string, unknown>
   return {
@@ -335,7 +350,7 @@ export function usePipelinesApi() {
     return {
       status: String(data.status),
       validation: data.validation as Record<string, unknown> | undefined,
-      pr: data.pr as Record<string, unknown> | undefined,
+      pr: mapPrMetadata(data.pr as Record<string, unknown> | undefined),
       diff: ((data.diff as Record<string, unknown>[] | undefined) || []).map((file) => ({
         path: String(file.path),
         additions: Number(file.additions || 0),
@@ -347,11 +362,35 @@ export function usePipelinesApi() {
 
   async function getSharedPipelineEdit(token: string) {
     if (isMock) {
+      // Espelha a forma do backend real: {role, pipeline, session, manifest,
+      // draft, preview, prompt_markdown, read_only}. O manifest usa snake_case
+      // porque a pagina shared faz snake->camel via toManifest().
+      const ws = MOCK_WORKSPACE
+      const session = MOCK_SESSIONS[0]
       return {
-        token,
-        workspace: structuredClone(MOCK_WORKSPACE),
-        session: structuredClone(MOCK_SESSIONS[0]),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        role: "viewer",
+        read_only: true,
+        pipeline: { id: ws.id, name: ws.name, description: ws.description },
+        session: session
+          ? { id: session.id, title: session.title, status: session.status }
+          : null,
+        manifest: {
+          template_slug: ws.manifest.templateSlug,
+          display_name: ws.manifest.displayName,
+          nodes: ws.manifest.nodes.map((node) => ({
+            id: node.id,
+            layer: node.layer,
+            task_key: node.taskKey,
+            file_path: node.filePath,
+            input_tables: node.inputTables,
+            output_tables: node.outputTables,
+            supported_operations: node.supportedOperations,
+            insertion_marker: node.insertionMarker,
+          })),
+        },
+        draft: null,
+        preview: null,
+        prompt_markdown: `# Pipeline Editor Prompt\n\nToken: ${token}\nPipeline: ${ws.name}`,
       }
     }
     return api.get<Record<string, unknown>>(`/shared/pipeline-edit/${token}`)
@@ -382,10 +421,16 @@ export function usePipelinesApi() {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       }
     }
-    return api.post<Record<string, unknown>>(
+    const data = await api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/share`,
       { role: "viewer" },
     )
+    // Backend serializa `share_token`; o frontend usa `token`.
+    return {
+      ...data,
+      token: data.share_token ?? data.token,
+      url: data.url,
+    }
   }
 
   return {

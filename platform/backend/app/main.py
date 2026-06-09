@@ -27,7 +27,7 @@ from app.api.routes import (
 )
 from app.core.config import settings as app_settings
 from app.core.exceptions import AppError
-from app.database.seed import seed_templates
+from app.database.seed import seed_demo_tenant, seed_templates
 from app.database.session import AsyncSessionLocal
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import (
@@ -56,6 +56,14 @@ async def lifespan(app: FastAPI):
                 await seed_templates(db)
         except Exception as e:
             logger.warning("template seed skipped", error=str(e))
+
+    # Seed tenant de demo (idempotente, tenant-safe — default off)
+    if app_settings.SEED_DEMO_TENANT:
+        try:
+            async with AsyncSessionLocal() as db:
+                await seed_demo_tenant(db)
+        except Exception as e:
+            logger.warning("demo tenant seed skipped", error=str(e))
 
     # Check Omni health e iniciar poller
     omni = OmniService()

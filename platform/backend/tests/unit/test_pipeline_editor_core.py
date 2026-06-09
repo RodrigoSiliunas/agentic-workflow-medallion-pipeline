@@ -131,6 +131,7 @@ def test_preview_and_export_are_scoped_to_tenant_pipeline_and_session():
         session_id=session_id,
         draft=draft,
         sample_rows=25,
+        rows_before=[{"meta_city": "SP", "agent_notes": "x"}],
         rows_after=[{"meta_city": "SP", "agent_notes": "x"}],
         status="ready",
     )
@@ -149,6 +150,76 @@ def test_preview_and_export_are_scoped_to_tenant_pipeline_and_session():
     assert export["format"] == "parquet"
     assert str(pipeline_id) in export["download_url"]
     assert str(session_id) in export["download_url"]
+
+
+def test_build_preview_result_derives_schema_before_and_after():
+    company_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    pipeline_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    session_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(op="drop_column", column="agent_notes"),
+            TransformOperation(op="rename_column", column="meta_city", new_name="city"),
+            TransformOperation(
+                op="derive_column", column="city_upper", expression="upper(city)"
+            ),
+        ],
+    )
+
+    preview = build_preview_result(
+        company_id=company_id,
+        pipeline_id=pipeline_id,
+        session_id=session_id,
+        draft=draft,
+        sample_rows=25,
+        rows_before=[{"meta_city": "SP", "agent_notes": "x", "phone": "123"}],
+        status="ready",
+    )
+
+    # schema_before = colunas reais da tabela (ordem preservada)
+    assert [c["name"] for c in preview["schema_before"]] == [
+        "meta_city",
+        "agent_notes",
+        "phone",
+    ]
+    # schema_after = before com o delta aplicado (drop, rename, derive)
+    after = preview["schema_after"]
+    after_by_name = {c["name"]: c for c in after}
+    assert "agent_notes" not in after_by_name  # dropped
+    assert "city" in after_by_name and after_by_name["city"]["from"] == "meta_city"
+    assert after_by_name["city"]["state"] == "renamed"
+    assert "phone" in after_by_name  # unchanged passthrough
+    assert after_by_name["city_upper"]["state"] == "derived"
+
+
+def test_build_preview_result_failed_status_has_empty_schemas():
+    company_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    pipeline_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    session_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="drop_column", column="agent_notes")],
+    )
+
+    preview = build_preview_result(
+        company_id=company_id,
+        pipeline_id=pipeline_id,
+        session_id=session_id,
+        draft=draft,
+        sample_rows=25,
+        status="failed",
+        error="Databricks indisponivel",
+    )
+
+    # Defensivo: sem rows_before, schemas vem vazios (preview falhou)
+    assert preview["status"] == "failed"
+    assert preview["schema_before"] == []
+    assert preview["schema_after"] == []
 
 
 def test_manifest_for_editor_is_silver_only():

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "Flowertex Platform"
     API_V1_PREFIX: str = "/api/v1"
     AUTO_SEED: bool = True  # Seed templates at startup — idempotente
+    # Seed tenant de demo (company acme + admin + pipeline). Default off (tenant-safe).
+    SEED_DEMO_TENANT: bool = False
     # Runner concreto que executa cada etapa do one-click deploy.
     # "mock" (default) = sleeps + logs fake. "terraform" = stub NotImplemented.
     SAGA_RUNNER: str = "mock"
