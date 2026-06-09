@@ -199,6 +199,12 @@ df_redacted = df.withColumn("message_body", redact_udf("message_body"))
 
 # COMMAND ----------
 
+# COMMAND ----------
+
+# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
+# Bloco gerado a partir de TransformDraft versionado na plataforma.
+df_redacted = df_redacted.withColumnRenamed("sender_name", "sender_full_name")
+
 # DBTITLE 1,Salvar Messages Clean
 # Sobrescreve a tabela messages_clean com a versao redacted
 (
