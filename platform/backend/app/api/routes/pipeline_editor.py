@@ -55,6 +55,7 @@ from app.services.pipeline_editor.preview import (
     preview_rows_for_export,
     run_preview,
 )
+from app.services.pipeline_editor.preview_sql import PreviewSqlError, validate_target_table
 from app.services.pipeline_editor.schemas import TransformDraft
 from app.services.pipeline_editor.secure_pr import build_code_diff, validate_generated_files
 
@@ -182,19 +183,23 @@ def _version_to_draft(version: PipelineEditVersion) -> TransformDraft:
     return TransformDraft.model_validate(version.draft)
 
 
-def _validate_silver_draft(draft: TransformDraft, manifest) -> None:
+def _validate_silver_draft(draft: TransformDraft, manifest):
     try:
-        ensure_silver_node(manifest, draft.target_node)
+        node = ensure_silver_node(manifest, draft.target_node)
+        # Cross-check do target_table contra as output_tables declaradas no node
+        # do manifest — impede preview/export de tabelas arbitrarias (cross-tenant).
+        validate_target_table(draft.target_table, node.output_tables)
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    except ValueError as exc:
+    except (ValueError, PreviewSqlError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    return node
 
 
 @router.get("/{pipeline_id}", response_model=dict)
@@ -345,7 +350,7 @@ async def create_preview(
     version = await _current_version(db, auth, session)
     draft = _version_to_draft(version)
     manifest = await _resolve_manifest(db, pipeline)
-    _validate_silver_draft(draft, manifest)
+    node = _validate_silver_draft(draft, manifest)
     databricks = DatabricksService(db, auth.company_id)
     preview = await run_preview(
         databricks,
@@ -354,6 +359,7 @@ async def create_preview(
         session_id=session_id,
         draft=draft,
         sample_rows=data.sample_rows,
+        output_tables=node.output_tables,
     )
     version.preview_result = preview
     if preview.get("status") != "ready":
@@ -387,9 +393,12 @@ async def export_preview(
     auth: AuthContext = Depends(require_permission("chat")),
     db: AsyncSession = Depends(get_db),
 ):
-    await _load_pipeline(db, auth, pipeline_id)
+    pipeline = await _load_pipeline(db, auth, pipeline_id)
     session = await _load_session(db, auth, pipeline_id, session_id)
     version = await _current_version(db, auth, session)
+    draft = _version_to_draft(version)
+    manifest = await _resolve_manifest(db, pipeline)
+    node = _validate_silver_draft(draft, manifest)
     try:
         export = build_export_result(
             company_id=auth.company_id,
@@ -397,6 +406,7 @@ async def export_preview(
             session_id=session_id,
             export_format=data.format,
             preview_result=version.preview_result,
+            output_tables=node.output_tables,
         )
     except PreviewExportError as exc:
         logger.warning(

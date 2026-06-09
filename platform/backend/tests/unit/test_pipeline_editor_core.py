@@ -24,15 +24,18 @@ from app.services.pipeline_editor.nl_agent import (
     build_edit_proposal_from_nl,
 )
 from app.services.pipeline_editor.preview import (
+    PreviewExportError,
     build_export_result,
     build_preview_result,
     run_preview,
 )
 from app.services.pipeline_editor.preview_sql import (
+    PreviewSqlError,
     build_rows_after_sql,
     build_rows_before_sql,
     parse_query_result,
     preview_namespace,
+    validate_target_table,
 )
 from app.services.pipeline_editor.schemas import EditProposal, TransformDraft, TransformOperation
 
@@ -348,6 +351,7 @@ async def test_run_preview_populates_rows_with_mocked_databricks():
         session_id=session_id,
         draft=draft,
         sample_rows=5,
+        output_tables=["medallion.silver.messages_clean"],
     )
 
     assert preview["status"] == "ready"
@@ -381,6 +385,7 @@ async def test_run_preview_marks_failed_on_sql_error():
             operations=[],
         ),
         sample_rows=5,
+        output_tables=["medallion.silver.messages_clean"],
     )
 
     assert preview["status"] == "failed"
@@ -892,3 +897,159 @@ def test_check_downstream_impact_real_gold_notebooks():
     assert any("sentiment.py" in f for f in affected_files)
     assert any("churn_reengagement.py" in f for f in affected_files)
     assert any("checks.py" in f for f in affected_files)
+
+
+# ---------------------------------------------------------------------------
+# #5 — Validacao de target_table contra node.output_tables
+# ---------------------------------------------------------------------------
+
+
+def test_validate_target_table_accepts_declared_output_table():
+    """Tabela alvo declarada no node passa (case/crase-insensitive)."""
+    output_tables = ["medallion.silver.messages_clean", "medallion.silver.leads_profile"]
+    # Match exato
+    validate_target_table("medallion.silver.messages_clean", output_tables)
+    # Match normalizado (case + crases) ainda deve passar
+    validate_target_table("Medallion.Silver.`leads_profile`", output_tables)
+
+
+def test_validate_target_table_rejects_arbitrary_table():
+    """Tabela fora das output_tables do node e rejeitada (anti cross-tenant)."""
+    output_tables = ["medallion.silver.messages_clean"]
+    with pytest.raises(PreviewSqlError, match="nao pertence ao node"):
+        validate_target_table("medallion.gold.secret_revenue", output_tables)
+    # Mesmo schema, tabela nao declarada -> rejeita
+    with pytest.raises(PreviewSqlError, match="nao pertence ao node"):
+        validate_target_table("medallion.silver.outra_empresa", output_tables)
+
+
+def test_validate_target_table_rejects_when_node_declares_nothing():
+    """Node sem output_tables bloqueia preview/export por seguranca."""
+    with pytest.raises(PreviewSqlError, match="nao declara output_tables"):
+        validate_target_table("medallion.silver.messages_clean", [])
+
+
+def test_validate_target_table_honors_wildcard_prefix():
+    """Wildcard (ex.: medallion.gold.*) cobre o schema, mas nao outros schemas."""
+    output_tables = ["medallion.gold.*"]
+    validate_target_table("medallion.gold.funnel", output_tables)
+    with pytest.raises(PreviewSqlError, match="nao pertence ao node"):
+        validate_target_table("medallion.silver.messages_clean", output_tables)
+
+
+def test_validate_target_table_matches_real_silver_node():
+    """Cada Silver node do manifest aceita sua propria output_table."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    for node in silver_nodes(manifest):
+        for table in node.output_tables:
+            validate_target_table(table, node.output_tables)
+
+
+@pytest.mark.asyncio
+async def test_run_preview_rejects_target_table_outside_node_output_tables():
+    """Preview e marcado como failed quando target_table nao bate com o node."""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.gold.secret_revenue",  # tabela arbitraria
+        operations=[],
+    )
+    databricks = MagicMock()
+    databricks.query_table = AsyncMock()
+
+    preview = await run_preview(
+        databricks,
+        company_id=uuid.uuid4(),
+        pipeline_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        draft=draft,
+        sample_rows=5,
+        output_tables=["medallion.silver.messages_clean"],
+    )
+
+    assert preview["status"] == "failed"
+    assert "nao pertence ao node" in preview["error"]
+    # Nenhuma query deve ter sido executada contra a tabela arbitraria
+    databricks.query_table.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_preview_runs_when_target_table_is_declared():
+    """Preview prossegue normalmente quando a target_table pertence ao node."""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="drop_column", column="agent_notes")],
+    )
+    before_response = {
+        "status": {"state": "SUCCEEDED"},
+        "manifest": {
+            "schema": {"columns": [{"name": "meta_city"}, {"name": "agent_notes"}]}
+        },
+        "result": {"data_array": [["SP", "x"]]},
+    }
+    after_response = {
+        "status": {"state": "SUCCEEDED"},
+        "manifest": {"schema": {"columns": [{"name": "meta_city"}]}},
+        "result": {"data_array": [["SP"]]},
+    }
+    databricks = MagicMock()
+    databricks.query_table = AsyncMock(side_effect=[before_response, after_response])
+
+    preview = await run_preview(
+        databricks,
+        company_id=uuid.uuid4(),
+        pipeline_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        draft=draft,
+        sample_rows=5,
+        output_tables=["medallion.silver.messages_clean"],
+    )
+
+    assert preview["status"] == "ready"
+    assert databricks.query_table.await_count == 2
+
+
+def test_build_export_result_rejects_target_table_outside_node_output_tables():
+    """Export revalida a tabela do preview persistido contra o manifest."""
+    company_id = uuid.uuid4()
+    pipeline_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    # Preview persistido aponta para tabela arbitraria (draft alterado pos-preview)
+    preview_result = {
+        "status": "ready",
+        "target_table": "medallion.gold.secret_revenue",
+        "rows_after": [{"col": "1"}],
+    }
+
+    with pytest.raises(PreviewExportError, match="nao pertence ao node"):
+        build_export_result(
+            company_id=company_id,
+            pipeline_id=pipeline_id,
+            session_id=session_id,
+            export_format="csv",
+            preview_result=preview_result,
+            output_tables=["medallion.silver.messages_clean"],
+        )
+
+
+def test_build_export_result_allows_declared_target_table():
+    """Export prossegue quando a tabela do preview pertence ao node."""
+    preview_result = {
+        "status": "ready",
+        "target_table": "medallion.silver.messages_clean",
+        "rows_after": [{"meta_city": "SP"}],
+    }
+
+    export = build_export_result(
+        company_id=uuid.uuid4(),
+        pipeline_id=uuid.uuid4(),
+        session_id=uuid.uuid4(),
+        export_format="csv",
+        preview_result=preview_result,
+        output_tables=["medallion.silver.messages_clean"],
+    )
+
+    assert export["format"] == "csv"
+    assert export["row_count"] == 1
