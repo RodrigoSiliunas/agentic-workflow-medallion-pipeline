@@ -19,6 +19,7 @@ class PipelineManifestNode(BaseModel):
     output_tables: list[str] = Field(default_factory=list)
     supported_operations: list[str] = Field(default_factory=list)
     insertion_marker: str
+    write_dataframe: str = ""
 
 
 class PipelineManifest(BaseModel):
@@ -103,6 +104,7 @@ def _whatsapp_manifest() -> PipelineManifest:
                 output_tables=["medallion.silver.messages_clean"],
                 supported_operations=common_ops,
                 insertion_marker="# DBTITLE 1,Salvar como Delta Table e Upload para S3",
+                write_dataframe="df_parsed",
             ),
             PipelineManifestNode(
                 id="silver_entities",
@@ -115,7 +117,8 @@ def _whatsapp_manifest() -> PipelineManifest:
                     "medallion.silver.leads_profile",
                 ],
                 supported_operations=common_ops,
-                insertion_marker="# DBTITLE 1,Salvar Leads Profile",
+                insertion_marker="# DBTITLE 1,Salvar Messages Clean",
+                write_dataframe="df_redacted",
             ),
             PipelineManifestNode(
                 id="silver_enrichment",
@@ -126,6 +129,7 @@ def _whatsapp_manifest() -> PipelineManifest:
                 output_tables=["medallion.silver.conversations_enriched"],
                 supported_operations=common_ops,
                 insertion_marker="# DBTITLE 1,Salvar no Unity Catalog e S3",
+                write_dataframe="conversations",
             ),
             PipelineManifestNode(
                 id="gold_analytics",

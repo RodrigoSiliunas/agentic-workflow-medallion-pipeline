@@ -55,8 +55,6 @@ def _build_submit_tool(manifest: PipelineManifest) -> ToolSpec:
                         "layer": {"type": "string", "enum": ["silver"]},
                         "target_node": {"type": "string", "enum": silver_ids},
                         "target_table": {"type": "string"},
-                        "input_dataframe": {"type": "string"},
-                        "output_dataframe": {"type": "string"},
                         "operations": {
                             "type": "array",
                             "items": {

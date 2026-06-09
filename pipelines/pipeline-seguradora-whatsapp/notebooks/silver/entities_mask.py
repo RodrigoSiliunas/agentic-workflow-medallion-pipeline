@@ -197,6 +197,9 @@ leads_masked = (
 # para remover qualquer PII que apareca no texto
 df_redacted = df.withColumn("message_body", redact_udf("message_body"))
 
+# COMMAND ----------
+
+# DBTITLE 1,Salvar Messages Clean
 # Sobrescreve a tabela messages_clean com a versao redacted
 (
     df_redacted.write.format("delta")
@@ -209,14 +212,6 @@ lake.write_parquet(spark.table(SILVER_MESSAGES), "silver/messages_clean/")
 logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 
 # COMMAND ----------
-
-# COMMAND ----------
-
-# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
-# Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_editor = df_parsed
-df_editor = df_editor.drop("sender_phone")
-df_editor = df_editor.withColumnRenamed("message_body", "body")
 
 # DBTITLE 1,Salvar Leads Profile
 # Persiste o perfil de cada lead com entidades mascaradas
