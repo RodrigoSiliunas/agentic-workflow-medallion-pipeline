@@ -82,6 +82,8 @@ class ShareRequest(BaseModel):
 class ApproveRequest(BaseModel):
     version_id: uuid.UUID | None = None
     create_pr: bool = True
+    # Se True, ignora impacto downstream e aprova mesmo com colunas referenciadas
+    force_downstream: bool = False
 
 
 class RevertRequest(BaseModel):
