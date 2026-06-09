@@ -56,7 +56,16 @@ for _phase in _cfg.get("phases", []):
         _nb["path"] = f"{NOTEBOOK_BASE}/{_nb['path']}"
 
 runner = PhasedNotebookRunner.from_dict(_cfg)
-phase_results = runner.run(dbutils, timeout=TIMEOUT)
+# Repassa catalog/scope pros notebooks filhos via dbutils.notebook.run(arguments).
+# Sem isso os 12 gold caem no widget default "medallion" e quebram quando o
+# deploy usa um catalog custom (ex: medallions) — eles leem CATALOG do widget.
+phase_results = runner.run(
+    dbutils,
+    timeout=TIMEOUT,
+    runner=lambda path, to: dbutils.notebook.run(
+        path, to, {"catalog": CATALOG, "scope": SCOPE}
+    ),
+)
 
 # Agrega resultados + erros no formato legacy pra manter compat com o
 # bloco de resumo abaixo.
