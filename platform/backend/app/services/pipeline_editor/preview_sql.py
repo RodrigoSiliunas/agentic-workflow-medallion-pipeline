@@ -9,6 +9,47 @@ class PreviewSqlError(ValueError):
     """Erro ao montar ou interpretar SQL de preview."""
 
 
+def _normalize_table(table: str) -> str:
+    """Normaliza identificador de tabela (sem crases, trim, case-insensitive)."""
+    return ".".join(
+        part.strip().replace("`", "").lower()
+        for part in str(table).split(".")
+        if part.strip()
+    )
+
+
+def validate_target_table(target_table: str, output_tables: list[str]) -> None:
+    """Garante que o `target_table` do draft pertence aos `output_tables` do node.
+
+    Sem esse cross-check contra o manifest, um tenant poderia apontar o draft
+    para qualquer tabela do catalogo e fazer preview/export de dados arbitrarios.
+    Levanta PreviewSqlError quando a tabela nao esta declarada no node.
+    """
+    target = _normalize_table(target_table)
+    if not target:
+        raise PreviewSqlError("Tabela alvo invalida para preview")
+
+    allowed = {_normalize_table(table) for table in (output_tables or []) if table}
+    if not allowed:
+        raise PreviewSqlError(
+            "No do manifest nao declara output_tables — preview/export bloqueado."
+        )
+
+    # Wildcard declarado (ex.: medallion.gold.*) cobre todo o schema do prefixo.
+    for table in allowed:
+        if table.endswith(".*"):
+            prefix = table[:-1]  # mantem o ponto final do prefixo
+            if target.startswith(prefix):
+                return
+
+    if target not in allowed:
+        declared = ", ".join(sorted(allowed)) or "(nenhuma)"
+        raise PreviewSqlError(
+            f"Tabela alvo `{target_table}` nao pertence ao node "
+            f"(output_tables declaradas: {declared})."
+        )
+
+
 def preview_namespace(
     *,
     company_id: str,
