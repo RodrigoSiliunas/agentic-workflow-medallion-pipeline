@@ -200,6 +200,14 @@ async def create_deployment(
     # step skipa criacao mas valida policy + monta spec em shared state.
     merged_env.setdefault("cluster_compute", "ephemeral")
 
+    # O env_schema do template usa a chave `catalog_name`, mas os saga steps
+    # (e o editor) leem `catalog`. Mapeia pra honrar o catalog escolhido no
+    # wizard — o input explicito do usuario vence o default de environment
+    # isolation abaixo (setdefault nao sobrescreve um `catalog` ja presente).
+    catalog_name = (merged_env.get("catalog_name") or "").strip()
+    if catalog_name:
+        merged_env.setdefault("catalog", catalog_name)
+
     # Environment isolation: prod usa defaults legacy (catalog=medallion,
     # scope=medallion-pipeline) pra preservar compat com notebooks que
     # hardcodam "medallion.bronze.X". dev/staging adicionam sufixo.

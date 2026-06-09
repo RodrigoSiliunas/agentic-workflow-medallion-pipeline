@@ -46,6 +46,10 @@ async def test_create_deployment_with_seeded_template(
     assert body["template_slug"] == "pipeline-seguradora-whatsapp"
     # credenciais nao podem voltar em plaintext
     assert body["config"]["credentials"]["aws_access_key_id"] == "***"
+    # `catalog_name` do wizard e honrado e mapeado pra `catalog` (chave que o
+    # saga e o editor leem); o input explicito vence o default de environment
+    # isolation (que poria `medallion_dev` em ambiente dev).
+    assert body["config"]["env_vars"]["catalog"] == "test"
 
     deployment_id = body["id"]
 

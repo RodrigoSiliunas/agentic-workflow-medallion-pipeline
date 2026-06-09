@@ -19,6 +19,8 @@ from app.services.pipeline_editor.downstream_impact import (
     find_column_references,
 )
 from app.services.pipeline_editor.manifest import (
+    DEFAULT_CATALOG,
+    _normalize_catalog,
     load_manifest_for_template,
     manifest_for_editor,
     silver_nodes,
@@ -243,6 +245,105 @@ def test_manifest_for_editor_is_silver_only():
     assert len(editor_manifest.nodes) == len(silver_nodes(manifest))
     assert all(node.layer == "silver" for node in editor_manifest.nodes)
     assert not any(node.layer == "bronze" for node in editor_manifest.nodes)
+
+
+def test_manifest_default_catalog_is_medallion():
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    entities = manifest.resolve_node("silver_entities")
+    assert entities.output_tables == [
+        "medallion.silver.messages_clean",
+        "medallion.silver.leads_profile",
+    ]
+
+
+def test_manifest_follows_deployed_catalog():
+    """O editor segue o catalog que o deploy provisionou (dev/staging/custom),
+    nao hardcoda `medallion` — caso contrario o preview consulta a tabela errada."""
+    manifest = load_manifest_for_template(
+        "pipeline-seguradora-whatsapp", catalog="medallion_acme"
+    )
+    entities = manifest.resolve_node("silver_entities")
+    assert entities.input_tables == ["medallion_acme.silver.messages_clean"]
+    assert entities.output_tables == [
+        "medallion_acme.silver.messages_clean",
+        "medallion_acme.silver.leads_profile",
+    ]
+    # Todos os nodes (bronze/silver/gold) seguem o catalog — nada de `medallion.`
+    for node in manifest.nodes:
+        for table in node.input_tables + node.output_tables:
+            assert table.startswith("medallion_acme."), table
+
+
+def test_manifest_normalize_catalog_rejects_invalid():
+    # Vazio / so espacos / identificador invalido -> cai no default (defensivo
+    # contra config corrompido que montaria FQN ilegal tipo `..silver.x`).
+    assert _normalize_catalog("") == DEFAULT_CATALOG
+    assert _normalize_catalog("   ") == DEFAULT_CATALOG
+    assert _normalize_catalog("a;b") == DEFAULT_CATALOG
+    assert _normalize_catalog("medallion-dev") == DEFAULT_CATALOG  # hifen invalido
+    assert _normalize_catalog(None) == DEFAULT_CATALOG
+    # Identificadores validos passam intactos.
+    assert _normalize_catalog("medallion_dev") == "medallion_dev"
+    assert _normalize_catalog("  medallion_acme  ") == "medallion_acme"
+
+
+def test_manifest_invalid_catalog_falls_back_in_fqn():
+    manifest = load_manifest_for_template(
+        "pipeline-seguradora-whatsapp", catalog="bad;name"
+    )
+    entities = manifest.resolve_node("silver_entities")
+    assert entities.output_tables[0] == "medallion.silver.messages_clean"
+
+
+def test_config_manifest_fqns_are_not_rewritten_by_catalog():
+    """Pipeline que declara o proprio manifest (config.manifest) traz FQNs
+    explicitos e tem prioridade — o param catalog nao o reescreve."""
+    config_manifest = {
+        "nodes": [
+            {
+                "id": "silver_custom",
+                "layer": "silver",
+                "task_key": "silver_custom",
+                "file_path": "notebooks/silver/custom.py",
+                "input_tables": ["outro_catalog.silver.entrada"],
+                "output_tables": ["outro_catalog.silver.saida"],
+                "supported_operations": ["rename_column"],
+                "insertion_marker": "# marker",
+                "write_dataframe": "df",
+            }
+        ]
+    }
+    manifest = load_manifest_for_template(
+        "pipeline-seguradora-whatsapp",
+        config_manifest=config_manifest,
+        catalog="medallion_acme",
+    )
+    node = manifest.resolve_node("silver_custom")
+    assert node.output_tables == ["outro_catalog.silver.saida"]
+
+
+def test_pipeline_catalog_resolves_from_config():
+    """`_pipeline_catalog` le o catalog persistido pelo saga; cai no default
+    para pipelines antigos (seed) que nao tem o campo."""
+    from types import SimpleNamespace
+
+    from app.api.routes.pipeline_editor import _pipeline_catalog
+
+    # catalog top-level (persistido pelo deploy)
+    assert (
+        _pipeline_catalog(SimpleNamespace(config={"catalog": "medallion_dev"}))
+        == "medallion_dev"
+    )
+    # fallback em env_vars.catalog
+    assert (
+        _pipeline_catalog(
+            SimpleNamespace(config={"env_vars": {"catalog": "medallion_acme"}})
+        )
+        == "medallion_acme"
+    )
+    # pipeline antigo sem catalog -> default
+    assert _pipeline_catalog(SimpleNamespace(config={})) == DEFAULT_CATALOG
+    assert _pipeline_catalog(SimpleNamespace(config=None)) == DEFAULT_CATALOG
 
 
 def test_transform_draft_rejects_non_silver_layer():
