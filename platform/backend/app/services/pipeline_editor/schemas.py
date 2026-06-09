@@ -75,8 +75,6 @@ class TransformDraft(BaseModel):
     target_node: str
     target_table: str
     operations: list[TransformOperation] = Field(default_factory=list)
-    input_dataframe: str = "df_parsed"
-    output_dataframe: str = "df_editor"
     warnings: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

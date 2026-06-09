@@ -70,19 +70,19 @@ def _operation_to_pyspark(op: TransformOperation, dataframe: str) -> str:
     raise ValueError(f"Unsupported transform operation: {op.op}")
 
 
-def generate_transform_block(draft: TransformDraft) -> str:
-    """Gera célula Databricks com transformações do editor."""
+def generate_transform_block(write_df: str, operations: list[TransformOperation]) -> str:
+    """Gera célula Databricks com transformações do editor.
+
+    Muta `write_df` in-place — sem introduzir df_editor/df_parsed mágicos.
+    O `.write` existente no notebook continua consumindo o mesmo nome de DF.
+    """
     lines = [
         "# COMMAND ----------",
         "",
         "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor",
         "# Bloco gerado a partir de TransformDraft versionado na plataforma.",
-        f"{draft.output_dataframe} = {draft.input_dataframe}",
     ]
-    lines.extend(
-        _operation_to_pyspark(operation, draft.output_dataframe)
-        for operation in draft.operations
-    )
+    lines.extend(_operation_to_pyspark(op, write_df) for op in operations)
     return "\n".join(lines) + "\n\n"
 
 
@@ -92,14 +92,19 @@ def generate_pyspark_patch(
     *,
     node: PipelineManifestNode,
 ) -> str:
-    """Insere bloco gerado antes do marker de write Delta e troca DF de saída."""
+    """Insere bloco gerado antes do marker de write Delta.
+
+    Usa `node.write_dataframe` como DF alvo — o mesmo DF que o notebook já
+    escreve via `.write.format("delta")`. Sem troca de string frágil.
+    """
+    if not node.write_dataframe:
+        raise ValueError(
+            f"Node `{node.id}` nao declara write_dataframe — "
+            "adicione o campo no manifest."
+        )
     marker = node.insertion_marker
     if marker not in source:
         raise ValueError(f"Insertion marker not found: {marker}")
 
-    block = generate_transform_block(draft)
-    patched = source.replace(marker, f"{block}{marker}", 1)
-    return patched.replace(
-        f"{draft.input_dataframe}.write.format",
-        f"{draft.output_dataframe}.write.format",
-    )
+    block = generate_transform_block(node.write_dataframe, draft.operations)
+    return source.replace(marker, f"{block}{marker}", 1)

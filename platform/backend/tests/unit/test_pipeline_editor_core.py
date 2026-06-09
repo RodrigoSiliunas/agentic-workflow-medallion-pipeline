@@ -58,22 +58,23 @@ def test_transform_draft_requires_manifest_target_node():
 
 
 def test_codegen_adds_generated_transform_block_before_delta_write():
-    source = """
-# DBTITLE 1,Salvar como Delta Table e Upload para S3
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    source = f"""
+# DBTITLE 1,Parse Metadata JSON
+df_parsed = df_clean.withColumns({{}})
+
+{node.insertion_marker}
 (
     df_parsed.write.format("delta")
     .mode("overwrite")
     .saveAsTable(SILVER_TABLE)
 )
 """
-    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
-    node = manifest.resolve_node("silver_dedup")
     draft = TransformDraft(
         layer="silver",
         target_node="silver_dedup",
         target_table="medallion.silver.messages_clean",
-        input_dataframe="df_parsed",
-        output_dataframe="df_editor",
         operations=[
             TransformOperation(op="rename_column", column="meta_city", new_name="cidade"),
             TransformOperation(op="drop_column", column="agent_notes"),
@@ -83,10 +84,12 @@ def test_codegen_adds_generated_transform_block_before_delta_write():
     patched = generate_pyspark_patch(source, draft, node=node)
 
     assert "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor" in patched
-    assert 'withColumnRenamed("meta_city", "cidade")' in patched
-    assert '.drop("agent_notes")' in patched
-    assert "df_editor.write.format" in patched
-    assert "df_parsed.write.format" not in patched
+    assert 'df_parsed = df_parsed.withColumnRenamed("meta_city", "cidade")' in patched
+    assert 'df_parsed = df_parsed.drop("agent_notes")' in patched
+    # write linha inalterada — sem troca de DF
+    assert "df_parsed.write.format" in patched
+    # sem magia df_editor/df_parsed mágico
+    assert "df_editor" not in patched
 
 
 def test_prompt_markdown_contains_context_and_redacts_secrets():
@@ -446,31 +449,31 @@ def test_codegen_uses_node_insertion_marker_not_hardcoded():
     manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
     node = manifest.resolve_node("silver_entities")
     source = f"""
-# DBTITLE 1,Codigo anterior
-df_input = spark.table("medallion.silver.messages_clean")
+# DBTITLE 1,Redaction do message_body
+df_redacted = df.withColumn("message_body", redact_udf("message_body"))
 
 {node.insertion_marker}
 (
-    df_input.write.format("delta")
+    df_redacted.write.format("delta")
     .mode("overwrite")
-    .saveAsTable("medallion.silver.leads_profile")
+    .saveAsTable("medallion.silver.messages_clean")
 )
 """
     draft = TransformDraft(
         layer="silver",
         target_node="silver_entities",
-        target_table="medallion.silver.leads_profile",
-        input_dataframe="df_input",
-        output_dataframe="df_editor",
-        operations=[TransformOperation(op="drop_column", column="agent_notes")],
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="drop_column", column="cpfs_found")],
     )
 
     patched = generate_pyspark_patch(source, draft, node=node)
 
     assert node.insertion_marker in patched
     assert "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor" in patched
-    assert '.drop("agent_notes")' in patched
-    assert "df_editor.write.format" in patched
+    assert 'df_redacted = df_redacted.drop("cpfs_found")' in patched
+    # write inalterado — sem troca de string frágil
+    assert "df_redacted.write.format" in patched
+    assert "df_editor" not in patched
 
 
 def test_manifest_silver_markers_exist_in_source_files():
@@ -492,6 +495,101 @@ def test_manifest_silver_markers_exist_in_source_files():
             )
 
     assert not errors, "Markers do manifest divergem dos arquivos:\n  " + "\n  ".join(errors)
+
+
+@pytest.mark.parametrize(
+    "node_id,op,op_kwargs,expected_fragment",
+    [
+        (
+            "silver_dedup",
+            "rename_column",
+            {"column": "meta_city", "new_name": "cidade"},
+            'df_parsed = df_parsed.withColumnRenamed("meta_city", "cidade")',
+        ),
+        (
+            "silver_dedup",
+            "cast_column",
+            {"column": "meta_response_time_sec", "data_type": "double"},
+            'df_parsed = df_parsed.withColumn("meta_response_time_sec", '
+            'F.col("meta_response_time_sec").cast("double"))',
+        ),
+        (
+            "silver_entities",
+            "rename_column",
+            {"column": "lead_name", "new_name": "nome_lead"},
+            'df_redacted = df_redacted.withColumnRenamed("lead_name", "nome_lead")',
+        ),
+        (
+            "silver_entities",
+            "cast_column",
+            {"column": "lead_phone", "data_type": "string"},
+            'df_redacted = df_redacted.withColumn("lead_phone", '
+            'F.col("lead_phone").cast("string"))',
+        ),
+        (
+            "silver_enrichment",
+            "rename_column",
+            {"column": "city", "new_name": "cidade"},
+            'conversations = conversations.withColumnRenamed("city", "cidade")',
+        ),
+        (
+            "silver_enrichment",
+            "cast_column",
+            {"column": "duration_minutes", "data_type": "double"},
+            'conversations = conversations.withColumn("duration_minutes", '
+            'F.col("duration_minutes").cast("double"))',
+        ),
+    ],
+)
+def test_codegen_real_notebooks_rename_and_cast(node_id, op, op_kwargs, expected_fragment):
+    """DoD C1: patch contra notebook real usa DF correto, sem df_editor/df_parsed mágico."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node(node_id)
+    repo_root = Path(__file__).resolve().parents[4]
+    source = (repo_root / node.file_path).read_text(encoding="utf-8")
+
+    draft = TransformDraft(
+        layer="silver",
+        target_node=node_id,
+        target_table=node.output_tables[0],
+        operations=[TransformOperation(op=op, **op_kwargs)],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    # (a) usa o DF de escrita correto do node
+    assert expected_fragment in patched, (
+        f"Fragmento esperado ausente em {node_id}:\n  {expected_fragment}"
+    )
+    # (b) sem df_editor ou inicialização mágica df_X = df_Y
+    assert "df_editor" not in patched
+    assert f"df_editor = {node.write_dataframe}" not in patched
+    # (c) compila sem SyntaxError
+    compile(patched, f"<{node_id}_patched>", "exec")
+    # (d) write original ainda usa o DF correto
+    assert f"{node.write_dataframe}.write.format" in patched
+
+
+def test_codegen_node_without_write_dataframe_raises():
+    """Nodes sem write_dataframe levantam ValueError descritivo."""
+    from app.services.pipeline_editor.manifest import PipelineManifestNode
+
+    node = PipelineManifestNode(
+        id="bronze_ingestion",
+        layer="bronze",
+        task_key="bronze_ingestion",
+        file_path="any/path.py",
+        insertion_marker="# marker",
+    )
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[],
+    )
+
+    with pytest.raises(ValueError, match="write_dataframe"):
+        generate_pyspark_patch("# marker\ncode", draft, node=node)
 
 
 def test_nl_tool_target_node_enum_includes_silver_nodes():
