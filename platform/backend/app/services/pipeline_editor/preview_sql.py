@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.pipeline_editor.codegen import cast_is_null_prone
 from app.services.pipeline_editor.schemas import TransformOperation
 
 
@@ -108,7 +109,16 @@ def build_rows_after_sql(
             col_state[op.column] = f"TRIM({ref})"
         elif op.op == "cast_column" and op.column and op.data_type:
             ref = col_state.get(op.column, quote_ident(op.column))
-            col_state[op.column] = f"CAST({ref} AS {op.data_type})"
+            # Guardrail: cast null-prone usa try_cast (NULL explicito, sem erro)
+            # e sinaliza risco de NULL no preview via warning.
+            if cast_is_null_prone(op.data_type):
+                col_state[op.column] = f"try_cast({ref} AS {op.data_type})"
+                warnings.append(
+                    f"cast_column `{op.column}` para `{op.data_type}` pode gerar NULL "
+                    "em valores incompativeis (try_cast retorna NULL sem erro)."
+                )
+            else:
+                col_state[op.column] = f"CAST({ref} AS {op.data_type})"
         elif op.op == "regex_replace" and op.column:
             ref = col_state.get(op.column, quote_ident(op.column))
             col_state[op.column] = (
