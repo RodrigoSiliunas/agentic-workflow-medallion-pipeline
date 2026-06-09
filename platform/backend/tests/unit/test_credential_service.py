@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.credential_service import CredentialService
+from app.services.credential_service import DEPLOY_CREDENTIAL_TYPES, CredentialService
 
 
 def _make_service() -> tuple[CredentialService, MagicMock]:
@@ -110,3 +110,16 @@ class TestGetDecryptedMissing:
         result = await service.get_decrypted(uuid.uuid4(), "anthropic_api_key")
 
         assert result is None
+
+
+class TestDeployCredentialTypes:
+    def test_github_repo_in_deploy_credential_types(self):
+        """github_repo deve estar no wizard de deploy para evitar 500 repos/None/ no approve→PR."""
+        assert "github_repo" in DEPLOY_CREDENTIAL_TYPES
+
+    def test_github_token_in_deploy_credential_types(self):
+        assert "github_token" in DEPLOY_CREDENTIAL_TYPES
+
+    def test_databricks_creds_in_deploy_credential_types(self):
+        for cred in ("databricks_host", "databricks_token"):
+            assert cred in DEPLOY_CREDENTIAL_TYPES
