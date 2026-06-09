@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.pipeline_editor.artifacts import build_prompt_markdown
-from app.services.pipeline_editor.codegen import generate_pyspark_patch
+from app.services.pipeline_editor.codegen import (
+    cast_is_null_prone,
+    enforce_overwrite_schema,
+    generate_pyspark_patch,
+)
 from app.services.pipeline_editor.downstream_impact import (
     check_downstream_impact,
     find_column_references,
@@ -519,8 +523,9 @@ def test_manifest_silver_markers_exist_in_source_files():
             "silver_dedup",
             "cast_column",
             {"column": "meta_response_time_sec", "data_type": "double"},
+            # Guardrail: cast null-prone (double) usa try_cast.
             'df_parsed = df_parsed.withColumn("meta_response_time_sec", '
-            'F.col("meta_response_time_sec").cast("double"))',
+            'F.try_cast(F.col("meta_response_time_sec"), "double"))',
         ),
         (
             "silver_entities",
@@ -545,8 +550,9 @@ def test_manifest_silver_markers_exist_in_source_files():
             "silver_enrichment",
             "cast_column",
             {"column": "duration_minutes", "data_type": "double"},
+            # Guardrail: cast null-prone (double) usa try_cast.
             'conversations = conversations.withColumn("duration_minutes", '
-            'F.col("duration_minutes").cast("double"))',
+            'F.try_cast(F.col("duration_minutes"), "double"))',
         ),
     ],
 )
@@ -1053,3 +1059,289 @@ def test_build_export_result_allows_declared_target_table():
 
     assert export["format"] == "csv"
     assert export["row_count"] == 1
+
+
+# ============================================================
+# Ghost-column fix: rename/drop removem a coluna antiga (overwriteSchema)
+# ============================================================
+
+
+def test_codegen_rename_forces_overwrite_schema_no_ghost_column():
+    """Regressao ghost-column: rename deve forcar overwriteSchema no write Delta.
+
+    Cenario real: rename `sender_name`->`sender_full_name` deixava `sender_name`
+    como coluna ghost (0 linhas) por causa de `mergeSchema=true` no overwrite.
+    O patch deve trocar mergeSchema por overwriteSchema para dropar a coluna antiga.
+    """
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    source = f"""
+# DBTITLE 1,Parse Metadata JSON
+df_parsed = df_clean.withColumns({{}})
+
+{node.insertion_marker}
+(
+    df_parsed.write.format("delta")
+    .mode("overwrite")
+    .option("mergeSchema", "true")
+    .saveAsTable(SILVER_TABLE)
+)
+"""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(
+                op="rename_column", column="sender_name", new_name="sender_full_name"
+            ),
+        ],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    # Rename gerado
+    assert 'df_parsed = df_parsed.withColumnRenamed("sender_name", "sender_full_name")' in patched
+    # mergeSchema substituido por overwriteSchema — a coluna antiga some de fato
+    assert '.option("overwriteSchema", "true")' in patched
+    assert '.option("mergeSchema", "true")' not in patched
+    # write continua no DF certo e compila
+    assert "df_parsed.write.format" in patched
+    compile(patched, "<ghost_rename>", "exec")
+
+
+def test_codegen_drop_forces_overwrite_schema_no_ghost_column():
+    """Drop de coluna tambem precisa de overwriteSchema para remover o ghost."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    source = f"""
+df_parsed = df_clean.withColumns({{}})
+
+{node.insertion_marker}
+(
+    df_parsed.write.format("delta")
+    .mode("overwrite")
+    .option("mergeSchema", "true")
+    .saveAsTable(SILVER_TABLE)
+)
+"""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="drop_column", column="agent_notes")],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    assert 'df_parsed = df_parsed.drop("agent_notes")' in patched
+    assert '.option("overwriteSchema", "true")' in patched
+    assert '.option("mergeSchema", "true")' not in patched
+
+
+def test_codegen_non_structural_op_keeps_merge_schema():
+    """Ops nao-estruturais (trim) NAO mexem no write — mergeSchema preservado."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    source = f"""
+df_parsed = df_clean.withColumns({{}})
+
+{node.insertion_marker}
+(
+    df_parsed.write.format("delta")
+    .mode("overwrite")
+    .option("mergeSchema", "true")
+    .saveAsTable(SILVER_TABLE)
+)
+"""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="trim", column="sender_name")],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    # Sem rename/drop: write inalterado (mergeSchema preservado, schema evolution OK)
+    assert '.option("mergeSchema", "true")' in patched
+    assert "overwriteSchema" not in patched
+
+
+def test_enforce_overwrite_schema_injects_when_no_schema_option():
+    """Se o write nao tem opcao de schema, injeta overwriteSchema apos .mode()."""
+    source = (
+        "(\n"
+        '    df_parsed.write.format("delta")\n'
+        '    .mode("overwrite")\n'
+        "    .saveAsTable(SILVER_TABLE)\n"
+        ")\n"
+    )
+    patched = enforce_overwrite_schema(source, "df_parsed")
+    assert '.option("overwriteSchema", "true")' in patched
+    compile(patched, "<inject_schema>", "exec")
+
+
+def test_enforce_overwrite_schema_scoped_to_target_dataframe():
+    """Com dois writes no notebook, so o write do DF alvo e alterado."""
+    source = (
+        "(\n"
+        '    df_redacted.write.format("delta")\n'
+        '    .mode("overwrite")\n'
+        '    .option("mergeSchema", "true")\n'
+        "    .saveAsTable(SILVER_MESSAGES)\n"
+        ")\n"
+        "(\n"
+        '    leads_masked.write.format("delta")\n'
+        '    .mode("overwrite")\n'
+        '    .option("mergeSchema", "true")\n'
+        "    .saveAsTable(SILVER_LEADS)\n"
+        ")\n"
+    )
+    patched = enforce_overwrite_schema(source, "df_redacted")
+    # Write do DF alvo migrou para overwriteSchema
+    assert 'df_redacted.write.format("delta")' in patched
+    assert patched.count('.option("overwriteSchema", "true")') == 1
+    # O segundo write (leads_masked) preserva mergeSchema — fora de escopo
+    assert patched.count('.option("mergeSchema", "true")') == 1
+    leads_block = patched.split("leads_masked.write", 1)[1]
+    assert 'mergeSchema' in leads_block
+
+
+def test_codegen_rename_overwrite_schema_real_notebook():
+    """Contra notebook real (dedup_clean.py): rename forca overwriteSchema."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    repo_root = Path(__file__).resolve().parents[4]
+    source = (repo_root / node.file_path).read_text(encoding="utf-8")
+    # Sanidade: o notebook real usa mergeSchema (causa-raiz do ghost)
+    assert '.option("mergeSchema", "true")' in source
+
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(
+                op="rename_column", column="sender_name", new_name="sender_full_name"
+            )
+        ],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    assert '.option("overwriteSchema", "true")' in patched
+    # O write do df_parsed nao deve mais usar mergeSchema
+    write_block = patched.split("df_parsed.write.format", 1)[1].split("saveAsTable", 1)[0]
+    assert "mergeSchema" not in write_block
+    compile(patched, "<real_ghost>", "exec")
+
+
+# ============================================================
+# Cast guardrail: try_cast + aviso para casts null-prone
+# ============================================================
+
+
+@pytest.mark.parametrize(
+    "data_type,expected",
+    [
+        ("int", True),
+        ("integer", True),
+        ("double", True),
+        ("decimal(10,2)", True),
+        ("timestamp", True),
+        ("date", True),
+        ("boolean", True),
+        ("string", False),
+        ("varchar(50)", False),
+    ],
+)
+def test_cast_is_null_prone(data_type, expected):
+    assert cast_is_null_prone(data_type) is expected
+
+
+def test_codegen_cast_null_prone_uses_try_cast_and_warns():
+    """Guardrail: cast para double (null-prone) usa F.try_cast + aviso inline."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    source = f"""
+df_parsed = df_clean.withColumns({{}})
+
+{node.insertion_marker}
+(
+    df_parsed.write.format("delta")
+    .mode("overwrite")
+    .saveAsTable(SILVER_TABLE)
+)
+"""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="cast_column", column="age", data_type="int")],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    assert 'F.try_cast(F.col("age"), "int")' in patched
+    assert ".cast(" not in patched
+    # Aviso de NULL presente como comentario
+    assert "# AVISO" in patched
+    assert "NULL" in patched
+    compile(patched, "<cast_guardrail>", "exec")
+
+
+def test_codegen_cast_safe_type_uses_plain_cast():
+    """Cast para string (seguro) mantem .cast normal, sem aviso."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+    source = f"""
+df_parsed = df_clean.withColumns({{}})
+
+{node.insertion_marker}
+(
+    df_parsed.write.format("delta")
+    .mode("overwrite")
+    .saveAsTable(SILVER_TABLE)
+)
+"""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="cast_column", column="name", data_type="string")],
+    )
+
+    patched = generate_pyspark_patch(source, draft, node=node)
+
+    assert 'F.col("name").cast("string")' in patched
+    assert "try_cast" not in patched
+    assert "# AVISO" not in patched
+
+
+def test_preview_sql_cast_null_prone_uses_try_cast_and_warns():
+    """Preview SQL sinaliza risco de NULL: try_cast + warning para cast null-prone."""
+    sql, warnings = build_rows_after_sql(
+        "medallion.silver.messages_clean",
+        ["age", "name"],
+        [TransformOperation(op="cast_column", column="age", data_type="int")],
+        10,
+    )
+
+    assert "try_cast(`age` AS int)" in sql
+    assert "CAST(" not in sql
+    assert any("NULL" in w and "age" in w for w in warnings)
+
+
+def test_preview_sql_cast_safe_type_uses_plain_cast_no_warning():
+    """Cast seguro (string) no preview usa CAST sem warning de NULL."""
+    sql, warnings = build_rows_after_sql(
+        "medallion.silver.messages_clean",
+        ["age", "name"],
+        [TransformOperation(op="cast_column", column="name", data_type="string")],
+        10,
+    )
+
+    assert "CAST(`name` AS string)" in sql
+    assert "try_cast" not in sql
+    assert not any("NULL" in w for w in warnings)
