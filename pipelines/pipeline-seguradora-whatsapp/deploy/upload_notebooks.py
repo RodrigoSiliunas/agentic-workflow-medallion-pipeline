@@ -10,7 +10,7 @@ Requer env vars: DATABRICKS_HOST, DATABRICKS_TOKEN
 
 Mapeamento de paths (espelha observer-feedback.yml):
     pipelines/...notebooks/bronze/ingest.py
-        -> /Shared/flowertex/agentic-workflow-medallion-pipeline/pipelines/.../notebooks/bronze/ingest
+        -> /Shared/flowertex/.../pipelines/.../notebooks/bronze/ingest
 
 Arquivos que nao existem localmente sao pulados com aviso (ex: delecao).
 """
@@ -59,7 +59,7 @@ def upload(w: WorkspaceClient, source: Path, workspace_path: str) -> None:
             format=ImportFormat.AUTO,
             overwrite=True,
         )
-    print(f"    OK")
+    print("    OK")
 
 
 def main(files: list[str]) -> int:
