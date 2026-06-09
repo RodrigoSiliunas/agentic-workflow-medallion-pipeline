@@ -10,6 +10,10 @@ import pytest
 
 from app.services.pipeline_editor.artifacts import build_prompt_markdown
 from app.services.pipeline_editor.codegen import generate_pyspark_patch
+from app.services.pipeline_editor.downstream_impact import (
+    check_downstream_impact,
+    find_column_references,
+)
 from app.services.pipeline_editor.manifest import (
     load_manifest_for_template,
     manifest_for_editor,
@@ -606,3 +610,188 @@ def test_nl_tool_target_node_enum_includes_silver_nodes():
     assert set(target_node_schema["enum"]) == expected_ids
     assert "bronze_ingestion" not in target_node_schema["enum"]
     assert "gold_analytics" not in target_node_schema["enum"]
+
+
+# ---------------------------------------------------------------------------
+# Fase C3 — Guard de impacto downstream
+# ---------------------------------------------------------------------------
+
+SENTIMENT_STUB = """\
+filter_df = df.filter(
+    (F.col("direction") == "inbound") & (F.col("message_body").isNotNull())
+)
+words = filter_df.withColumn(
+    "positive_words",
+    F.expr(f"filter(split(lower(message_body), ' '), x -> x rlike 'bom')"),
+)
+"""
+
+CHURN_STUB = """\
+df2 = df.select("conversation_id", "timestamp", "message_body", "conversation_outcome")
+df3 = df2.withColumn("reactivation_message", F.col("message_body").alias("rm"))
+"""
+
+UNRELATED_STUB = """\
+df = spark.read.table("medallion.silver.conversations_enriched")
+df2 = df.groupBy("conversation_id").agg(F.sum("duration_minutes").alias("total_minutes"))
+"""
+
+
+def test_find_column_references_locates_occurrences():
+    refs = find_column_references("message_body", SENTIMENT_STUB, "gold/sentiment.py")
+
+    assert len(refs) >= 2
+    files = {r.file for r in refs}
+    assert files == {"gold/sentiment.py"}
+    lines = [r.line for r in refs]
+    snippets = [r.snippet for r in refs]
+    assert all(isinstance(ln, int) and ln > 0 for ln in lines)
+    assert all("message_body" in s for s in snippets)
+
+
+def test_find_column_references_returns_empty_for_unrelated():
+    refs = find_column_references("message_body", UNRELATED_STUB, "gold/temporal.py")
+    assert refs == []
+
+
+def test_find_column_references_respects_word_boundary():
+    source = "old_message_body = df.col\nmessage_body_backup = x\nmessage_body = real"
+    refs = find_column_references("message_body", source, "f.py")
+    # Apenas a linha "message_body = real" tem word boundary correto
+    assert len(refs) == 1
+    assert refs[0].line == 3
+
+
+def test_check_downstream_impact_rename_blocked_with_references():
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(op="rename_column", column="message_body", new_name="corpo")
+        ],
+    )
+    sources = {
+        "gold/sentiment.py": SENTIMENT_STUB,
+        "gold/churn.py": CHURN_STUB,
+        "gold/temporal.py": UNRELATED_STUB,
+    }
+
+    impact = check_downstream_impact(draft, sources)
+
+    assert impact["blocked"] is True
+    assert len(impact["affected"]) == 1
+    entry = impact["affected"][0]
+    assert entry["column"] == "message_body"
+    assert entry["op"] == "rename_column"
+    # Apenas arquivos com referência devem aparecer
+    ref_files = {r["file"] for r in entry["references"]}
+    assert "gold/sentiment.py" in ref_files
+    assert "gold/churn.py" in ref_files
+    assert "gold/temporal.py" not in ref_files
+
+
+def test_check_downstream_impact_drop_blocked():
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="drop_column", column="message_body")],
+    )
+    sources = {"gold/sentiment.py": SENTIMENT_STUB}
+
+    impact = check_downstream_impact(draft, sources)
+
+    assert impact["blocked"] is True
+    assert impact["affected"][0]["op"] == "drop_column"
+
+
+def test_check_downstream_impact_unreferenced_column_not_blocked():
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="rename_column", column="agent_notes", new_name="notas")],
+    )
+    sources = {
+        "gold/sentiment.py": SENTIMENT_STUB,
+        "gold/temporal.py": UNRELATED_STUB,
+    }
+
+    impact = check_downstream_impact(draft, sources)
+
+    assert impact["blocked"] is False
+    assert impact["affected"] == []
+
+
+def test_check_downstream_impact_cast_not_blocked():
+    """cast_column não está nas operações bloqueantes — apenas avisa."""
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(op="cast_column", column="message_body", data_type="string")
+        ],
+    )
+    sources = {"gold/sentiment.py": SENTIMENT_STUB}
+
+    impact = check_downstream_impact(draft, sources)
+
+    assert impact["blocked"] is False
+    assert impact["affected"] == []
+
+
+def test_check_downstream_impact_empty_sources():
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[TransformOperation(op="rename_column", column="message_body", new_name="x")],
+    )
+
+    impact = check_downstream_impact(draft, {})
+
+    assert impact["blocked"] is False
+    assert impact["affected"] == []
+
+
+def test_whatsapp_manifest_has_downstream_scan_paths():
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+
+    assert len(manifest.downstream_scan_paths) > 0
+    # Contém notebooks gold e validation
+    paths_str = " ".join(manifest.downstream_scan_paths)
+    assert "gold/" in paths_str
+    assert "validation/checks.py" in paths_str
+
+
+def test_check_downstream_impact_real_gold_notebooks():
+    """DoD C3: rename message_body retorna os gold/validation afetados reais."""
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    repo_root = Path(__file__).resolve().parents[4]
+
+    # Carrega os notebooks reais do repo
+    sources: dict[str, str] = {}
+    for path in manifest.downstream_scan_paths:
+        full = repo_root / path
+        if full.exists():
+            sources[path] = full.read_text(encoding="utf-8")
+
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(op="rename_column", column="message_body", new_name="corpo_mensagem")
+        ],
+    )
+
+    impact = check_downstream_impact(draft, sources)
+
+    assert impact["blocked"] is True
+    affected_files = {r["file"] for r in impact["affected"][0]["references"]}
+    # Os notebooks sabidamente afetados devem aparecer
+    assert any("sentiment.py" in f for f in affected_files)
+    assert any("churn_reengagement.py" in f for f in affected_files)
+    assert any("checks.py" in f for f in affected_files)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -40,6 +41,7 @@ from app.schemas.pipeline_editor import (
 from app.services.databricks_service import DatabricksService
 from app.services.github_service import GitHubService
 from app.services.pipeline_editor.artifacts import build_prompt_markdown
+from app.services.pipeline_editor.downstream_impact import check_downstream_impact
 from app.services.pipeline_editor.manifest import (
     ensure_silver_node,
     load_manifest_for_template,
@@ -531,6 +533,24 @@ async def share_edit_session(
     return {"share_token": token, "url": f"/shared/pipeline-edit/{token}"}
 
 
+async def _load_downstream_notebooks(
+    github: GitHubService,
+    paths: list[str],
+    ref: str,
+) -> dict[str, str]:
+    """Lê notebooks downstream em paralelo via GitHub, ignorando arquivos ausentes."""
+    async def _safe_read(path: str) -> tuple[str, str | None]:
+        try:
+            content = await github.read_file(path, ref)
+            return path, content
+        except Exception:
+            logger.warning("downstream_notebook_not_found", path=path, ref=ref)
+            return path, None
+
+    results = await asyncio.gather(*[_safe_read(p) for p in paths])
+    return {path: content for path, content in results if content is not None}
+
+
 @router.post("/{pipeline_id}/edit-sessions/{session_id}/approve", response_model=dict)
 async def approve_edit_version(
     pipeline_id: uuid.UUID,
@@ -572,6 +592,25 @@ async def approve_edit_version(
     manifest = await _resolve_manifest(db, pipeline)
     node = manifest.resolve_node(draft.target_node)
     github = GitHubService(db, auth.company_id)
+
+    # Guard de impacto downstream: lê notebooks gold/validation em paralelo e bloqueia
+    # approve se drop_column/rename_column afetar colunas referenciadas downstream.
+    if manifest.downstream_scan_paths and not data.force_downstream:
+        ref = session.base_ref or "dev"
+        notebook_sources = await _load_downstream_notebooks(
+            github, manifest.downstream_scan_paths, ref
+        )
+        impact = check_downstream_impact(draft, notebook_sources)
+        if impact["blocked"]:
+            version.validation_result = {
+                "valid": False, "checks": [], "errors": [], "downstream_impact": impact
+            }
+            await db.flush()
+            return {
+                "status": "downstream_blocked",
+                "downstream_impact": impact,
+            }
+
     source = await github.read_file(node.file_path, session.base_ref or "dev")
     source_by_path = {node.file_path: source}
     files, validation = validate_generated_files(

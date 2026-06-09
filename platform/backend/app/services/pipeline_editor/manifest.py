@@ -28,6 +28,8 @@ class PipelineManifest(BaseModel):
     nodes: list[PipelineManifestNode]
     source: str = "embedded"
     editor_layers: list[str] = Field(default_factory=lambda: list(EDITOR_LAYERS))
+    # Caminhos relativos ao repo dos notebooks downstream a escanear no approve
+    downstream_scan_paths: list[str] = Field(default_factory=list)
 
     def resolve_node(self, node_id: str) -> PipelineManifestNode:
         for node in self.nodes:
@@ -61,6 +63,27 @@ def ensure_silver_node(manifest: PipelineManifest, node_id: str) -> PipelineMani
     return node
 
 
+_WHATSAPP_GOLD_BASE = "pipelines/pipeline-seguradora-whatsapp/notebooks"
+
+_WHATSAPP_DOWNSTREAM_PATHS: list[str] = [
+    f"{_WHATSAPP_GOLD_BASE}/gold/agent_performance.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/campaign_roi.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/churn_reengagement.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/competitor_intel.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/email_providers.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/first_contact_resolution.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/funnel.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/lead_scoring.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/negotiation_complexity.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/outcome_prediction.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/segmentation.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/sentiment.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/sentiment_ml.py",
+    f"{_WHATSAPP_GOLD_BASE}/gold/temporal_analysis.py",
+    f"{_WHATSAPP_GOLD_BASE}/validation/checks.py",
+]
+
+
 def _common_operations() -> list[str]:
     return [
         "drop_column",
@@ -84,6 +107,7 @@ def _whatsapp_manifest() -> PipelineManifest:
         display_name="Pipeline Seguradora WhatsApp",
         source="embedded",
         editor_layers=list(EDITOR_LAYERS),
+        downstream_scan_paths=list(_WHATSAPP_DOWNSTREAM_PATHS),
         nodes=[
             PipelineManifestNode(
                 id="bronze_ingestion",
