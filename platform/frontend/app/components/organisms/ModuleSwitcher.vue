@@ -58,6 +58,13 @@ const modules: ModuleItem[] = [
     to: "/channels",
     matches: ["/channels"],
   },
+  {
+    key: "pipelines",
+    label: "Pipelines",
+    icon: "circle-stack",
+    to: "/pipelines",
+    matches: ["/pipelines"],
+  },
 ]
 
 const route = useRoute()
