@@ -592,6 +592,103 @@ def test_codegen_node_without_write_dataframe_raises():
         generate_pyspark_patch("# marker\ncode", draft, node=node)
 
 
+def test_validate_generated_files_rejects_notebook_with_undefined_symbol():
+    """Regressao C2: fix gerado com simbolo inexistente e rejeitado antes do PR."""
+    try:
+        import subprocess as _sp
+
+        _sp.run(["ruff", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, _sp.TimeoutExpired):
+        pytest.skip("ruff nao disponivel")
+
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+
+    # Notebook onde df_inexistente nunca e definido
+    source = (
+        "# Databricks notebook source\n"
+        "df_parsed = spark.read.table('medallion.bronze.conversations')\n"
+        f"\n{node.insertion_marker}\n"
+        "(\n"
+        "    df_parsed.write.format('delta')\n"
+        "    .mode('overwrite')\n"
+        "    .saveAsTable('medallion.silver.messages_clean')\n"
+        ")\n"
+    )
+    # Injeta manualmente um bloco com variavel inexistente antes do marker
+    bad_source = source.replace(
+        node.insertion_marker,
+        (
+            "# COMMAND ----------\n\n"
+            "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor\n"
+            "df_parsed = df_inexistente.drop('agent_notes')\n\n"
+            + node.insertion_marker
+        ),
+    )
+
+    from app.services.pipeline_editor.secure_pr import validate_generated_files
+
+    _, validation = validate_generated_files(
+        source_by_path={node.file_path: bad_source},
+        draft=TransformDraft(
+            layer="silver",
+            target_node="silver_dedup",
+            target_table="medallion.silver.messages_clean",
+            operations=[],  # Sem operacoes — source_by_path ja contem o bloco ruim
+        ),
+        manifest=manifest,
+    )
+
+    assert validation["valid"] is False
+    assert any(
+        "F821" in e or "inexistente" in e.lower() for e in validation["errors"]
+    )
+
+
+def test_validate_generated_files_accepts_notebook_with_valid_code():
+    """Regressao C2: fix valido com variaveis corretas passa na validacao."""
+    try:
+        import subprocess as _sp
+
+        _sp.run(["ruff", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, _sp.TimeoutExpired):
+        pytest.skip("ruff nao disponivel")
+
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    node = manifest.resolve_node("silver_dedup")
+
+    # Notebook com df_parsed definido antes do bloco gerado
+    source = (
+        "# Databricks notebook source\n"
+        "df_parsed = spark.read.table('medallion.bronze.conversations')\n"
+        f"\n{node.insertion_marker}\n"
+        "(\n"
+        "    df_parsed.write.format('delta')\n"
+        "    .mode('overwrite')\n"
+        "    .saveAsTable('medallion.silver.messages_clean')\n"
+        ")\n"
+    )
+
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(op="rename_column", column="meta_city", new_name="cidade"),
+        ],
+    )
+
+    from app.services.pipeline_editor.secure_pr import validate_generated_files
+
+    _, validation = validate_generated_files(
+        source_by_path={node.file_path: source},
+        draft=draft,
+        manifest=manifest,
+    )
+
+    assert validation["valid"] is True
+
+
 def test_nl_tool_target_node_enum_includes_silver_nodes():
     """Regressao: target_node era string aberta; LLM podia inventar/divergir.
     Agora o tool schema injeta enum com IDs dos nos Silver disponiveis.

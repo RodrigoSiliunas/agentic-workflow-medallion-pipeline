@@ -8,6 +8,7 @@ import pytest
 
 from observer.validator import (
     ValidationResult,
+    _check_notebook_undefined_names,
     _check_syntax,
     _parse_ruff_json,
     _should_run_ruff,
@@ -117,6 +118,80 @@ class TestParseRuffJson:
 
 
 # ================================================================
+# _check_notebook_undefined_names
+# ================================================================
+
+
+class TestCheckNotebookUndefinedNames:
+    def test_returns_none_when_ruff_unavailable(self):
+        with patch("observer.validator.subprocess.run", side_effect=FileNotFoundError):
+            result = _check_notebook_undefined_names(
+                "df = spark.read.table('t')\n", "notebooks/silver/dedup.py"
+            )
+        assert result is None
+
+    def test_clean_code_returns_ok(self):
+        with patch(
+            "observer.validator.subprocess.run",
+            return_value=type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+        ):
+            ok, errors = _check_notebook_undefined_names(
+                "df = spark.read.table('t')\n", "notebooks/silver/dedup.py"
+            )
+        assert ok is True
+        assert errors == []
+
+    def test_f821_violation_returned_with_adjusted_line(self):
+        import json
+
+        # Preamble tem 16 linhas; erro na linha 17 -> linha 1 do notebook
+        violations = [
+            {
+                "code": "F821",
+                "message": "Undefined name `df_inexistente`",
+                "location": {"row": 17, "column": 1},
+            }
+        ]
+        mock_proc = type(
+            "P",
+            (),
+            {"returncode": 1, "stdout": json.dumps(violations), "stderr": ""},
+        )()
+        with patch("observer.validator.subprocess.run", return_value=mock_proc):
+            ok, errors = _check_notebook_undefined_names(
+                "df_inexistente.drop('x')\n", "notebooks/silver/dedup.py"
+            )
+        assert ok is False
+        assert len(errors) == 1
+        assert "F821" in errors[0]
+        assert "linha 1" in errors[0]  # 17 - 16 = 1
+
+    def test_preamble_errors_filtered_out(self):
+        """Erros em linhas do preamble (row <= 16) sao ignorados."""
+        import json
+
+        violations = [
+            {
+                "code": "F821",
+                "message": "Undefined name `x`",
+                "location": {"row": 5},  # linha do preamble
+            }
+        ]
+        mock_proc = type(
+            "P",
+            (),
+            {"returncode": 1, "stdout": json.dumps(violations), "stderr": ""},
+        )()
+        with patch("observer.validator.subprocess.run", return_value=mock_proc):
+            ok, errors = _check_notebook_undefined_names(
+                "df = spark.read.table('t')\n", "notebooks/silver/dedup.py"
+            )
+        # Sem erros apos filtrar linhas do preamble
+        assert ok is True
+        assert errors == []
+
+
+# ================================================================
 # validate_fix (integration)
 # ================================================================
 
@@ -139,16 +214,69 @@ class TestValidateFix:
         assert "ruff" not in result.checks_run
 
     def test_valid_notebook_passes_without_ruff(self):
-        """Notebook valido passa com syntax + forbidden_imports (sem ruff)."""
+        """Notebook valido passa com syntax + forbidden_imports quando ruff indisponivel."""
         code = (
             "# Databricks notebook source\n"
             "# MAGIC %md\n"
             'print("ola")\n'
         )
-        result = validate_fix(code, "my_notebooks/bronze/ingest.py")
+        with patch(
+            "observer.validator._check_notebook_undefined_names",
+            return_value=None,  # ruff nao disponivel
+        ):
+            result = validate_fix(code, "my_notebooks/bronze/ingest.py")
         assert result.valid is True
-        # ruff pulado em notebooks; syntax e forbidden_imports sempre rodam
+        # ruff F821 skipped (None); syntax e forbidden_imports sempre rodam
         assert result.checks_run == ["syntax", "forbidden_imports"]
+
+    def test_notebook_with_undefined_symbol_rejected(self):
+        """Notebook com simbolo inexistente e rejeitado via F821."""
+        code = (
+            "# Databricks notebook source\n"
+            "# COMMAND ----------\n"
+            "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor\n"
+            "df_parsed = df_inexistente.drop('col_a')\n"
+        )
+        with patch(
+            "observer.validator._check_notebook_undefined_names",
+            return_value=(
+                False,
+                ["ruff F821 (linha 4): Undefined name `df_inexistente`"],
+            ),
+        ):
+            result = validate_fix(code, "notebooks/silver/dedup_clean.py")
+        assert result.valid is False
+        assert "ruff_f821" in result.checks_run
+        assert any("F821" in e for e in result.errors)
+
+    def test_notebook_with_undefined_symbol_ruff_unavailable_passes(self):
+        """Sem ruff disponivel, notebook com simbolo indefinido nao e rejeitado."""
+        code = (
+            "# Databricks notebook source\n"
+            "df_parsed = df_inexistente.drop('col_a')\n"
+        )
+        with patch(
+            "observer.validator._check_notebook_undefined_names",
+            return_value=None,
+        ):
+            result = validate_fix(code, "notebooks/silver/dedup_clean.py")
+        assert result.valid is True
+        assert "ruff_f821" not in result.checks_run
+
+    def test_notebook_with_valid_pyspark_symbols_passes(self):
+        """Notebook com codigo PySpark valido passa no check F821."""
+        code = (
+            "# Databricks notebook source\n"
+            "df_bronze = spark.read.table('medallion.bronze.conversations')\n"
+            "df_parsed = df_bronze.filter(F.col('x').isNotNull())\n"
+        )
+        with patch(
+            "observer.validator._check_notebook_undefined_names",
+            return_value=(True, []),
+        ):
+            result = validate_fix(code, "notebooks/silver/dedup_clean.py")
+        assert result.valid is True
+        assert "ruff_f821" in result.checks_run
 
     def test_non_notebook_without_ruff_still_validates_syntax(self):
         """Sem ruff instalado, o resultado depende so de syntax."""
@@ -247,3 +375,48 @@ class TestRuffSmoke:
         assert result.valid is True
         assert "syntax" in result.checks_run
         assert "ruff" in result.checks_run
+
+    def test_real_ruff_f821_rejects_notebook_with_undefined_name(self):
+        """Smoke C2: ruff real rejeita notebook que referencia variavel inexistente."""
+        try:
+            import subprocess
+            subprocess.run(["ruff", "--version"], capture_output=True, timeout=5)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pytest.skip("ruff nao disponivel")
+
+        # df_inexistente nao e definido em nenhuma linha do notebook
+        code = (
+            "# Databricks notebook source\n"
+            "df_bronze = spark.read.table('medallion.bronze.conversations')\n"
+            "\n"
+            "# COMMAND ----------\n"
+            "\n"
+            "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor\n"
+            "df_bronze = df_inexistente.drop('agent_notes')\n"
+        )
+        result = validate_fix(code, "notebooks/silver/dedup_clean.py")
+        assert result.valid is False
+        assert "ruff_f821" in result.checks_run
+        assert any("F821" in e for e in result.errors)
+
+    def test_real_ruff_f821_accepts_notebook_with_valid_code(self):
+        """Smoke C2: ruff real aceita notebook com variaveis corretamente definidas."""
+        try:
+            import subprocess
+            subprocess.run(["ruff", "--version"], capture_output=True, timeout=5)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pytest.skip("ruff nao disponivel")
+
+        # df_bronze e definido antes do bloco gerado, spark/F vem do preamble
+        code = (
+            "# Databricks notebook source\n"
+            "df_bronze = spark.read.table('medallion.bronze.conversations')\n"
+            "\n"
+            "# COMMAND ----------\n"
+            "\n"
+            "# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor\n"
+            "df_bronze = df_bronze.drop('agent_notes')\n"
+        )
+        result = validate_fix(code, "notebooks/silver/dedup_clean.py")
+        assert result.valid is True
+        assert "ruff_f821" in result.checks_run
