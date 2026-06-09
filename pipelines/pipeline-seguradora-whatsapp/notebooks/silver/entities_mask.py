@@ -210,6 +210,14 @@ logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 
 # COMMAND ----------
 
+# COMMAND ----------
+
+# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
+# Bloco gerado a partir de TransformDraft versionado na plataforma.
+df_editor = df_parsed
+df_editor = df_editor.drop("sender_phone")
+df_editor = df_editor.withColumnRenamed("message_body", "body")
+
 # DBTITLE 1,Salvar Leads Profile
 # Persiste o perfil de cada lead com entidades mascaradas
 (
