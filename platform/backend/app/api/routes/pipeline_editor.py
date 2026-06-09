@@ -43,6 +43,7 @@ from app.services.github_service import GitHubService
 from app.services.pipeline_editor.artifacts import build_prompt_markdown
 from app.services.pipeline_editor.downstream_impact import check_downstream_impact
 from app.services.pipeline_editor.manifest import (
+    DEFAULT_CATALOG,
     ensure_silver_node,
     load_manifest_for_template,
     manifest_for_editor,
@@ -110,6 +111,22 @@ def _template_slug(pipeline: Pipeline) -> str:
     )
 
 
+def _pipeline_catalog(pipeline: Pipeline) -> str:
+    """Catalog Unity efetivo do pipeline.
+
+    O saga de deploy persiste em `config["catalog"]` o catalog que de fato
+    provisionou (prod=`medallion`, dev=`medallion_dev`, ou custom do wizard).
+    Fallback em `env_vars.catalog` e, por fim, no default — assim pipelines
+    antigos (seed) sem o campo continuam apontando pra `medallion`.
+    """
+    config = pipeline.config or {}
+    return str(
+        config.get("catalog")
+        or (config.get("env_vars") or {}).get("catalog")
+        or DEFAULT_CATALOG
+    )
+
+
 async def _resolve_manifest(db: AsyncSession, pipeline: Pipeline):
     slug = _template_slug(pipeline)
     config = pipeline.config or {}
@@ -122,6 +139,7 @@ async def _resolve_manifest(db: AsyncSession, pipeline: Pipeline):
         slug,
         template_name=template_name,
         config_manifest=config.get("manifest"),
+        catalog=_pipeline_catalog(pipeline),
     )
 
 
