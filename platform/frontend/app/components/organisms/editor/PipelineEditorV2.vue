@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { PipelineWorkspace, PipelineEditSession, SessionStatusV2 } from "~/types/pipeline-editor-v2"
-import { MOCK_TARGET_TABLE_COLUMNS } from "~/composables/mock/pipeline-editor"
 
 const props = defineProps<{
   workspace: PipelineWorkspace
@@ -66,8 +65,8 @@ const layer = computed(() => {
   if (!node) return "Silver"
   return node.layer.charAt(0).toUpperCase() + node.layer.slice(1)
 })
-const targetNode = computed(() => props.workspace.manifest.nodes[0]?.taskKey || "")
-const targetTable = computed(() => props.workspace.manifest.nodes[0]?.outputTables[0] || "")
+const targetNode = computed(() => session.targetNodeKey.value || props.workspace.manifest.nodes[0]?.taskKey || "")
+const targetTable = computed(() => session.targetTable.value || props.workspace.manifest.nodes[0]?.outputTables[0] || "")
 
 // ── Local wizard/tabbed state ──────────────────────────────────────────────
 const wizardStep = ref(0)
@@ -239,7 +238,10 @@ function jumpTo(state: string) {
               :proposal="session.currentProposal.value"
               :operations="session.draft.value?.operations || []"
               :file-diffs="session.fileDiffs.value"
-              :table-columns="MOCK_TARGET_TABLE_COLUMNS"
+              :table-columns="session.tableColumns.value"
+              :nodes="session.manifestNodes.value"
+              :selected-node-id="session.selectedNodeId.value"
+              @select-node="session.selectTargetNode($event)"
               @update:inspector-tab="session.inspectorTab.value = $event"
               @update:draft="session.draft.value = $event"
               @mark-builder-active="session.markBuilderActive()"
@@ -287,7 +289,10 @@ function jumpTo(state: string) {
           <EditorTransformBuilder
             :draft="session.draft.value"
             :source-of-truth="session.sourceOfTruth.value"
-            :table-columns="MOCK_TARGET_TABLE_COLUMNS"
+            :table-columns="session.tableColumns.value"
+            :nodes="session.manifestNodes.value"
+            :selected-node-id="session.selectedNodeId.value"
+            @select-node="session.selectTargetNode($event)"
             @update:draft="session.draft.value = $event"
             @mark-builder-active="session.markBuilderActive()"
           />
@@ -349,7 +354,10 @@ function jumpTo(state: string) {
           <EditorTransformBuilder
             :draft="session.draft.value"
             :source-of-truth="session.sourceOfTruth.value"
-            :table-columns="MOCK_TARGET_TABLE_COLUMNS"
+            :table-columns="session.tableColumns.value"
+            :nodes="session.manifestNodes.value"
+            :selected-node-id="session.selectedNodeId.value"
+            @select-node="session.selectTargetNode($event)"
             @update:draft="session.draft.value = $event"
             @mark-builder-active="session.markBuilderActive()"
           />

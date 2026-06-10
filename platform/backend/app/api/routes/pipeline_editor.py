@@ -243,6 +243,67 @@ async def get_pipeline_workspace(
     }
 
 
+@router.get("/{pipeline_id}/columns", response_model=dict)
+async def list_table_columns(
+    pipeline_id: uuid.UUID,
+    table: str,
+    auth: AuthContext = Depends(require_permission("chat")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Colunas REAIS da tabela alvo, via information_schema no warehouse.
+
+    Alimenta o ColumnPicker do builder com o schema verdadeiro do pipeline.
+    `table` precisa pertencer as output_tables dos nodes Silver do manifest —
+    mesmo guard do preview (impede ler tabela arbitraria / cross-tenant).
+    """
+    pipeline = await _load_pipeline(db, auth, pipeline_id)
+    manifest = manifest_for_editor(await _resolve_manifest(db, pipeline))
+    allowed: list[str] = []
+    for node in manifest.nodes:
+        allowed.extend(node.output_tables)
+    try:
+        validate_target_table(table, allowed)
+    except (ValueError, PreviewSqlError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    parts = [p.strip("` ") for p in table.split(".")]
+    if len(parts) != 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tabela deve ser qualificada como catalog.schema.tabela",
+        )
+    catalog, schema_name, table_name = parts
+    # Identificadores ja validados contra o manifest — interpolacao segura.
+    sql = (
+        "SELECT column_name, full_data_type, is_nullable, comment "
+        f"FROM `{catalog}`.information_schema.columns "
+        f"WHERE table_schema = '{schema_name}' AND table_name = '{table_name}' "
+        "ORDER BY ordinal_position"
+    )
+    databricks = DatabricksService(db, auth.company_id)
+    response = await databricks.query_table(sql, max_rows=500)
+    state = str(((response.get("status") or {}).get("state")) or "").upper()
+    if state != "SUCCEEDED":
+        err = ((response.get("status") or {}).get("error") or {}).get("message", state)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Falha ao ler colunas da tabela: {err}",
+        )
+    rows = ((response.get("result") or {}).get("data_array")) or []
+    columns = [
+        {
+            "name": row[0],
+            "type": row[1],
+            "nullable": str(row[2]).upper() == "YES",
+            "comment": row[3],
+        }
+        for row in rows
+    ]
+    return {"table": table, "columns": columns}
+
+
 @router.get("/{pipeline_id}/edit-sessions", response_model=list[EditSessionResponse])
 async def list_edit_sessions(
     pipeline_id: uuid.UUID,

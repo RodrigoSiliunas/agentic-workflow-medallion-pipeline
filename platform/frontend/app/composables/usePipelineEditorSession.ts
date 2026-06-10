@@ -148,6 +148,53 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
     validation.value = null
   }
 
+  // ── Node alvo + colunas REAIS da tabela (builder) ────────────────────────
+  // O manifest do workspace traz apenas nodes Silver (editor é Silver-only);
+  // o builder seleciona um deles e o ColumnPicker carrega o schema verdadeiro
+  // da tabela via GET /pipelines/{id}/columns (information_schema).
+  const selectedNodeId = ref<string | null>(null)
+  const tableColumns = ref<SchemaColumn[]>([])
+  const columnsLoading = ref(false)
+
+  const manifestNodes = computed(() => toValue(workspace)?.manifest.nodes ?? [])
+  const targetManifestNode = computed(
+    () =>
+      manifestNodes.value.find((n) => n.id === selectedNodeId.value) ??
+      manifestNodes.value[0] ??
+      null,
+  )
+  const targetNodeKey = computed(() => targetManifestNode.value?.taskKey ?? "")
+  const targetTable = computed(() => targetManifestNode.value?.outputTables[0] ?? "")
+
+  async function loadTableColumns() {
+    const ws = toValue(workspace)
+    const table = targetTable.value
+    if (!ws || !table) return
+    columnsLoading.value = true
+    try {
+      tableColumns.value = await api.getTableColumns(ws.id, table)
+    } catch {
+      // Sem colunas o picker continua usável (digitação manual / allowCreate)
+      tableColumns.value = []
+    } finally {
+      columnsLoading.value = false
+    }
+  }
+
+  watch(targetTable, () => { loadTableColumns() }, { immediate: true })
+
+  function selectTargetNode(nodeId: string) {
+    selectedNodeId.value = nodeId
+    // Mantém o draft coerente com o node recém-selecionado
+    if (draft.value) {
+      draft.value = {
+        ...draft.value,
+        targetNode: targetNodeKey.value,
+        targetTable: targetTable.value,
+      }
+    }
+  }
+
   function reset() {
     messages.value = []
     draft.value = null
@@ -460,6 +507,16 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
     validation,
     autoSavedAt,
     fileDiffs,
+    // Node alvo + colunas reais (builder)
+    selectedNodeId,
+    manifestNodes,
+    targetManifestNode,
+    targetNodeKey,
+    targetTable,
+    tableColumns,
+    columnsLoading,
+    loadTableColumns,
+    selectTargetNode,
     stateMachine,
     error,
     sessionsCollapsed,
