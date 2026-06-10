@@ -106,4 +106,6 @@ export interface ApproveEditResponse {
   validation?: Record<string, unknown>
   pr?: Record<string, unknown>
   diff?: CodeDiffFile[]
+  // Presente quando status === "downstream_blocked" (guard C3)
+  downstream_impact?: Record<string, unknown>
 }
