@@ -44,21 +44,26 @@ describe("EditorTransformBuilder", () => {
     expect(addBtn).toBeDefined()
   })
 
-  it("opens popover with OP_TYPES when 'Adicionar operação' button is clicked", async () => {
+  // O menu agora é TELEPORTADO pro body (fix do clipping pela tab bar) —
+  // os testes consultam document.body em vez do wrapper.
+  function bodyMenu(): HTMLElement | null {
+    return document.body.querySelector('[data-testid="add-op-menu"]')
+  }
+
+  it("opens teleported popover with OP_TYPES when 'Adicionar operação' is clicked", async () => {
     const wrapper = await mountSuspended(EditorTransformBuilder, {
       props: { draft: makeDraft() },
     })
     const addBtn = wrapper.findAll("button").find((b) => b.text().includes("Adicionar operação"))
     await addBtn!.trigger("click")
+    await nextTick()
 
-    // Popover should be visible
-    const popover = wrapper.find(".op-add-popover")
-    expect(popover.exists()).toBe(true)
-
-    // Each OP_TYPE label should appear in the popover
+    const menu = bodyMenu()
+    expect(menu).not.toBeNull()
     for (const opType of OP_TYPES) {
-      expect(popover.text()).toContain(opType.label)
+      expect(menu!.textContent).toContain(opType.label)
     }
+    await addBtn!.trigger("click") // fecha (higiene entre testes)
   })
 
   it("emits update:draft with new op appended when a type is clicked in popover", async () => {
@@ -67,17 +72,16 @@ describe("EditorTransformBuilder", () => {
       props: { draft: makeDraft(initialOps) },
     })
 
-    // Open the popover
     const addBtn = wrapper.findAll("button").find((b) => b.text().includes("Adicionar operação"))
     await addBtn!.trigger("click")
+    await nextTick()
 
-    // Click "Renomear coluna" (rename_column)
-    const renameBtn = wrapper
-      .find(".op-add-popover")
-      .findAll("button")
-      .find((b) => b.text().includes("Renomear coluna"))
+    const renameBtn = [...bodyMenu()!.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Renomear coluna"),
+    ) as HTMLElement
     expect(renameBtn).toBeDefined()
-    await renameBtn!.trigger("click")
+    renameBtn.click()
+    await nextTick()
 
     const emitted = wrapper.emitted("update:draft")
     expect(emitted).toBeTruthy()
@@ -92,11 +96,51 @@ describe("EditorTransformBuilder", () => {
     })
     const addBtn = wrapper.findAll("button").find((b) => b.text().includes("Adicionar operação"))
     await addBtn!.trigger("click")
+    await nextTick()
 
-    const firstOpBtn = wrapper.find(".op-add-popover button")
-    await firstOpBtn.trigger("click")
+    const firstOpBtn = bodyMenu()!.querySelector("button") as HTMLElement
+    firstOpBtn.click()
+    await nextTick()
 
     expect(wrapper.emitted("markActive")).toBeTruthy()
+  })
+
+  it("renders node selector with locked Bronze/Gold and emits selectNode on silver pick", async () => {
+    const nodes = [
+      {
+        id: "silver_dedup", layer: "silver" as const, taskKey: "silver_dedup",
+        filePath: "x", inputTables: [], outputTables: ["cat.silver.messages_clean"],
+        supportedOperations: [], insertionMarker: "#",
+      },
+      {
+        id: "silver_entities", layer: "silver" as const, taskKey: "silver_entities",
+        filePath: "y", inputTables: [], outputTables: ["cat.silver.leads"],
+        supportedOperations: [], insertionMarker: "#",
+      },
+    ]
+    const wrapper = await mountSuspended(EditorTransformBuilder, {
+      props: { draft: makeDraft(), nodes, selectedNodeId: "silver_dedup" },
+    })
+
+    // Botão do seletor mostra a tabela do node ativo
+    const selBtn = wrapper.find('[data-testid="node-selector"]')
+    expect(selBtn.exists()).toBe(true)
+    expect(selBtn.text()).toContain("cat.silver.messages_clean")
+
+    await selBtn.trigger("click")
+    await nextTick()
+
+    const menu = document.body.querySelector('[data-testid="node-selector-menu"]')
+    expect(menu).not.toBeNull()
+    // Camadas bloqueadas visíveis
+    expect(menu!.textContent).toContain("Bronze · bloqueada")
+    expect(menu!.textContent).toContain("Gold · bloqueada")
+
+    // Escolher o outro node silver emite selectNode
+    const opt = menu!.querySelector('[data-testid="node-option-silver_entities"]') as HTMLElement
+    opt.click()
+    await nextTick()
+    expect(wrapper.emitted("selectNode")?.[0]).toEqual(["silver_entities"])
   })
 
   it("emits update:draft without removed op when EditorOpCard emits remove", async () => {
