@@ -107,12 +107,25 @@ describe("usePipelineEditorSession — canApprove matriz", () => {
     expect(session.canApprove.value).toBe(false)
   })
 
-  it("canApprove=false quando validation.valid=false", async () => {
+  // A validação (C2) roda DENTRO do approve no backend (e revalida a cada
+  // tentativa) — falha anterior NÃO trava o botão; o gate é só preview+PR.
+  it("canApprove=true mesmo com validation.valid=false (validação roda no approve)", async () => {
     const wrapper = await mountSuspended(makeTestComp())
     const { session } = wrapper.vm as { session: ReturnType<typeof usePipelineEditorSession> }
     session.preview.value = { status: "ready" }
     session.validation.value = { valid: false, checks: [] }
-    expect(session.canApprove.value).toBe(false)
+    expect(session.canApprove.value).toBe(true)
+  })
+
+  // Regressão do deadlock: validation só nasce DEPOIS do primeiro approve —
+  // com ela nula e preview pronto, o botão TEM que estar habilitado.
+  it("canApprove=true com preview=ready e validation=null", async () => {
+    const wrapper = await mountSuspended(makeTestComp())
+    const { session } = wrapper.vm as { session: ReturnType<typeof usePipelineEditorSession> }
+    session.preview.value = { status: "ready" }
+    session.validation.value = null
+    session.stateMachine.value = "idle"
+    expect(session.canApprove.value).toBe(true)
   })
 
   it("canApprove=false quando stateMachine=pr_created", async () => {
