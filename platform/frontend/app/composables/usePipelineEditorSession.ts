@@ -16,6 +16,7 @@ import type {
   PipelineWorkspace,
   SchemaDelta,
   SchemaColumn,
+  PipelineManifestNode,
   ValidationCheck,
 } from "~/types/pipeline-editor-v2"
 
@@ -48,6 +49,20 @@ function mapValidation(raw: Record<string, unknown>): ValidationResult {
     checks: (raw.checks as ValidationCheck[] | undefined) || [],
     error: raw.error as string | undefined,
   }
+}
+
+// Default do node alvo: o ULTIMO escritor da tabela do primeiro node.
+// Quando mais de um node escreve a mesma tabela (dedup escreve
+// messages_clean, entities a REESCREVE), o schema final que o usuário vê
+// no picker é o do último — aplicar operação num escritor anterior vira
+// no-op silencioso (achado no E2E real, PR #132).
+export function pickDefaultTargetNode(
+  nodes: PipelineManifestNode[],
+): PipelineManifestNode | null {
+  if (!nodes.length) return null
+  const table = nodes[0]!.outputTables[0]
+  const last = [...nodes].reverse().find((n) => n.outputTables.includes(table ?? ""))
+  return last ?? nodes[0]!
 }
 
 export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace | null>) {
@@ -160,8 +175,7 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
   const targetManifestNode = computed(
     () =>
       manifestNodes.value.find((n) => n.id === selectedNodeId.value) ??
-      manifestNodes.value[0] ??
-      null,
+      pickDefaultTargetNode(manifestNodes.value),
   )
   const targetNodeKey = computed(() => targetManifestNode.value?.taskKey ?? "")
   const targetTable = computed(() => targetManifestNode.value?.outputTables[0] ?? "")
