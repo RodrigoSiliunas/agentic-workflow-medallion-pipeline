@@ -81,8 +81,9 @@ describe("EditorPrPanel — approve logic matrix", () => {
     expect(blockMsg.text()).toContain("não está pronto")
   })
 
-  // Case 3: preview OK but validation.valid=false → canApprove=false, blockMsg contains "Validação"
-  it("Case 3: preview ready but validation failed — approve disabled, Validação in block msg", async () => {
+  // Case 3: preview OK + validation.valid=false (approve anterior falhou) →
+  // botão CONTINUA habilitado (backend revalida em todo approve); warning visível.
+  it("Case 3: preview ready but validation failed — approve ENABLED with non-blocking warning", async () => {
     const wrapper = await mountSuspended(EditorPrPanel, {
       props: {
         proposal: makeProposal(),
@@ -93,11 +94,31 @@ describe("EditorPrPanel — approve logic matrix", () => {
       },
     })
     const approveBtn = wrapper.findAll("button").find((b) => b.text().includes("Aprovar"))
-    expect(approveBtn!.attributes("disabled")).toBeDefined()
+    expect(approveBtn!.attributes("disabled")).toBeUndefined()
 
-    const blockMsg = wrapper.find(".block-msg")
-    expect(blockMsg.exists()).toBe(true)
-    expect(blockMsg.text()).toContain("Validação")
+    const warn = wrapper.find(".block-msg.warn")
+    expect(warn.exists()).toBe(true)
+    expect(warn.text()).toContain("Validação")
+  })
+
+  // Case 3b (regressão do deadlock): preview OK + validation AINDA NULA — a
+  // validação (C2) roda DENTRO do approve; exigi-la antes travava o botão
+  // para sempre. Com preview pronto, o botão deve estar habilitado.
+  it("Case 3b: preview ready and validation null — approve button is ENABLED", async () => {
+    const wrapper = await mountSuspended(EditorPrPanel, {
+      props: {
+        proposal: makeProposal(),
+        preview: makePreview("ready"),
+        validation: null,
+        session: makeSession(),
+        fileDiffs: [],
+      },
+    })
+    const approveBtn = wrapper.findAll("button").find((b) => b.text().includes("Aprovar"))
+    expect(approveBtn!.attributes("disabled")).toBeUndefined()
+
+    // Sem bloqueio nem warning — estado limpo pré-primeiro-approve
+    expect(wrapper.find(".block-msg").exists()).toBe(false)
   })
 
   // Case 4: pr_created → canApprove=false, blockMsg="PR já aberto", shows "Ver PR" link not approve btn

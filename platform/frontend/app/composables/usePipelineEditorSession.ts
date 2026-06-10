@@ -103,17 +103,18 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
         : "chat",
   )
 
+  // A validação (C2) roda DENTRO do approve no backend e só existe como
+  // resultado dele — exigi-la antes do clique criava um deadlock em que o
+  // botão nunca habilitava. Gate correto: preview pronto + PR ainda não aberto.
   const canApprove = computed(
     () =>
       preview.value?.status === "ready" &&
-      validation.value?.valid === true &&
       stateMachine.value !== "pr_created",
   )
 
   const approveBlockReason = computed<string | null>(() => {
     if (!preview.value) return "Rode o preview primeiro"
     if (preview.value.status !== "ready") return "Preview não está pronto"
-    if (!validation.value?.valid) return "Validação falhou — corrija os erros antes de aprovar"
     if (stateMachine.value === "pr_created") return "PR já aberto"
     return null
   })
@@ -137,6 +138,14 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
     store.editSessions = [session, ...store.editSessions]
     store.activeEditSessionId = session.id
     return session
+  }
+
+  // Draft mudou → o backend cria uma NOVA versão a cada updateDraft e o
+  // approve exige preview fresco dessa versão. Invalida os artefatos da
+  // versão anterior pra UI não exibir um preview/validação obsoletos.
+  function invalidateRunArtifacts() {
+    preview.value = null
+    validation.value = null
   }
 
   function reset() {
@@ -181,6 +190,7 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
       ]
       currentProposal.value = response.proposal
       draft.value = response.proposal.draft
+      invalidateRunArtifacts()
       inspectorTab.value = "rascunho"
     } catch (e) {
       isStreaming.value = false
@@ -197,6 +207,7 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
     if (!currentProposal.value) return
     // Não marca builder como active — a origem é o chat (RF-C)
     draft.value = currentProposal.value.draft
+    invalidateRunArtifacts()
     inspectorTab.value = "rascunho"
   }
 
@@ -224,6 +235,7 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
       try {
         await api.updateDraft(ws.id, session.id, d)
         autoSavedAt.value = now()
+        invalidateRunArtifacts()
       } catch { /* silently ignore autosave failures */ }
     }, 1000)
   }
@@ -250,6 +262,7 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
     try {
       await api.updateDraft(ws.id, session.id, target)
       autoSavedAt.value = now()
+      invalidateRunArtifacts()
     } catch (e) {
       error.value = {
         title: "Erro ao salvar rascunho",
@@ -306,6 +319,43 @@ export function usePipelineEditorSession(workspace: MaybeRef<PipelineWorkspace |
       const result = await api.approveEdit(ws.id, session.id)
       if (result.validation) validation.value = mapValidation(result.validation as Record<string, unknown>)
       if (result.diff) fileDiffs.value = result.diff
+
+      // O backend devolve 200 com status de gate de segurança quando o approve
+      // é barrado: C3 (downstream_blocked) e C2 (validation_failed). Não são
+      // sucesso — exibir o motivo e NÃO transicionar para pr_created.
+      if (result.status === "downstream_blocked") {
+        const impact = result.downstream_impact as
+          | { affected?: { column: string; references?: { file: string }[] }[] }
+          | undefined
+        const affected = impact?.affected || []
+        const cols = affected.map((a) => a.column).join(", ")
+        const files = [...new Set(affected.flatMap((a) => (a.references || []).map((r) => r.file)))]
+        validation.value = {
+          valid: false,
+          checks: [{ label: "Impacto downstream", state: "fail" }],
+          error: `Coluna(s) ${cols} referenciada(s) downstream em ${files.length} notebook(s).`,
+        }
+        stateMachine.value = "validation_failed"
+        error.value = {
+          title: "Aprovação bloqueada por impacto downstream",
+          message:
+            `A(s) coluna(s) ${cols} é(são) usada(s) por: ` +
+            `${files.slice(0, 5).join(", ")}${files.length > 5 ? "…" : ""}. ` +
+            "Ajuste o draft para colunas sem referências downstream.",
+        }
+        inspectorTab.value = "pr"
+        return
+      }
+      if (result.status === "validation_failed") {
+        stateMachine.value = "validation_failed"
+        error.value = {
+          title: "Validação pré-PR rejeitou o código gerado",
+          message: validation.value?.error || "Corrija o draft e tente novamente.",
+        }
+        inspectorTab.value = "pr"
+        return
+      }
+
       // PR retornado pelo backend (number/url ja normalizados em usePipelinesApi)
       const pr = result.pr as { number?: number; url?: string } | undefined
       stateMachine.value = "opening_pr"

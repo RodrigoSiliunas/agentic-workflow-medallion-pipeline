@@ -28,10 +28,12 @@ const emit = defineEmits<{
 // ---------------------------------------------------------------------------
 // Computed — lógica de aprovação
 // ---------------------------------------------------------------------------
+// A validação (C2) roda DENTRO do approve no backend — é RESULTADO do clique,
+// não pré-requisito. Exigir validation.valid aqui criava deadlock: o botão
+// nunca habilitava. Gate correto: preview pronto + PR ainda não aberto.
 const canApprove = computed(
   () =>
     props.preview?.status === "ready" &&
-    props.validation?.valid &&
     props.session.status !== "pr_created"
 )
 
@@ -45,11 +47,16 @@ const blockMsg = computed<string | null>(() => {
   if (props.preview.status !== "ready") {
     return `Preview não está pronto (status atual: ${props.preview.status}).`
   }
-  if (props.validation && !props.validation.valid) {
-    return "Validação rejeitou — corrija antes de aprovar."
-  }
   return null
 })
+
+// Aviso NÃO-bloqueante: um approve anterior falhou (C2/C3) — o usuário pode
+// ajustar o draft ou tentar de novo (o backend revalida em todo approve).
+const warnMsg = computed<string | null>(() =>
+  props.validation && !props.validation.valid
+    ? (props.validation.error || "Validação rejeitou — ajuste o draft e tente novamente.")
+    : null
+)
 
 // ---------------------------------------------------------------------------
 // Estado local — diff modal
@@ -174,6 +181,15 @@ const defaultChecks = [
       >
         <AppIcon name="lock-closed" size="xs" />
         <span>{{ blockMsg }}</span>
+      </div>
+
+      <!-- Aviso não-bloqueante: validação do approve anterior falhou -->
+      <div
+        v-else-if="warnMsg && session.status !== 'pr_created'"
+        class="block-msg warn"
+      >
+        <AppIcon name="exclamation-triangle" size="xs" />
+        <span>{{ warnMsg }}</span>
       </div>
 
       <!-- Estado: PR já criado -->
