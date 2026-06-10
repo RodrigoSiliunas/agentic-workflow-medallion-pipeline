@@ -65,6 +65,36 @@ async def test_create_deployment_with_seeded_template(
     assert len(listing.json()) == 1
 
 
+async def test_create_deployment_invalid_catalog_fails_fast_422(
+    http_client: httpx.AsyncClient, auth_headers: dict, db_session
+):
+    """Catalog com hifen (invalido no Unity Catalog) deve falhar NO SUBMIT
+    (422), nao 10 steps depois no saga — bug real visto no E2E com
+    'medallion-security'."""
+    await seed_templates(db_session)
+
+    response = await http_client.post(
+        "/api/v1/deployments",
+        json={
+            "template_slug": "pipeline-seguradora-whatsapp",
+            "config": {
+                "name": "deploy-catalogo-invalido",
+                "environment": "prod",
+                "tags": {},
+                "credentials": {},
+                "env_vars": {"catalog_name": "medallion-security"},
+            },
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 422, response.text
+    assert "medallion-security" in response.json()["detail"]
+
+    # Nenhum deployment deve ter sido criado
+    listing = await http_client.get("/api/v1/deployments", headers=auth_headers)
+    assert listing.json() == []
+
+
 async def test_create_deployment_unknown_template_404(
     http_client: httpx.AsyncClient, auth_headers: dict
 ):

@@ -25,7 +25,10 @@ from app.services.real_saga.databricks_client import workspace_client
 from app.services.real_saga.registry import register_saga_step
 
 _SCHEMAS = ["bronze", "silver", "gold", "pipeline", "observer"]
-_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+# Publico: a rota POST /deployments usa a MESMA regra pra falhar rapido (422)
+# no submit, em vez do saga queimar 10 steps ate o step catalog rejeitar.
+CATALOG_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_IDENTIFIER_RE = CATALOG_IDENTIFIER_RE
 # UC credential/location names: letters, digits, `_`, `-` (max 256 chars)
 _UC_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,200}$")
 
