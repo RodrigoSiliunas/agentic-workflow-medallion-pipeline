@@ -82,8 +82,14 @@ class ShareRequest(BaseModel):
 class ApproveRequest(BaseModel):
     version_id: uuid.UUID | None = None
     create_pr: bool = True
+    # Se True, ignora impacto downstream e aprova mesmo com colunas referenciadas
+    force_downstream: bool = False
 
 
 class RevertRequest(BaseModel):
     version_id: uuid.UUID | None = None
-    mode: str = Field(default="draft", pattern="^(draft|close_pr|revert_pr)$")
+    mode: str = Field(default="draft", pattern="^(draft|close_pr|revert_pr|restore_table)$")
+    # Campos para mode=restore_table
+    table: str | None = None
+    delta_version: int | None = None
+    revert_notebook_pr: bool = False

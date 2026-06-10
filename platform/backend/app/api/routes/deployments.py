@@ -28,6 +28,7 @@ from app.services.deployment_saga import (
     unsubscribe,
 )
 from app.services.real_saga.base import DeploymentCredentials
+from app.services.real_saga.steps.catalog import CATALOG_IDENTIFIER_RE
 
 router = APIRouter()
 
@@ -200,6 +201,14 @@ async def create_deployment(
     # step skipa criacao mas valida policy + monta spec em shared state.
     merged_env.setdefault("cluster_compute", "ephemeral")
 
+    # O env_schema do template usa a chave `catalog_name`, mas os saga steps
+    # (e o editor) leem `catalog`. Mapeia pra honrar o catalog escolhido no
+    # wizard — o input explicito do usuario vence o default de environment
+    # isolation abaixo (setdefault nao sobrescreve um `catalog` ja presente).
+    catalog_name = (merged_env.get("catalog_name") or "").strip()
+    if catalog_name:
+        merged_env.setdefault("catalog", catalog_name)
+
     # Environment isolation: prod usa defaults legacy (catalog=medallion,
     # scope=medallion-pipeline) pra preservar compat com notebooks que
     # hardcodam "medallion.bronze.X". dev/staging adicionam sufixo.
@@ -213,6 +222,19 @@ async def create_deployment(
     # prod: defaults inalterados (catalog=medallion, scope=medallion-pipeline,
     # cluster=medallion-pipeline). User override via advanced.env_vars se
     # quiser multi-tenant naming (ex: catalog=medallion_acme).
+
+    # Fail-fast: valida o catalog efetivo AGORA (HTTP 422 no submit do wizard)
+    # em vez de deixar o saga rodar 10 steps e falhar no step `catalog`
+    # (mesma regra UC do saga: minusculas, numeros e underscore, max 64).
+    effective_catalog = (merged_env.get("catalog") or "").strip()
+    if effective_catalog and not CATALOG_IDENTIFIER_RE.match(effective_catalog):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Nome do catalog invalido: '{effective_catalog}'. "
+                "Use apenas letras minusculas, numeros e underscores (max 64 chars)."
+            ),
+        )
 
     deployment = Deployment(
         company_id=auth.company_id,

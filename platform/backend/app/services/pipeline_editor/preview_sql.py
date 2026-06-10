@@ -2,11 +2,53 @@
 
 from __future__ import annotations
 
+from app.services.pipeline_editor.codegen import cast_is_null_prone
 from app.services.pipeline_editor.schemas import TransformOperation
 
 
 class PreviewSqlError(ValueError):
     """Erro ao montar ou interpretar SQL de preview."""
+
+
+def _normalize_table(table: str) -> str:
+    """Normaliza identificador de tabela (sem crases, trim, case-insensitive)."""
+    return ".".join(
+        part.strip().replace("`", "").lower()
+        for part in str(table).split(".")
+        if part.strip()
+    )
+
+
+def validate_target_table(target_table: str, output_tables: list[str]) -> None:
+    """Garante que o `target_table` do draft pertence aos `output_tables` do node.
+
+    Sem esse cross-check contra o manifest, um tenant poderia apontar o draft
+    para qualquer tabela do catalogo e fazer preview/export de dados arbitrarios.
+    Levanta PreviewSqlError quando a tabela nao esta declarada no node.
+    """
+    target = _normalize_table(target_table)
+    if not target:
+        raise PreviewSqlError("Tabela alvo invalida para preview")
+
+    allowed = {_normalize_table(table) for table in (output_tables or []) if table}
+    if not allowed:
+        raise PreviewSqlError(
+            "No do manifest nao declara output_tables — preview/export bloqueado."
+        )
+
+    # Wildcard declarado (ex.: medallion.gold.*) cobre todo o schema do prefixo.
+    for table in allowed:
+        if table.endswith(".*"):
+            prefix = table[:-1]  # mantem o ponto final do prefixo
+            if target.startswith(prefix):
+                return
+
+    if target not in allowed:
+        declared = ", ".join(sorted(allowed)) or "(nenhuma)"
+        raise PreviewSqlError(
+            f"Tabela alvo `{target_table}` nao pertence ao node "
+            f"(output_tables declaradas: {declared})."
+        )
 
 
 def preview_namespace(
@@ -67,7 +109,16 @@ def build_rows_after_sql(
             col_state[op.column] = f"TRIM({ref})"
         elif op.op == "cast_column" and op.column and op.data_type:
             ref = col_state.get(op.column, quote_ident(op.column))
-            col_state[op.column] = f"CAST({ref} AS {op.data_type})"
+            # Guardrail: cast null-prone usa try_cast (NULL explicito, sem erro)
+            # e sinaliza risco de NULL no preview via warning.
+            if cast_is_null_prone(op.data_type):
+                col_state[op.column] = f"try_cast({ref} AS {op.data_type})"
+                warnings.append(
+                    f"cast_column `{op.column}` para `{op.data_type}` pode gerar NULL "
+                    "em valores incompativeis (try_cast retorna NULL sem erro)."
+                )
+            else:
+                col_state[op.column] = f"CAST({ref} AS {op.data_type})"
         elif op.op == "regex_replace" and op.column:
             ref = col_state.get(op.column, quote_ident(op.column))
             col_state[op.column] = (

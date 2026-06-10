@@ -29,6 +29,49 @@ _UC_MASTER_ROLE_ARN = (
 _DATABRICKS_ROLE_SUFFIX = "-uc-role"
 
 
+def _build_s3_policy(role_name: str, bucket_name: str) -> dict:
+    """Inline policy UC pattern: S3 access + sts:AssumeRole self-reference.
+
+    Self-assuming exige BOTH trust policy principal self-ref E inline allow
+    sts:AssumeRole na propria role. Wildcard controlado pelo role_name na
+    inline policy — role_arn real e construido apos o create.
+    """
+    role_arn_for_self = f"arn:aws:iam::*:role/{role_name}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:GetObjectVersion",
+                    "s3:PutObject",
+                    "s3:PutObjectAcl",
+                    "s3:DeleteObject",
+                    "s3:ListBucket",
+                    "s3:GetBucketLocation",
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket_name}",
+                    f"arn:aws:s3:::{bucket_name}/*",
+                ],
+            },
+            {
+                "Effect": "Allow",
+                "Action": ["s3:ListAllMyBuckets"],
+                "Resource": "*",
+            },
+            # Self-assuming: role precisa poder assumir a si mesma
+            # (pattern UC). Sem isso, Databricks nao consegue validar.
+            {
+                "Effect": "Allow",
+                "Action": ["sts:AssumeRole"],
+                "Resource": [role_arn_for_self],
+            },
+        ],
+    }
+
+
 def _build_trust_policy(
     external_id: str | None = None,
     self_role_arn: str | None = None,
@@ -125,6 +168,11 @@ class IamStep:
         if existing:
             await ctx.info(f"IAM role ja existe: {existing}")
             ctx.shared.databricks_role_arn = existing
+            # A role e compartilhada entre deploys do mesmo projeto, mas cada
+            # deploy pode usar um bucket diferente. Sem este upsert, a policy
+            # so cobre o bucket do PRIMEIRO deploy e os demais falham com
+            # AccessDenied no write do Unity Catalog (saveAsTable).
+            await self._ensure_bucket_in_policy(ctx, role_name)
             return
 
         # Cria role com trust bootstrap (sem Condition). catalog step
@@ -155,6 +203,74 @@ class IamStep:
         return await asyncio.to_thread(_check)
 
     @staticmethod
+    async def _ensure_bucket_in_policy(ctx: StepContext, role_name: str) -> None:
+        """Upsert idempotente: garante o bucket do deploy na inline policy.
+
+        Le `{role_name}-s3-access`; se ausente, grava a policy completa pro
+        bucket atual. Se presente mas sem o bucket, faz merge dos ARNs no
+        statement de S3 e regrava (put_role_policy e upsert).
+        """
+        bucket_name = ctx.shared.s3_bucket or ctx.env_vars().get("s3_bucket", "")
+        if not bucket_name or bucket_name == "*":
+            await ctx.warn(
+                "iam: sem s3_bucket no contexto — pulando upsert da policy"
+            )
+            return
+
+        session = boto3_session(ctx.credentials)
+        iam = session.client("iam")
+        policy_name = f"{role_name}-s3-access"
+        bucket_arn = f"arn:aws:s3:::{bucket_name}"
+
+        def _upsert() -> str:
+            try:
+                doc = iam.get_role_policy(RoleName=role_name, PolicyName=policy_name)[
+                    "PolicyDocument"
+                ]
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "")
+                if code not in ("NoSuchEntity", "NoSuchEntityException"):
+                    raise
+                iam.put_role_policy(
+                    RoleName=role_name,
+                    PolicyName=policy_name,
+                    PolicyDocument=json.dumps(_build_s3_policy(role_name, bucket_name)),
+                )
+                return "created"
+
+            for stmt in doc.get("Statement", []):
+                actions = stmt.get("Action")
+                actions = actions if isinstance(actions, list) else [actions]
+                if "s3:GetObject" not in actions:
+                    continue
+                resources = stmt.get("Resource")
+                resources = resources if isinstance(resources, list) else [resources]
+                if bucket_arn in resources:
+                    return "ok"
+                stmt["Resource"] = [*resources, bucket_arn, f"{bucket_arn}/*"]
+                iam.put_role_policy(
+                    RoleName=role_name,
+                    PolicyName=policy_name,
+                    PolicyDocument=json.dumps(doc),
+                )
+                return "merged"
+            # Policy existe mas sem statement de S3 — regrava completa.
+            iam.put_role_policy(
+                RoleName=role_name,
+                PolicyName=policy_name,
+                PolicyDocument=json.dumps(_build_s3_policy(role_name, bucket_name)),
+            )
+            return "rewritten"
+
+        result = await asyncio.to_thread(_upsert)
+        if result == "ok":
+            await ctx.info(f"Policy {policy_name} ja cobre {bucket_name}")
+        else:
+            await ctx.success(
+                f"Policy {policy_name} atualizada ({result}) para incluir {bucket_name}"
+            )
+
+    @staticmethod
     async def _create_role(ctx: StepContext, role_name: str) -> str:
         session = boto3_session(ctx.credentials)
         iam = session.client("iam")
@@ -163,46 +279,7 @@ class IamStep:
         # Trust bootstrap sem Condition. catalog step atualiza com external_id.
         trust_policy = _build_trust_policy(external_id=None)
 
-        # Policy UC pattern: S3 access + sts:AssumeRole self-reference.
-        # Self-assuming exige BOTH trust policy principal self-ref E
-        # inline allow sts:AssumeRole na propria role (esse statement).
-        # Wildcard controlado pelo role_name na inline policy — role_arn
-        # real e construido apos o create.
-        role_arn_for_self = f"arn:aws:iam::*:role/{role_name}"
-
-        s3_policy = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:GetObject",
-                        "s3:GetObjectVersion",
-                        "s3:PutObject",
-                        "s3:PutObjectAcl",
-                        "s3:DeleteObject",
-                        "s3:ListBucket",
-                        "s3:GetBucketLocation",
-                    ],
-                    "Resource": [
-                        f"arn:aws:s3:::{bucket_name}",
-                        f"arn:aws:s3:::{bucket_name}/*",
-                    ],
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": ["s3:ListAllMyBuckets"],
-                    "Resource": "*",
-                },
-                # Self-assuming: role precisa poder assumir a si mesma
-                # (pattern UC). Sem isso, Databricks nao consegue validar.
-                {
-                    "Effect": "Allow",
-                    "Action": ["sts:AssumeRole"],
-                    "Resource": [role_arn_for_self],
-                },
-            ],
-        }
+        s3_policy = _build_s3_policy(role_name, bucket_name)
 
         def _create() -> str:
             # Path="/" (default) — UC self-assuming trust policy nao aceita

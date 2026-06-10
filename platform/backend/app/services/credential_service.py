@@ -52,6 +52,7 @@ DEPLOY_CREDENTIAL_TYPES = (
     "databricks_host",
     "databricks_token",
     "github_token",
+    "github_repo",
 )
 
 

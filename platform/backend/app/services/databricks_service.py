@@ -367,6 +367,69 @@ class DatabricksService:
             logger.error("Erro ao obter resumo do pipeline", error=str(e))
             return {"status": "ERROR", "error": str(e)}
 
+    async def get_table_history(self, table: str, limit: int = 10) -> list[dict]:
+        """Retorna historico de versoes Delta via DESCRIBE HISTORY."""
+        await self._ensure_credentials()
+        sql = build_describe_history_sql(table, limit)
+        result = await self.query_table(sql, max_rows=limit)
+        return _parse_history_result(result)
+
+    async def restore_table(
+        self,
+        table: str,
+        *,
+        version: int | None = None,
+        timestamp: str | None = None,
+    ) -> dict:
+        """Executa RESTORE TABLE ... TO VERSION/TIMESTAMP AS OF via SQL."""
+        await self._ensure_credentials()
+        sql = build_restore_table_sql(table, version=version, timestamp=timestamp)
+        return await self.query_table(sql)
+
+
+# ---------------------------------------------------------------------------
+# Helpers de SQL Delta (funções puras — fáceis de testar sem I/O)
+# ---------------------------------------------------------------------------
+
+
+def _quote_delta_table(table: str) -> str:
+    """Quote cada segmento de catalog.schema.table para SQL Delta."""
+    parts = table.strip().split(".")
+    return ".".join(f"`{p}`" for p in parts)
+
+
+def build_describe_history_sql(table: str, limit: int = 10) -> str:
+    """Gera SQL DESCRIBE HISTORY para buscar historico de versoes Delta."""
+    return f"DESCRIBE HISTORY {_quote_delta_table(table)} LIMIT {limit}"
+
+
+def build_restore_table_sql(
+    table: str,
+    *,
+    version: int | None = None,
+    timestamp: str | None = None,
+) -> str:
+    """Gera SQL RESTORE TABLE ... TO VERSION AS OF <v> ou TIMESTAMP AS OF '<ts>'."""
+    quoted = _quote_delta_table(table)
+    if version is not None:
+        return f"RESTORE TABLE {quoted} TO VERSION AS OF {version}"
+    if timestamp is not None:
+        return f"RESTORE TABLE {quoted} TO TIMESTAMP AS OF '{timestamp}'"
+    raise ValueError("version ou timestamp obrigatorio para RESTORE TABLE")
+
+
+def _parse_history_result(result: dict) -> list[dict]:
+    """Converte resposta da Statement API em lista de versoes."""
+    state = result.get("status", {}).get("state", "")
+    if state != "SUCCEEDED":
+        return []
+    columns = [
+        c["name"]
+        for c in result.get("manifest", {}).get("schema", {}).get("columns", [])
+    ]
+    rows = result.get("result", {}).get("data_array", [])
+    return [dict(zip(columns, row, strict=False)) for row in rows]
+
 
 def _ms_to_iso(ms: int | None) -> str | None:
     """Converte timestamp Databricks (milissegundos Unix) pra ISO string SP."""

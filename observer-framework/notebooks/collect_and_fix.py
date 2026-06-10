@@ -9,7 +9,22 @@
 # MAGIC **Tipo:** Observer (independente) | **Trigger:** Sob demanda (via SDK)
 # MAGIC **Generico** - funciona com qualquer workflow do workspace.
 # MAGIC
-# MAGIC _Ultima atualizacao: 2026-04-10_
+# MAGIC _Ultima atualizacao: 2026-06-10_
+
+# COMMAND ----------
+
+# DBTITLE 1,Instalar Dependencias
+# typing_extensions PRECISA do upgrade junto: o runtime do cluster traz uma
+# versao antiga ja importada, e o SDK anthropic recente usa TypedDict
+# extra_items (PEP 728, typing_extensions>=4.13) — sem o upgrade + restart
+# o import do anthropic falha com TypeError 'extra_items'. Por isso este
+# cell e o PRIMEIRO do notebook (antes de qualquer import).
+# MAGIC %pip install --upgrade anthropic PyGithub typing_extensions --quiet
+
+# COMMAND ----------
+
+# DBTITLE 1,Restart Python (ativa as libs instaladas)
+dbutils.library.restartPython()  # noqa: F821
 
 # COMMAND ----------
 
@@ -96,10 +111,6 @@ else:
         os.environ["GITHUB_REPO"] = dbutils.secrets.get(SCOPE, "github-repo")
     except Exception:
         os.environ["GITHUB_REPO"] = ""
-
-# COMMAND ----------
-
-# MAGIC %pip install anthropic PyGithub --quiet
 
 # COMMAND ----------
 

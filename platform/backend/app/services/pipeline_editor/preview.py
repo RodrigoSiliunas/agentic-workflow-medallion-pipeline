@@ -16,6 +16,7 @@ from app.services.pipeline_editor.preview_sql import (
     build_schema_delta,
     parse_query_result,
     preview_namespace,
+    validate_target_table,
 )
 from app.services.pipeline_editor.schemas import TransformDraft
 
@@ -192,8 +193,14 @@ async def run_preview(
     session_id: uuid.UUID,
     draft: TransformDraft,
     sample_rows: int,
+    output_tables: list[str] | None = None,
 ) -> dict:
-    """Executa preview Silver via SQL Statement API (sem job Databricks)."""
+    """Executa preview Silver via SQL Statement API (sem job Databricks).
+
+    `output_tables` vem do node do manifest: o `target_table` do draft precisa
+    pertencer a essa lista antes de qualquer SQL rodar, senao o preview poderia
+    ler tabelas arbitrarias do catalogo (cross-tenant).
+    """
     if draft.layer != "silver":
         return build_preview_result(
             company_id=company_id,
@@ -206,6 +213,8 @@ async def run_preview(
         )
 
     try:
+        validate_target_table(draft.target_table, output_tables or [])
+
         before_sql = build_rows_before_sql(draft.target_table, sample_rows)
         before_response = await databricks.query_table(before_sql, sample_rows)
         columns, rows_before = parse_query_result(before_response)
@@ -268,7 +277,17 @@ def build_export_result(
     session_id: uuid.UUID,
     export_format: ExportFormat,
     preview_result: dict | None = None,
+    output_tables: list[str] | None = None,
 ) -> dict:
+    # Defesa em profundidade: revalida a tabela do preview persistido contra o
+    # manifest antes de exportar, caso o draft tenha sido alterado pos-preview.
+    if output_tables is not None and preview_result:
+        target_table = preview_result.get("target_table")
+        if target_table:
+            try:
+                validate_target_table(str(target_table), output_tables)
+            except PreviewSqlError as exc:
+                raise PreviewExportError(str(exc)) from exc
     rows = preview_rows_for_export(preview_result)
     return {
         "status": "ready",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -40,7 +41,9 @@ from app.schemas.pipeline_editor import (
 from app.services.databricks_service import DatabricksService
 from app.services.github_service import GitHubService
 from app.services.pipeline_editor.artifacts import build_prompt_markdown
+from app.services.pipeline_editor.downstream_impact import check_downstream_impact
 from app.services.pipeline_editor.manifest import (
+    DEFAULT_CATALOG,
     ensure_silver_node,
     load_manifest_for_template,
     manifest_for_editor,
@@ -53,6 +56,7 @@ from app.services.pipeline_editor.preview import (
     preview_rows_for_export,
     run_preview,
 )
+from app.services.pipeline_editor.preview_sql import PreviewSqlError, validate_target_table
 from app.services.pipeline_editor.schemas import TransformDraft
 from app.services.pipeline_editor.secure_pr import build_code_diff, validate_generated_files
 
@@ -107,6 +111,22 @@ def _template_slug(pipeline: Pipeline) -> str:
     )
 
 
+def _pipeline_catalog(pipeline: Pipeline) -> str:
+    """Catalog Unity efetivo do pipeline.
+
+    O saga de deploy persiste em `config["catalog"]` o catalog que de fato
+    provisionou (prod=`medallion`, dev=`medallion_dev`, ou custom do wizard).
+    Fallback em `env_vars.catalog` e, por fim, no default — assim pipelines
+    antigos (seed) sem o campo continuam apontando pra `medallion`.
+    """
+    config = pipeline.config or {}
+    return str(
+        config.get("catalog")
+        or (config.get("env_vars") or {}).get("catalog")
+        or DEFAULT_CATALOG
+    )
+
+
 async def _resolve_manifest(db: AsyncSession, pipeline: Pipeline):
     slug = _template_slug(pipeline)
     config = pipeline.config or {}
@@ -119,6 +139,7 @@ async def _resolve_manifest(db: AsyncSession, pipeline: Pipeline):
         slug,
         template_name=template_name,
         config_manifest=config.get("manifest"),
+        catalog=_pipeline_catalog(pipeline),
     )
 
 
@@ -180,19 +201,23 @@ def _version_to_draft(version: PipelineEditVersion) -> TransformDraft:
     return TransformDraft.model_validate(version.draft)
 
 
-def _validate_silver_draft(draft: TransformDraft, manifest) -> None:
+def _validate_silver_draft(draft: TransformDraft, manifest):
     try:
-        ensure_silver_node(manifest, draft.target_node)
+        node = ensure_silver_node(manifest, draft.target_node)
+        # Cross-check do target_table contra as output_tables declaradas no node
+        # do manifest — impede preview/export de tabelas arbitrarias (cross-tenant).
+        validate_target_table(draft.target_table, node.output_tables)
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    except ValueError as exc:
+    except (ValueError, PreviewSqlError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    return node
 
 
 @router.get("/{pipeline_id}", response_model=dict)
@@ -343,7 +368,7 @@ async def create_preview(
     version = await _current_version(db, auth, session)
     draft = _version_to_draft(version)
     manifest = await _resolve_manifest(db, pipeline)
-    _validate_silver_draft(draft, manifest)
+    node = _validate_silver_draft(draft, manifest)
     databricks = DatabricksService(db, auth.company_id)
     preview = await run_preview(
         databricks,
@@ -352,6 +377,7 @@ async def create_preview(
         session_id=session_id,
         draft=draft,
         sample_rows=data.sample_rows,
+        output_tables=node.output_tables,
     )
     version.preview_result = preview
     if preview.get("status") != "ready":
@@ -385,9 +411,12 @@ async def export_preview(
     auth: AuthContext = Depends(require_permission("chat")),
     db: AsyncSession = Depends(get_db),
 ):
-    await _load_pipeline(db, auth, pipeline_id)
+    pipeline = await _load_pipeline(db, auth, pipeline_id)
     session = await _load_session(db, auth, pipeline_id, session_id)
     version = await _current_version(db, auth, session)
+    draft = _version_to_draft(version)
+    manifest = await _resolve_manifest(db, pipeline)
+    node = _validate_silver_draft(draft, manifest)
     try:
         export = build_export_result(
             company_id=auth.company_id,
@@ -395,6 +424,7 @@ async def export_preview(
             session_id=session_id,
             export_format=data.format,
             preview_result=version.preview_result,
+            output_tables=node.output_tables,
         )
     except PreviewExportError as exc:
         logger.warning(
@@ -531,6 +561,24 @@ async def share_edit_session(
     return {"share_token": token, "url": f"/shared/pipeline-edit/{token}"}
 
 
+async def _load_downstream_notebooks(
+    github: GitHubService,
+    paths: list[str],
+    ref: str,
+) -> dict[str, str]:
+    """Lê notebooks downstream em paralelo via GitHub, ignorando arquivos ausentes."""
+    async def _safe_read(path: str) -> tuple[str, str | None]:
+        try:
+            content = await github.read_file(path, ref)
+            return path, content
+        except Exception:
+            logger.warning("downstream_notebook_not_found", path=path, ref=ref)
+            return path, None
+
+    results = await asyncio.gather(*[_safe_read(p) for p in paths])
+    return {path: content for path, content in results if content is not None}
+
+
 @router.post("/{pipeline_id}/edit-sessions/{session_id}/approve", response_model=dict)
 async def approve_edit_version(
     pipeline_id: uuid.UUID,
@@ -572,6 +620,25 @@ async def approve_edit_version(
     manifest = await _resolve_manifest(db, pipeline)
     node = manifest.resolve_node(draft.target_node)
     github = GitHubService(db, auth.company_id)
+
+    # Guard de impacto downstream: lê notebooks gold/validation em paralelo e bloqueia
+    # approve se drop_column/rename_column afetar colunas referenciadas downstream.
+    if manifest.downstream_scan_paths and not data.force_downstream:
+        ref = session.base_ref or "dev"
+        notebook_sources = await _load_downstream_notebooks(
+            github, manifest.downstream_scan_paths, ref
+        )
+        impact = check_downstream_impact(draft, notebook_sources)
+        if impact["blocked"]:
+            version.validation_result = {
+                "valid": False, "checks": [], "errors": [], "downstream_impact": impact
+            }
+            await db.flush()
+            return {
+                "status": "downstream_blocked",
+                "downstream_impact": impact,
+            }
+
     source = await github.read_file(node.file_path, session.base_ref or "dev")
     source_by_path = {node.file_path: source}
     files, validation = validate_generated_files(
@@ -677,6 +744,91 @@ async def revert_edit_session(
             "status": "pr_reverted",
             "current_version_id": current_version_id,
             "pr": pr_result,
+        }
+
+    if data.mode == "restore_table":
+        version = await _current_version(db, auth, session)
+        table = data.table or (version.draft or {}).get("target_table")
+        if not table:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="table obrigatorio para mode=restore_table",
+            )
+
+        databricks = DatabricksService(db, auth.company_id)
+        restore_result: dict | None = None
+        revert_pr_result: dict | None = None
+
+        try:
+            delta_version = data.delta_version
+            if delta_version is None:
+                history = await databricks.get_table_history(table, limit=2)
+                if len(history) >= 2:
+                    raw_version = history[1].get("version")
+                    delta_version = int(raw_version) if raw_version is not None else None
+
+            if delta_version is not None:
+                restore_result = await databricks.restore_table(table, version=delta_version)
+            else:
+                restore_result = {"status": "skipped", "reason": "sem versao anterior no historico"}
+        except Exception as exc:
+            logger.warning(
+                "pipeline_editor_restore_table_failed",
+                pipeline_id=str(pipeline_id),
+                session_id=str(session_id),
+                table=table,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Falha ao restaurar tabela {table}: {exc}",
+            ) from exc
+
+        if data.revert_notebook_pr:
+            pr_metadata = version.pr_metadata or {}
+            pr_number = pr_metadata.get("pr_number")
+            if pr_number:
+                github = GitHubService(db, auth.company_id)
+                try:
+                    revert_pr_result = await github.revert_merged_pr(int(pr_number))
+                except Exception as exc:
+                    logger.warning(
+                        "pipeline_editor_revert_notebook_pr_failed",
+                        pipeline_id=str(pipeline_id),
+                        pr_number=pr_number,
+                        error=str(exc),
+                    )
+                    revert_pr_result = {"status": "failed", "error": str(exc)}
+
+        if data.version_id:
+            session.current_version_id = data.version_id
+        session.status = "draft"
+        db.add(
+            AuditLog(
+                company_id=auth.company_id,
+                user_id=auth.user_id,
+                action="pipeline_editor_table_restored",
+                details=str(
+                    {
+                        "pipeline_id": str(pipeline_id),
+                        "session_id": str(session_id),
+                        "table": table,
+                        "delta_version": delta_version,
+                    }
+                ),
+                channel="web",
+            )
+        )
+        await db.flush()
+        return {
+            "status": "table_restored",
+            "table": table,
+            "delta_version": delta_version,
+            "restore": restore_result,
+            "revert_pr": revert_pr_result,
+            "current_version_id": (
+                str(session.current_version_id) if session.current_version_id else None
+            ),
         }
 
     session.status = f"{data.mode}_requested"

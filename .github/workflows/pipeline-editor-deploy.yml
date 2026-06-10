@@ -1,0 +1,212 @@
+name: Pipeline Editor — Deploy & Run
+
+# Fechamento do loop pipeline-editor/*: quando um PR e mergeado em dev,
+# (1) sincroniza os notebooks alterados com o workspace Databricks e
+# (2) dispara o job ETL (run-now) para a tabela refletir o novo schema.
+#
+# SEGURANCA: rodar o ETL faz overwrite idempotente — e destrutivo em relacao
+# aos dados do run anterior. Por isso o passo run-now e gateado por aprovacao
+# humana via GitHub Environment "databricks-prod". Configurar esse Environment
+# no repo com pelo menos um required reviewer antes de usar em producao:
+#   GitHub repo > Settings > Environments > databricks-prod > Required reviewers
+#
+# Fluxo automatico (merge de PR pipeline-editor/*):
+#   1. sync-workspace  — upload automatico, sem gate
+#   2. trigger-etl     — pausa para aprovacao humana (Environment gate)
+#                        Aprovador recebe email/notificacao GitHub
+#                        Prazo: 7 dias (configuravel no Environment)
+#
+# Fluxo manual (workflow_dispatch):
+#   Mesma sequencia, com job_id e dry_run como inputs explicitos.
+#   dry_run=true faz so upload, nao dispara run-now.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'ID do job Databricks ETL a disparar (obrigatorio)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Apenas faz upload dos notebooks, NAO dispara run-now'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Upload automatico (sem gate)
+  # Sincroniza notebooks alterados no PR com o workspace Databricks.
+  # ──────────────────────────────────────────────────────────────────────────
+  sync-workspace:
+    name: Sync notebooks → Databricks workspace
+    # Roda se:
+    #   - dispatch manual, OU
+    #   - PR pipeline-editor/* mergeado em dev
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.merged == true &&
+        startsWith(github.event.pull_request.head.ref, 'pipeline-editor/')
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      has_files: ${{ steps.prfiles.outputs.has_files }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Faz checkout do SHA do merge commit para pegar o estado final
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install databricks-sdk
+        run: pip install databricks-sdk
+
+      # Para PRs: lista arquivos alterados filtrados pra notebooks/deploy scripts.
+      # Para dispatch manual: usa todos os notebooks do pipeline.
+      - name: Resolve arquivos para upload
+        id: prfiles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Dispatch manual: sobe todos os notebooks do pipeline
+            files=$(find pipelines/pipeline-seguradora-whatsapp/notebooks \
+              -name "*.py" | sort || true)
+          else
+            # PR merge: filtra so arquivos alterados no PR
+            # (notebooks Python e configs do pipeline)
+            files=$(gh pr view ${{ github.event.pull_request.number }} \
+              --json files --jq '.files[].path' \
+              | grep -E '^pipelines/pipeline-seguradora-whatsapp/(notebooks/|observer_config\.yaml)' \
+              || true)
+          fi
+
+          if [ -z "$files" ]; then
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            echo "Nenhum arquivo sincavel encontrado — skip workspace sync." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "has_files=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "files<<EOF"
+              echo "$files"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "### Arquivos para upload" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$files" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload notebooks ao workspace Databricks
+        if: steps.prfiles.outputs.has_files == 'true'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          if [ -z "$DATABRICKS_HOST" ] || [ -z "$DATABRICKS_TOKEN" ]; then
+            echo "DATABRICKS_HOST/TOKEN nao configurados — pula upload"
+            exit 0
+          fi
+          # Passa arquivos como argumentos posicionais (um por linha -> xargs)
+          echo "${{ steps.prfiles.outputs.files }}" \
+            | xargs python pipelines/pipeline-seguradora-whatsapp/deploy/upload_notebooks.py
+
+      - name: Summary — sync
+        run: |
+          echo "## Pipeline Editor Deploy" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "- PR #${{ github.event.pull_request.number }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Branch: \`${{ github.event.pull_request.head.ref }}\`" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Dispatch manual por: \`${{ github.actor }}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "- Workspace sync: **concluido**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> Aguardando aprovacao humana para disparar o job ETL..." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Trigger ETL (GATEADO — requer aprovacao humana)
+  #
+  # Este job usa o GitHub Environment "databricks-prod".
+  # Antes de rodar, o GitHub envia notificacao para os reviewers configurados
+  # no Environment. O job so continua apos aprovacao explicita.
+  #
+  # Para configurar o gate:
+  #   GitHub repo > Settings > Environments > databricks-prod
+  #     - Required reviewers: adicione pelo menos 1 usuario ou time
+  #     - Wait timer: opcional (ex: 5 minutos para cancelamento de emergencia)
+  #
+  # O ETL faz overwrite idempotente no Delta Lake — nao ha rollback.
+  # Aprovar = autorizar sobrescrita dos dados do run anterior.
+  # ──────────────────────────────────────────────────────────────────────────
+  trigger-etl:
+    name: "Trigger ETL run-now [REQUER APROVACAO]"
+    needs: sync-workspace
+    # So dispara se ha arquivos e nao e dry_run
+    if: |
+      needs.sync-workspace.outputs.has_files == 'true' &&
+      inputs.dry_run != true
+    # GATE: pausa aqui ate um reviewer aprovar no GitHub UI
+    environment: databricks-prod
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install databricks-sdk
+        run: pip install databricks-sdk
+
+      # Job ID vem de:
+      #   1. Input explicito (workflow_dispatch)
+      #   2. Variavel do repo DATABRICKS_PIPELINE_JOB_ID (para PRs automaticos)
+      # Criar a variavel em: GitHub repo > Settings > Variables > Actions
+      - name: Resolve job ID
+        id: jobid
+        run: |
+          JOB_ID="${{ inputs.job_id || vars.DATABRICKS_PIPELINE_JOB_ID }}"
+          if [ -z "$JOB_ID" ]; then
+            echo "ERRO: job_id nao definido." \
+              "Defina via workflow_dispatch input ou variavel DATABRICKS_PIPELINE_JOB_ID." \
+              >&2
+            exit 1
+          fi
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "Job ID resolvido: $JOB_ID"
+
+      - name: Dispara ETL run-now
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          python pipelines/pipeline-seguradora-whatsapp/deploy/trigger_run.py \
+            ${{ steps.jobid.outputs.job_id }}
+
+      - name: Summary — run-now
+        run: |
+          echo "## Pipeline Editor Deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Job ID: \`${{ steps.jobid.outputs.job_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Aprovado por: \`${{ github.actor }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ETL run-now: **disparado**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> A tabela Delta sera atualizada quando o job concluir." \
+            >> "$GITHUB_STEP_SUMMARY"

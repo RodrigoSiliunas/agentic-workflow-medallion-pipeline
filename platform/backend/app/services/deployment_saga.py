@@ -387,6 +387,11 @@ async def run_saga(
                 if shared is not None:
                     workflow_job_id = getattr(shared, "workflow_job_id", None)
 
+            # Catalog efetivamente provisionado — o editor le isso pra montar os
+            # FQNs das tabelas (preview/approve) ao inves de hardcodar `medallion`.
+            deploy_env = (deployment.config or {}).get("env_vars", {}) or {}
+            resolved_catalog = deploy_env.get("catalog") or "medallion"
+
             pipeline = Pipeline(
                 company_id=deployment.company_id,
                 name=deployment.name,
@@ -396,6 +401,7 @@ async def run_saga(
                     "template_slug": deployment.template_slug,
                     "deployment_id": str(deployment.id),
                     "environment": deployment.environment,
+                    "catalog": resolved_catalog,
                 },
             )
             db.add(pipeline)

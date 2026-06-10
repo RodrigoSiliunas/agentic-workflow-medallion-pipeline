@@ -4,7 +4,7 @@
 # MAGIC Ingestão de dados brutos do WhatsApp para camada Bronze.
 # MAGIC
 # MAGIC **Input**: JSON multi-line em `/mnt/landing/whatsapp/conversations`
-# MAGIC **Output**: `medallion.bronze.conversations` (Delta, append mode)
+# MAGIC **Output**: `{catalog}.bronze.conversations` (Delta, append mode; catalog via widget)
 # MAGIC **Schema evolution**: `mergeSchema=false` — schema explicito via EXPECTED_SCHEMA.
 
 # COMMAND ----------
@@ -40,11 +40,17 @@ from pipeline_lib.validation import delta_row_count  # noqa: NB003, E402, F401
 
 # DBTITLE 1,Configuration
 # Widget scope passa secret scope com AWS creds + s3-bucket + bronze-prefix
+# Widget catalog: catalog Unity alvo (deploy passa via base_parameters). Default
+# "medallion" preserva compat; deploy com catalog custom (ex: medallions) faz o
+# bronze escrever no catalog certo — antes hardcodava medallion e o silver/dedup
+# (widget-driven) nao encontrava a tabela.
+dbutils.widgets.text("catalog", "medallion", "Catalog Name")  # noqa: F821
 dbutils.widgets.text("scope", "medallion-pipeline", "Secret Scope")  # noqa: F821
 dbutils.widgets.text("bronze_prefix", "bronze/", "Bronze S3 Prefix")  # noqa: F821
+CATALOG = dbutils.widgets.get("catalog")  # noqa: F821
 SCOPE = dbutils.widgets.get("scope")  # noqa: F821
 BRONZE_PREFIX = dbutils.widgets.get("bronze_prefix")  # noqa: F821
-TARGET_TABLE = "medallion.bronze.conversations"
+TARGET_TABLE = f"{CATALOG}.bronze.conversations"
 
 # COMMAND ----------
 

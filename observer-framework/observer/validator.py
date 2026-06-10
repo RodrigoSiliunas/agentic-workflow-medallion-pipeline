@@ -85,6 +85,31 @@ FORBIDDEN_BUILTIN_CALLS: frozenset[str] = frozenset(
     }
 )
 
+# Stubs de globals injetados pelo Databricks Runtime e imports PySpark comuns.
+# Prepend este bloco ao notebook antes de rodar ruff F821 para evitar falsos
+# positivos em nomes que existem no cluster mas nao aparecem no codigo-fonte.
+_DATABRICKS_NOTEBOOK_PREAMBLE = (
+    "# -- stubs: globals do Databricks Runtime --\n"
+    "spark = None\n"
+    "sc = None\n"
+    "dbutils = None\n"
+    "display = None\n"
+    "displayHTML = None\n"
+    "sqlContext = None\n"
+    "from pyspark.sql import functions as F\n"
+    "from pyspark.sql import Window, DataFrame\n"
+    "from pyspark.sql.functions import col, lit, when, coalesce, trim\n"
+    "from pyspark.sql.types import (\n"
+    "    StructType, StructField, StringType, IntegerType, LongType,\n"
+    "    DoubleType, FloatType, BooleanType, TimestampType, DateType,\n"
+    "    ArrayType, MapType,\n"
+    ")\n"
+    "from delta.tables import DeltaTable\n"
+)
+
+# Quantas linhas o preamble ocupa — usado para ajustar row numbers do ruff.
+_DATABRICKS_PREAMBLE_LINE_COUNT: int = _DATABRICKS_NOTEBOOK_PREAMBLE.count("\n")
+
 
 @dataclass
 class ValidationResult:
@@ -187,6 +212,87 @@ def _check_forbidden_imports(code: str, file_path: str) -> list[str]:
                 )
 
     return errors
+
+
+def _check_notebook_undefined_names(
+    code: str,
+    file_path: str,
+) -> tuple[bool, list[str]] | None:
+    """Detecta nomes indefinidos em notebooks via ruff F821 com namespace simulado.
+
+    Notebooks Databricks possuem globals injetados pelo Runtime (spark, dbutils,
+    etc.) que nao aparecem como imports no codigo. Esta funcao prepende stubs para
+    esses globals antes de executar `ruff --select F821`, evitando falsos positivos
+    enquanto ainda detecta referencias a variaveis inexistentes (ex.: df_inexistente).
+
+    Retorna:
+      None           -> ruff nao disponivel; caller ignora gracefully.
+      (True,  [])    -> sem nomes indefinidos detectados.
+      (False, [...]) -> um ou mais nomes indefinidos encontrados.
+    """
+    augmented = _DATABRICKS_NOTEBOOK_PREAMBLE + code
+    preamble_lines = _DATABRICKS_PREAMBLE_LINE_COUNT
+
+    temp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            suffix=".py",
+            mode="w",
+            delete=False,
+            encoding="utf-8",
+        ) as handle:
+            handle.write(augmented)
+            temp_path = handle.name
+
+        try:
+            proc = subprocess.run(  # noqa: S603 — subprocess controlado
+                [
+                    "ruff", "check", "--isolated",
+                    "--select", "F821",
+                    "--output-format=json", temp_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=RUFF_TIMEOUT_SECONDS,
+            )
+        except FileNotFoundError:
+            return None
+        except subprocess.TimeoutExpired:
+            return (False, [f"ruff F821: timeout apos {RUFF_TIMEOUT_SECONDS}s"])
+
+        if proc.returncode == 0:
+            return (True, [])
+
+        errors: list[str] = []
+        try:
+            violations: list = (
+                json.loads(proc.stdout) if proc.stdout.strip() else []
+            )
+        except json.JSONDecodeError:
+            return (False, [f"ruff F821: saida nao-JSON: {proc.stdout[:200]}"])
+
+        for v in violations:
+            location = v.get("location") or {}
+            raw_row = location.get("row", 0)
+            original_row = raw_row - preamble_lines
+            if original_row < 1:
+                continue  # Erro no stub — nao deveria ocorrer
+            code_str = v.get("code") or "F821"
+            msg = v.get("message") or ""
+            errors.append(f"ruff {code_str} (linha {original_row}): {msg}")
+
+        # Erro generico apenas quando ruff falhou sem reportar violations parseaveis
+        # (violations nao vazias mas filtradas = eram do preamble = OK).
+        if not errors and proc.returncode != 0 and not violations:
+            stderr = (proc.stderr or "").strip()
+            errors = [f"ruff F821 retornou {proc.returncode}: {stderr[:200]}"]
+
+        return (not errors, errors)
+
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            with contextlib.suppress(OSError):
+                os.unlink(temp_path)
 
 
 def _should_run_ruff(file_path: str) -> bool:
@@ -346,7 +452,22 @@ def validate_fix(code: str, file_path: str) -> ValidationResult:
     if not result.valid:
         return result
 
-    # 3) Ruff check (condicional)
+    # 3) Para notebooks: detecta nomes indefinidos (F821) com namespace simulado.
+    #    `_should_run_ruff` exclui notebooks do lint geral; este check cobre
+    #    especificamente a deteccao de simbolos inexistentes no fix gerado.
+    normalized_path = (file_path or "").replace("\\", "/").lower()
+    if "notebooks/" in normalized_path:
+        nb_outcome = _check_notebook_undefined_names(code, file_path)
+        if nb_outcome is None:
+            logger.info("ruff nao disponivel — skip do check F821 em notebook")
+        else:
+            result.checks_run.append("ruff_f821")
+            ok, errors = nb_outcome
+            if not ok:
+                for err in errors:
+                    result.add_error(err)
+
+    # 4) Ruff check (condicional — apenas arquivos fora de notebooks/)
     if _should_run_ruff(file_path):
         ruff_outcome = _run_ruff(code, file_path)
         if ruff_outcome is None:
