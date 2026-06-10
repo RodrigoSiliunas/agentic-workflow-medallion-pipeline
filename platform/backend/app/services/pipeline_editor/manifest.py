@@ -62,6 +62,26 @@ def silver_nodes(manifest: PipelineManifest) -> list[PipelineManifestNode]:
     return [node for node in manifest.nodes if node.layer == SILVER_LAYER]
 
 
+def last_writer_node(
+    manifest: PipelineManifest, table: str
+) -> PipelineManifestNode | None:
+    """Ultimo node (na ordem do pipeline) que escreve `table`.
+
+    Quando mais de um node escreve a mesma tabela (ex.: silver_dedup escreve
+    messages_clean e silver_entities a REESCREVE depois), o schema final e o
+    do ultimo escritor — operacao de coluna aplicada num escritor anterior
+    pode virar no-op silencioso (a coluna pode nem existir la, e o overwrite
+    posterior apaga o efeito). Achado no E2E real: rename aplicado no dedup
+    nao refletiu na tabela.
+    """
+    target = table.strip().strip("`").lower()
+    found: PipelineManifestNode | None = None
+    for node in manifest.nodes:
+        if any(t.strip().strip("`").lower() == target for t in node.output_tables):
+            found = node
+    return found
+
+
 def manifest_for_editor(manifest: PipelineManifest) -> PipelineManifest:
     """Retorna manifesto filtrado para o editor (Silver only)."""
     return PipelineManifest(

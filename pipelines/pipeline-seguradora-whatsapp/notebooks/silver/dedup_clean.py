@@ -139,18 +139,12 @@ df_parsed = df_clean.withColumns(
 
 # COMMAND ----------
 
-# COMMAND ----------
-
-# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
-# Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_parsed = df_parsed.withColumnRenamed("message_identity", "message_ulala")
-
 # DBTITLE 1,Salvar como Delta Table e Upload para S3
 # Salva com merge de schema para aceitar colunas novas (schema evolution)
 (
     df_parsed.write.format("delta")
     .mode("overwrite")
-    .option("overwriteSchema", "true")
+    .option("mergeSchema", "true")
     .saveAsTable(SILVER_TABLE)
 )
 

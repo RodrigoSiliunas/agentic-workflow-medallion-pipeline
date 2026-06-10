@@ -1446,3 +1446,64 @@ def test_preview_sql_cast_safe_type_uses_plain_cast_no_warning():
     assert "CAST(`name` AS string)" in sql
     assert "try_cast" not in sql
     assert not any("NULL" in w for w in warnings)
+
+
+def test_last_writer_node_resolves_rewriter():
+    """messages_clean e escrita pelo dedup e REESCRITA pelo entities — o
+    ultimo escritor (entities) determina o schema final."""
+    from app.services.pipeline_editor.manifest import last_writer_node
+
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    lw = last_writer_node(manifest, "medallion.silver.messages_clean")
+    assert lw is not None and lw.id == "silver_entities"
+    # Tabela com escritor unico -> o proprio
+    lw2 = last_writer_node(manifest, "medallion.silver.conversations_enriched")
+    assert lw2 is not None and lw2.id == "silver_enrichment"
+    # Desconhecida -> None
+    assert last_writer_node(manifest, "medallion.silver.nao_existe") is None
+
+
+def test_nl_proposal_corrige_node_para_ultimo_escritor():
+    """LLM escolheu silver_dedup para messages_clean — a proposta deve ser
+    re-vinculada ao silver_entities (ultimo escritor) com warning. Achado no
+    E2E real (#132): rename no dedup virou no-op silencioso."""
+    from app.services.pipeline_editor.nl_agent import _proposal_from_tool_input
+
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    tool_input = {
+        "draft": {
+            "layer": "silver",
+            "target_node": "silver_dedup",
+            "target_table": "medallion.silver.messages_clean",
+            "operations": [
+                {"op": "rename_column", "column": "message_id", "new_name": "x"}
+            ],
+        },
+        "explanation": "rename",
+        "risk_score": 2,
+    }
+    proposal = _proposal_from_tool_input(tool_input, manifest)
+    assert proposal.draft.target_node == "silver_entities"
+    assert any("ultimo escritor" in w.lower() for w in proposal.draft.warnings)
+    # files_affected aponta pro notebook do node corrigido
+    assert proposal.files_affected == [
+        "pipelines/pipeline-seguradora-whatsapp/notebooks/silver/entities_mask.py"
+    ]
+
+
+def test_nl_proposal_nao_mexe_quando_ja_e_ultimo_escritor():
+    from app.services.pipeline_editor.nl_agent import _proposal_from_tool_input
+
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    tool_input = {
+        "draft": {
+            "layer": "silver",
+            "target_node": "silver_enrichment",
+            "target_table": "medallion.silver.conversations_enriched",
+            "operations": [],
+        },
+        "explanation": "noop",
+    }
+    proposal = _proposal_from_tool_input(tool_input, manifest)
+    assert proposal.draft.target_node == "silver_enrichment"
+    assert proposal.draft.warnings == []

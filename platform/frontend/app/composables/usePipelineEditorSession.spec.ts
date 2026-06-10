@@ -212,3 +212,32 @@ describe("usePipelineEditorSession — caminho de erro", () => {
     expect(session.stateMachine.value).toBe("idle")
   })
 })
+
+describe("pickDefaultTargetNode — último escritor da tabela", () => {
+  const mk = (id: string, table: string) => ({
+    id, layer: "silver" as const, taskKey: id, filePath: id,
+    inputTables: [], outputTables: [table], supportedOperations: [],
+    insertionMarker: "#",
+  })
+
+  it("escolhe o ÚLTIMO node que escreve a mesma tabela (reescritor)", () => {
+    const nodes = [
+      mk("silver_dedup", "cat.silver.messages_clean"),
+      mk("silver_entities", "cat.silver.messages_clean"),
+      mk("silver_enrichment", "cat.silver.conversations_enriched"),
+    ]
+    expect(pickDefaultTargetNode(nodes)?.id).toBe("silver_entities")
+  })
+
+  it("com escritor único, mantém o primeiro node", () => {
+    const nodes = [
+      mk("silver_a", "cat.silver.t1"),
+      mk("silver_b", "cat.silver.t2"),
+    ]
+    expect(pickDefaultTargetNode(nodes)?.id).toBe("silver_a")
+  })
+
+  it("lista vazia retorna null", () => {
+    expect(pickDefaultTargetNode([])).toBeNull()
+  })
+})
