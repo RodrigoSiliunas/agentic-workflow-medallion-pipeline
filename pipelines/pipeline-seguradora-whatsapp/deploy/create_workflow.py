@@ -171,8 +171,10 @@ def create_workflow():
         Task(
             task_key="silver_enrichment",
             description="Metricas por conversa",
+            # Depende do entities: ele reescreve a messages_clean que o
+            # enrichment le (paralelo = corrida de schema, KD007 na 1a tentativa).
             depends_on=[
-                TaskDependency(task_key="silver_dedup"),
+                TaskDependency(task_key="silver_entities"),
             ],
             **cluster_kwargs,
             notebook_task=NotebookTask(
