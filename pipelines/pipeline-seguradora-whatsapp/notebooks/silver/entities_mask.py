@@ -61,8 +61,8 @@ _MASKING_SECRET = os.environ["MASKING_SECRET"]
 
 
 def _ensure_worker_secret(_secret=_MASKING_SECRET):
-    import os as _os
-    _os.environ.setdefault("MASKING_SECRET", _secret)
+    # `os` global resolve no worker via cloudpickle (re-import por referencia)
+    os.environ.setdefault("MASKING_SECRET", _secret)
 
 # Importa funcoes de mascaramento APOS definir MASKING_SECRET.
 # Os modulos leem a env var no import — por isso nao podem ir pra cell 1.
@@ -99,8 +99,7 @@ mask_phone_udf = F.udf(mask_phone, StringType())
 mask_plate_udf = F.udf(mask_plate, StringType())
 # Hash HMAC irreversivel para CPFs (usado como chave de join segura)
 def _hash_value_worker(value, _secret=_MASKING_SECRET):
-    import os as _os
-    _os.environ.setdefault("MASKING_SECRET", _secret)
+    os.environ.setdefault("MASKING_SECRET", _secret)
     return hash_value(value)
 
 
