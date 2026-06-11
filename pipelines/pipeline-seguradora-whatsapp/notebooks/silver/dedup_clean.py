@@ -144,7 +144,9 @@ df_parsed = df_clean.withColumns(
 (
     df_parsed.write.format("delta")
     .mode("overwrite")
-    .option("mergeSchema", "true")
+    .option("overwriteSchema", "true")  # overwrite total: schema do run vence.
+    # A uniao de schemas (opcao anterior) RESSUSCITAVA colunas renomeadas de
+    # runs passados como ghosts NULL e quebrava os renames do editor downstream
     .saveAsTable(SILVER_TABLE)
 )
 

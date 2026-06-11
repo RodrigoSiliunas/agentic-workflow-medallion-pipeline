@@ -51,9 +51,15 @@ def _operation_to_pyspark(op: TransformOperation, dataframe: str) -> str:
     if op.op == "drop_column":
         return f"{dataframe} = {dataframe}.drop({_quote(op.column or '')})"
     if op.op == "rename_column":
+        # IDEMPOTENTE: re-execucoes (e blocos empilhados de edits anteriores)
+        # podem encontrar a coluna ja renomeada OU o destino ja existente
+        # (ex.: ghost de mergeSchema) — rename incondicional explode com
+        # COLUMN_ALREADY_EXISTS (achado no E2E real, run 1019391853336863).
+        src = _quote(op.column or "")
+        dst = _quote(op.new_name or "")
         return (
-            f"{dataframe} = {dataframe}.withColumnRenamed("
-            f"{_quote(op.column or '')}, {_quote(op.new_name or '')})"
+            f"if {src} in {dataframe}.columns and {dst} not in {dataframe}.columns:\n"
+            f"    {dataframe} = {dataframe}.withColumnRenamed({src}, {dst})"
         )
     if op.op == "cast_column":
         # Guardrail: cast incompativel vira NULL silencioso. Usa F.try_cast
