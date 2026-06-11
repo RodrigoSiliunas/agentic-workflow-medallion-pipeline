@@ -1310,13 +1310,17 @@ def test_enforce_overwrite_schema_scoped_to_target_dataframe():
 
 
 def test_codegen_rename_overwrite_schema_real_notebook():
-    """Contra notebook real (dedup_clean.py): rename forca overwriteSchema."""
+    """Contra notebook real (dedup_clean.py): rename mantem overwriteSchema e
+    o bloco gerado e IDEMPOTENTE (guard de existencia — re-execucoes e blocos
+    empilhados nao podem colidir com COLUMN_ALREADY_EXISTS)."""
     manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
     node = manifest.resolve_node("silver_dedup")
     repo_root = Path(__file__).resolve().parents[4]
     source = (repo_root / node.file_path).read_text(encoding="utf-8")
-    # Sanidade: o notebook real usa mergeSchema (causa-raiz do ghost)
-    assert '.option("mergeSchema", "true")' in source
+    # O notebook real agora escreve com overwriteSchema NATIVO (mergeSchema em
+    # overwrite ressuscitava colunas de runs anteriores como ghosts NULL).
+    assert '.option("overwriteSchema", "true")' in source
+    assert '.option("mergeSchema", "true")' not in source
 
     draft = TransformDraft(
         layer="silver",
@@ -1332,9 +1336,15 @@ def test_codegen_rename_overwrite_schema_real_notebook():
     patched = generate_pyspark_patch(source, draft, node=node)
 
     assert '.option("overwriteSchema", "true")' in patched
-    # O write do df_parsed nao deve mais usar mergeSchema
+    # O write do df_parsed nao deve usar mergeSchema
     write_block = patched.split("df_parsed.write.format", 1)[1].split("saveAsTable", 1)[0]
     assert "mergeSchema" not in write_block
+    # Rename gerado com guard de idempotencia
+    assert (
+        'if "sender_name" in df_parsed.columns '
+        'and "sender_full_name" not in df_parsed.columns:'
+    ) in patched
+    assert 'df_parsed.withColumnRenamed("sender_name", "sender_full_name")' in patched
     compile(patched, "<real_ghost>", "exec")
 
 
