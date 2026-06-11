@@ -52,6 +52,18 @@ logger = logging.getLogger("silver.entities_mask")
 # Armazenada no Databricks Secrets para nao ficar em texto claro no codigo
 os.environ["MASKING_SECRET"] = dbutils.secrets.get(SCOPE, "masking-secret")
 
+# Workers do Spark NAO herdam o os.environ do driver. O secret precisa viajar
+# na closure das UDFs (cloudpickle) e ser injetado no ambiente DO WORKER antes
+# de chamar hash_value. Sem isso: KeyError MASKING_SECRET na primeira vez que
+# uma array de CPF nao-vazia chega ao hash (ficou latente por meses porque a
+# extracao rodava sobre texto ja redigido e as arrays vinham sempre vazias).
+_MASKING_SECRET = os.environ["MASKING_SECRET"]
+
+
+def _ensure_worker_secret(_secret=_MASKING_SECRET):
+    import os as _os
+    _os.environ.setdefault("MASKING_SECRET", _secret)
+
 # Importa funcoes de mascaramento APOS definir MASKING_SECRET.
 # Os modulos leem a env var no import — por isso nao podem ir pra cell 1.
 from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate  # noqa: NB003
@@ -86,7 +98,13 @@ mask_email_udf = F.udf(mask_email, StringType())
 mask_phone_udf = F.udf(mask_phone, StringType())
 mask_plate_udf = F.udf(mask_plate, StringType())
 # Hash HMAC irreversivel para CPFs (usado como chave de join segura)
-hash_udf = F.udf(hash_value, StringType())
+def _hash_value_worker(value, _secret=_MASKING_SECRET):
+    import os as _os
+    _os.environ.setdefault("MASKING_SECRET", _secret)
+    return hash_value(value)
+
+
+hash_udf = F.udf(_hash_value_worker, StringType())
 # Redaction: substitui PII no texto por placeholders como [CPF_REDACTED]
 redact_udf = F.udf(redact_message_body, StringType())
 
@@ -159,6 +177,7 @@ def mask_cpf_array(arr_series: pd.Series) -> pd.Series:
 
 @pandas_udf(ArrayType(StringType()))
 def hash_cpf_array(arr_series: pd.Series) -> pd.Series:
+    _ensure_worker_secret()
     return arr_series.apply(lambda a: _safe_map(a, hash_value))
 
 
