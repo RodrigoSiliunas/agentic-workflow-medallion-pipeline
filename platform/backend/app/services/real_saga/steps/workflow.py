@@ -191,7 +191,12 @@ class WorkflowStep:
                     notebook_path=f"{pipeline_notebooks}/silver/enrichment",
                     base_parameters=base_params,
                 ),
-                depends_on=[TaskDependency(task_key="silver_dedup")],
+                # Depende do entities (nao do dedup): entities REESCREVE a
+                # messages_clean que o enrichment le — em paralelo, um rename
+                # do editor muda o schema no meio da leitura e derruba a 1a
+                # tentativa com DELTA_SCHEMA_CHANGE_SINCE_ANALYSIS. Tambem
+                # restaura a ordem original do pipeline (Task 3 -> Task 4).
+                depends_on=[TaskDependency(task_key="silver_entities")],
                 timeout_seconds=600,
                 max_retries=2,
                 **cluster_kwarg,

@@ -199,6 +199,23 @@ df_redacted = df.withColumn("message_body", redact_udf("message_body"))
 
 # COMMAND ----------
 
+# DBTITLE 1,Salvar Leads Profile
+# Persiste o perfil de cada lead com entidades mascaradas.
+# IMPORTANTE: este write executa o plano lazy de leads_masked, que LE a
+# messages_clean. Precisa rodar ANTES do overwrite da messages_clean abaixo:
+# se a sobrescrita mudar o schema (renames do Pipeline Editor), o plano
+# antigo quebra com DELTA_SCHEMA_CHANGE_SINCE_ANALYSIS — era a causa da
+# 1a tentativa falhar (e o retry passar) em todo run com rename.
+(
+    leads_masked.write.format("delta")
+    .mode("overwrite")
+    .option("mergeSchema", "true")
+    .saveAsTable(SILVER_LEADS)
+)
+
+lake.write_parquet(spark.table(SILVER_LEADS), "silver/leads_profile/")
+logger.info("Parquet uploaded para S3 silver/leads_profile/")
+
 # COMMAND ----------
 
 # DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
@@ -220,24 +237,15 @@ df_redacted = df_redacted.withColumnRenamed("message_identity", "message_ulala")
     .saveAsTable(SILVER_MESSAGES)
 )
 
+# Pos-overwrite com possivel mudanca de schema: refresh evita relacao stale
+# do catalogo da sessao na releitura abaixo (KD007).
+spark.catalog.refreshTable(SILVER_MESSAGES)
 lake.write_parquet(spark.table(SILVER_MESSAGES), "silver/messages_clean/")
 logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 
 # COMMAND ----------
 
-# DBTITLE 1,Salvar Leads Profile
-# Persiste o perfil de cada lead com entidades mascaradas
-(
-    leads_masked.write.format("delta")
-    .mode("overwrite")
-    .option("mergeSchema", "true")
-    .saveAsTable(SILVER_LEADS)
-)
-
-lake.write_parquet(spark.table(SILVER_LEADS), "silver/leads_profile/")
-logger.info("Parquet uploaded para S3 silver/leads_profile/")
-
-# Metricas finais
+# DBTITLE 1,Metricas Finais
 leads_count = spark.table(SILVER_LEADS).count()
 duration = round(time.time() - start_time, 2)
 
