@@ -111,6 +111,18 @@ redact_udf = F.udf(redact_message_body, StringType())
 
 # DBTITLE 1,Ler Messages Clean (inbound com texto)
 df = spark.table(SILVER_MESSAGES)
+
+# Normaliza nome da coluna identificadora para `message_id` (canonico do schema bronze).
+# Defensivo contra estados residuais de runs anteriores onde renames Low-Code
+# do Pipeline Editor persistiram nomes alternativos (`message_identity`, `message_ulala`)
+# na tabela Delta. Idempotente: se ja for `message_id`, no-op.
+_existing_cols = set(df.columns)
+if "message_id" not in _existing_cols:
+    for _alt in ("message_identity", "message_ulala"):
+        if _alt in _existing_cols:
+            df = df.withColumnRenamed(_alt, "message_id")
+            break
+
 # Filtra apenas mensagens inbound com corpo de texto nao vazio
 # (entidades so sao extraidas do que o lead envia)
 df_inbound = df.filter(
@@ -236,24 +248,10 @@ logger.info("Parquet uploaded para S3 silver/leads_profile/")
 
 # COMMAND ----------
 
-# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
-# Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_redacted = df_redacted.withColumnRenamed("message_id", "message_identity")
-
-# COMMAND ----------
-
-# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
-# Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_redacted = df_redacted.withColumnRenamed("message_identity", "message_ulala")
-
-# COMMAND ----------
-
-# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
-# Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_redacted = df_redacted.withColumnRenamed("message_ulala", "message_identity")
-
 # DBTITLE 1,Salvar Messages Clean
-# Sobrescreve a tabela messages_clean com a versao redacted
+# Sobrescreve a tabela messages_clean com a versao redacted.
+# A normalizacao do nome da coluna identificadora ja foi feita na leitura
+# (vide cell de leitura): a tabela sempre sera escrita com `message_id`.
 (
     df_redacted.write.format("delta")
     .mode("overwrite")
