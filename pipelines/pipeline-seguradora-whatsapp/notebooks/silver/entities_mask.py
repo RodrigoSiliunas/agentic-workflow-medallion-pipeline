@@ -238,13 +238,19 @@ logger.info("Parquet uploaded para S3 silver/leads_profile/")
 
 # DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
 # Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_redacted = df_redacted.withColumnRenamed("message_id", "message_identity")
+# Rename idempotente: re-execucoes leem a tabela ja com o schema final
+# (message_ulala). Aplica o rename APENAS se a coluna fonte existir e a
+# coluna destino ainda nao existir — evita COLUMN_ALREADY_EXISTS.
+if "message_id" in df_redacted.columns and "message_identity" not in df_redacted.columns:
+    df_redacted = df_redacted.withColumnRenamed("message_id", "message_identity")
 
 # COMMAND ----------
 
 # DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
 # Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_redacted = df_redacted.withColumnRenamed("message_identity", "message_ulala")
+# Mesma protecao de idempotencia do bloco anterior.
+if "message_identity" in df_redacted.columns and "message_ulala" not in df_redacted.columns:
+    df_redacted = df_redacted.withColumnRenamed("message_identity", "message_ulala")
 
 # DBTITLE 1,Salvar Messages Clean
 # Sobrescreve a tabela messages_clean com a versao redacted
