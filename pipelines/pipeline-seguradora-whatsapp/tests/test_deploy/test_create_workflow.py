@@ -102,6 +102,12 @@ def test_create_workflow_updates_latest_existing_job(monkeypatch):
     assert reset_job_id == 222
     tasks = {task.task_key: task for task in job_settings.tasks}
     assert [dep.task_key for dep in tasks["bronze_ingestion"].depends_on] == ["pre_check"]
+    # enrichment depende do entities (sequencial): entities REESCREVE a
+    # messages_clean que o enrichment le — em paralelo, rename do editor
+    # mudava o schema no meio da leitura (KD007 na 1a tentativa de todo run).
+    assert [dep.task_key for dep in tasks["silver_enrichment"].depends_on] == [
+        "silver_entities"
+    ]
     # observer_trigger depende de todas as tasks core do ETL (sem agent_post)
     observer_deps = sorted(dep.task_key for dep in tasks["observer_trigger"].depends_on)
     assert observer_deps == sorted([

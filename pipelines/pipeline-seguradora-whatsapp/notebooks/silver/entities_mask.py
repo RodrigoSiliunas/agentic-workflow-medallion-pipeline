@@ -52,6 +52,18 @@ logger = logging.getLogger("silver.entities_mask")
 # Armazenada no Databricks Secrets para nao ficar em texto claro no codigo
 os.environ["MASKING_SECRET"] = dbutils.secrets.get(SCOPE, "masking-secret")
 
+# Workers do Spark NAO herdam o os.environ do driver. O secret precisa viajar
+# na closure das UDFs (cloudpickle) e ser injetado no ambiente DO WORKER antes
+# de chamar hash_value. Sem isso: KeyError MASKING_SECRET na primeira vez que
+# uma array de CPF nao-vazia chega ao hash (ficou latente por meses porque a
+# extracao rodava sobre texto ja redigido e as arrays vinham sempre vazias).
+_MASKING_SECRET = os.environ["MASKING_SECRET"]
+
+
+def _ensure_worker_secret(_secret=_MASKING_SECRET):
+    # `os` global resolve no worker via cloudpickle (re-import por referencia)
+    os.environ.setdefault("MASKING_SECRET", _secret)
+
 # Importa funcoes de mascaramento APOS definir MASKING_SECRET.
 # Os modulos leem a env var no import — por isso nao podem ir pra cell 1.
 from pipeline_lib.masking.format_preserving import mask_cpf, mask_email, mask_phone, mask_plate  # noqa: NB003
@@ -86,7 +98,12 @@ mask_email_udf = F.udf(mask_email, StringType())
 mask_phone_udf = F.udf(mask_phone, StringType())
 mask_plate_udf = F.udf(mask_plate, StringType())
 # Hash HMAC irreversivel para CPFs (usado como chave de join segura)
-hash_udf = F.udf(hash_value, StringType())
+def _hash_value_worker(value, _secret=_MASKING_SECRET):
+    os.environ.setdefault("MASKING_SECRET", _secret)
+    return hash_value(value)
+
+
+hash_udf = F.udf(_hash_value_worker, StringType())
 # Redaction: substitui PII no texto por placeholders como [CPF_REDACTED]
 redact_udf = F.udf(redact_message_body, StringType())
 
@@ -159,6 +176,7 @@ def mask_cpf_array(arr_series: pd.Series) -> pd.Series:
 
 @pandas_udf(ArrayType(StringType()))
 def hash_cpf_array(arr_series: pd.Series) -> pd.Series:
+    _ensure_worker_secret()
     return arr_series.apply(lambda a: _safe_map(a, hash_value))
 
 
@@ -199,28 +217,13 @@ df_redacted = df.withColumn("message_body", redact_udf("message_body"))
 
 # COMMAND ----------
 
-# COMMAND ----------
-
-# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
-# Bloco gerado a partir de TransformDraft versionado na plataforma.
-df_redacted = df_redacted.withColumnRenamed("message_id", "message_identity")
-
-# DBTITLE 1,Salvar Messages Clean
-# Sobrescreve a tabela messages_clean com a versao redacted
-(
-    df_redacted.write.format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(SILVER_MESSAGES)
-)
-
-lake.write_parquet(spark.table(SILVER_MESSAGES), "silver/messages_clean/")
-logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
-
-# COMMAND ----------
-
 # DBTITLE 1,Salvar Leads Profile
-# Persiste o perfil de cada lead com entidades mascaradas
+# Persiste o perfil de cada lead com entidades mascaradas.
+# IMPORTANTE: este write executa o plano lazy de leads_masked, que LE a
+# messages_clean. Precisa rodar ANTES do overwrite da messages_clean abaixo:
+# se a sobrescrita mudar o schema (renames do Pipeline Editor), o plano
+# antigo quebra com DELTA_SCHEMA_CHANGE_SINCE_ANALYSIS — era a causa da
+# 1a tentativa falhar (e o retry passar) em todo run com rename.
 (
     leads_masked.write.format("delta")
     .mode("overwrite")
@@ -231,7 +234,42 @@ logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
 lake.write_parquet(spark.table(SILVER_LEADS), "silver/leads_profile/")
 logger.info("Parquet uploaded para S3 silver/leads_profile/")
 
-# Metricas finais
+# COMMAND ----------
+
+# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
+# Bloco gerado a partir de TransformDraft versionado na plataforma.
+df_redacted = df_redacted.withColumnRenamed("message_id", "message_identity")
+
+# COMMAND ----------
+
+# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
+# Bloco gerado a partir de TransformDraft versionado na plataforma.
+df_redacted = df_redacted.withColumnRenamed("message_identity", "message_ulala")
+
+# COMMAND ----------
+
+# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
+# Bloco gerado a partir de TransformDraft versionado na plataforma.
+df_redacted = df_redacted.withColumnRenamed("message_ulala", "message_identity")
+
+# DBTITLE 1,Salvar Messages Clean
+# Sobrescreve a tabela messages_clean com a versao redacted
+(
+    df_redacted.write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable(SILVER_MESSAGES)
+)
+
+# Pos-overwrite com possivel mudanca de schema: refresh evita relacao stale
+# do catalogo da sessao na releitura abaixo (KD007).
+spark.catalog.refreshTable(SILVER_MESSAGES)
+lake.write_parquet(spark.table(SILVER_MESSAGES), "silver/messages_clean/")
+logger.info("Parquet uploaded para S3 silver/messages_clean/ (redacted)")
+
+# COMMAND ----------
+
+# DBTITLE 1,Metricas Finais
 leads_count = spark.table(SILVER_LEADS).count()
 duration = round(time.time() - start_time, 2)
 

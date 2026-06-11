@@ -136,10 +136,15 @@ const defaultChecks = [
         </div>
       </div>
 
-      <!-- Direita: risk gauge -->
+      <!-- Direita: risk gauge — placeholder até existir proposta/preview
+           (mostrar 0.0/Baixo sem nada calculado induzia falsa confiança) -->
       <div class="info-right">
         <span class="overline">Risco</span>
-        <AppRiskGauge :value="proposal?.riskScore ?? 0" :size="84" />
+        <AppRiskGauge v-if="proposal" :value="proposal.riskScore ?? 0" :size="84" />
+        <div v-else class="risk-placeholder" :style="{ width: '84px' }">
+          <span class="risk-dash">—</span>
+          <span class="risk-hint">sem proposta</span>
+        </div>
       </div>
     </div>
 
@@ -448,6 +453,26 @@ const defaultChecks = [
 }
 
 /* Mensagem de bloqueio */
+.risk-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 0;
+}
+
+.risk-dash {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg-tertiary);
+}
+
+.risk-hint {
+  font-size: 10px;
+  color: var(--fg-tertiary);
+}
+
 .block-msg {
   display: flex;
   align-items: flex-start;

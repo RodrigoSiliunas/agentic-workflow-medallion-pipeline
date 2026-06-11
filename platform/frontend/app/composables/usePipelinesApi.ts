@@ -20,7 +20,9 @@ import {
   MOCK_PREVIEW_OK_RAW,
   MOCK_VALIDATION_OK,
   MOCK_FILE_DIFFS,
+  MOCK_TARGET_TABLE_COLUMNS,
 } from "~/composables/mock/pipeline-editor"
+import type { SchemaColumn } from "~/types/pipeline-editor-v2"
 
 interface PipelineApiDTO {
   id: string
@@ -301,6 +303,17 @@ export function usePipelinesApi() {
     )
   }
 
+  async function getTableColumns(pipelineId: string, table: string): Promise<SchemaColumn[]> {
+    if (isMock) {
+      await new Promise((r) => setTimeout(r, 300))
+      return structuredClone(MOCK_TARGET_TABLE_COLUMNS)
+    }
+    const data = await api.get<{ table: string; columns: SchemaColumn[] }>(
+      `/pipelines/${pipelineId}/columns?table=${encodeURIComponent(table)}`,
+    )
+    return data.columns || []
+  }
+
   async function exportPreview(pipelineId: string, sessionId: string, format: "csv" | "parquet") {
     const data = await api.post<Record<string, unknown>>(
       `/pipelines/${pipelineId}/edit-sessions/${sessionId}/export`,
@@ -442,6 +455,7 @@ export function usePipelinesApi() {
     sendEditMessage,
     updateDraft,
     getPreview,
+    getTableColumns,
     exportPreview,
     getPromptMarkdown,
     approveEdit,

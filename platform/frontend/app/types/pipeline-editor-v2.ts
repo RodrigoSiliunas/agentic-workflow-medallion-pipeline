@@ -5,6 +5,7 @@ import type {
   PipelineWorkspace,
   PipelineEditSession,
   PipelineEditVersion,
+  PipelineManifestNode,
   ApproveEditResponse,
 } from "./pipeline-editor"
 
@@ -15,6 +16,7 @@ export type {
   PipelineWorkspace,
   PipelineEditSession,
   PipelineEditVersion,
+  PipelineManifestNode,
   ApproveEditResponse,
 }
 

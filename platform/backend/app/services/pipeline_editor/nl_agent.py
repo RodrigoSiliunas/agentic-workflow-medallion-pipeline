@@ -26,7 +26,11 @@ from app.core.config import settings
 from app.models.company import Company
 from app.services.credential_service import PROVIDER_CREDENTIAL_MAP, CredentialService
 from app.services.pipeline_editor.agent import build_edit_proposal
-from app.services.pipeline_editor.manifest import PipelineManifest, silver_nodes
+from app.services.pipeline_editor.manifest import (
+    PipelineManifest,
+    correct_to_last_writer,
+    silver_nodes,
+)
 from app.services.pipeline_editor.schemas import EditProposal, TransformDraft
 
 logger = structlog.get_logger()
@@ -110,6 +114,9 @@ def _system_prompt(manifest: PipelineManifest) -> str:
         "json_extract, mask_pii.\n"
         "Para filter_rows e derive_column use SQL Spark (sem F.col) no preview.\n"
         "Se faltar contexto, explique no campo explanation e envie draft parcial.\n"
+        "REGRA CRITICA: quando mais de um node escreve a MESMA tabela, escolha "
+        "SEMPRE o ULTIMO escritor — e ele que determina o schema final; aplicar "
+        "num escritor anterior vira no-op (o overwrite posterior apaga o efeito).\n"
         f"Nos Silver disponiveis:\n{node_lines or '- nenhum'}"
     )
 
@@ -171,6 +178,11 @@ def _proposal_from_tool_input(
     node = manifest.resolve_node(draft.target_node)
     if node.layer != "silver":
         raise ValueError(f"No `{draft.target_node}` nao e Silver")
+
+    # Correcao deterministica ao ultimo escritor (helper compartilhado com o
+    # approve) — achado nos E2E reais #132/#138: rename aplicado num escritor
+    # anterior vira no-op silencioso.
+    draft, node = correct_to_last_writer(draft, manifest)
     files = [node.file_path]
     risk = int(tool_input.get("risk_score", 3))
     test_plan = tool_input.get("test_plan") or [

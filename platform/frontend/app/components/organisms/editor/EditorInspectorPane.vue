@@ -26,8 +26,11 @@
         :source-of-truth="sourceOfTruth"
         :auto-saved-at="null"
         :table-columns="tableColumns"
+        :nodes="nodes"
+        :selected-node-id="selectedNodeId"
         @update:draft="emit('update:draft', $event)"
         @mark-active="emit('markBuilderActive')"
+        @select-node="emit('selectNode', $event)"
       />
     </div>
 
@@ -70,6 +73,7 @@ import type {
   EditProposal,
   FileDiff,
   SchemaColumn,
+  PipelineManifestNode,
 } from "~/types/pipeline-editor-v2"
 
 withDefaults(
@@ -85,6 +89,8 @@ withDefaults(
     operations?: TransformOperation[]
     fileDiffs?: FileDiff[]
     tableColumns?: SchemaColumn[]
+    nodes?: PipelineManifestNode[]
+    selectedNodeId?: string | null
   }>(),
   {
     inspectorTab: "rascunho",
@@ -98,6 +104,8 @@ withDefaults(
     operations: () => [],
     fileDiffs: () => [],
     tableColumns: () => [],
+    nodes: () => [],
+    selectedNodeId: null,
   },
 )
 
@@ -110,5 +118,6 @@ const emit = defineEmits<{
   approve: []
   share: []
   revert: []
+  selectNode: [nodeId: string]
 }>()
 </script>
