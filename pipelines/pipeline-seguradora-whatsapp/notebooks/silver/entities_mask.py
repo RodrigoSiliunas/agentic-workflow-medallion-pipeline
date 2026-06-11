@@ -255,6 +255,13 @@ if "message_identity" in df_redacted.columns and "message_ulala" not in df_redac
 if "message_ulala" in df_redacted.columns and "message_identity" not in df_redacted.columns:
     df_redacted = df_redacted.withColumnRenamed("message_ulala", "message_identity")
 
+# COMMAND ----------
+
+# DBTITLE 1,Transformacoes Low-Code do Pipeline Editor
+# Bloco gerado a partir de TransformDraft versionado na plataforma.
+if "message_identity" in df_redacted.columns and "message_pao_com_ovo" not in df_redacted.columns:
+    df_redacted = df_redacted.withColumnRenamed("message_identity", "message_pao_com_ovo")
+
 # DBTITLE 1,Salvar Messages Clean
 # Sobrescreve a tabela messages_clean com a versao redacted
 (
