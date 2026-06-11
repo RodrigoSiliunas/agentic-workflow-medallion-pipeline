@@ -50,7 +50,8 @@ logger = logging.getLogger("silver.entities_mask")
 # DBTITLE 1,Carregar MASKING_SECRET e Funcoes de Masking
 # MASKING_SECRET e a chave usada para format-preserving encryption dos dados sensiveis
 # Armazenada no Databricks Secrets para nao ficar em texto claro no codigo
-os.environ["MASKING_SECRET"] = dbutils.secrets.get(SCOPE, "masking-secret")
+_MASKING_SECRET_VALUE = dbutils.secrets.get(SCOPE, "masking-secret")
+os.environ["MASKING_SECRET"] = _MASKING_SECRET_VALUE
 
 # Importa funcoes de mascaramento APOS definir MASKING_SECRET.
 # Os modulos leem a env var no import — por isso nao podem ir pra cell 1.
@@ -143,6 +144,28 @@ leads = (
 # DBTITLE 1,Mascarar Dados Sensiveis (distribuido via pandas_udf)
 # T5: era `leads.collect()` + pandas (OOM em ~10x volume). Agora cada
 # executor aplica masking no batch pandas que recebe — escala linear.
+#
+# IMPORTANTE: MASKING_SECRET so foi setado em os.environ no DRIVER. Os
+# pandas_udfs rodam em workers Python separados onde essa env var nao
+# existe — causa PythonException ao chamar hash_value/mask_* no worker.
+# Solucao: capturar o valor numa variavel Python (closure) e propagar
+# para o ambiente do worker no inicio de cada pandas_udf antes de
+# (re)importar os modulos de masking.
+_MASKING_SECRET_FOR_WORKERS = _MASKING_SECRET_VALUE
+
+
+def _ensure_secret_on_worker(secret_value: str) -> None:
+    """Garante MASKING_SECRET no os.environ do worker e recarrega modulos
+    de masking caso tenham sido importados sem a env var presente."""
+    if not os.environ.get("MASKING_SECRET"):
+        os.environ["MASKING_SECRET"] = secret_value
+        # Forca reimport pra que os modulos releiam a env var no escopo
+        # do worker (eles a leem no import-time).
+        import importlib
+        import pipeline_lib.masking.format_preserving as _fp
+        import pipeline_lib.masking.hash_based as _hb
+        importlib.reload(_fp)
+        importlib.reload(_hb)
 
 
 def _safe_map(arr, fn):
@@ -154,27 +177,37 @@ def _safe_map(arr, fn):
 
 @pandas_udf(ArrayType(StringType()))
 def mask_cpf_array(arr_series: pd.Series) -> pd.Series:
-    return arr_series.apply(lambda a: _safe_map(a, mask_cpf))
+    _ensure_secret_on_worker(_MASKING_SECRET_FOR_WORKERS)
+    from pipeline_lib.masking.format_preserving import mask_cpf as _mask_cpf
+    return arr_series.apply(lambda a: _safe_map(a, _mask_cpf))
 
 
 @pandas_udf(ArrayType(StringType()))
 def hash_cpf_array(arr_series: pd.Series) -> pd.Series:
-    return arr_series.apply(lambda a: _safe_map(a, hash_value))
+    _ensure_secret_on_worker(_MASKING_SECRET_FOR_WORKERS)
+    from pipeline_lib.masking.hash_based import hash_value as _hash_value
+    return arr_series.apply(lambda a: _safe_map(a, _hash_value))
 
 
 @pandas_udf(ArrayType(StringType()))
 def mask_email_array(arr_series: pd.Series) -> pd.Series:
-    return arr_series.apply(lambda a: _safe_map(a, mask_email))
+    _ensure_secret_on_worker(_MASKING_SECRET_FOR_WORKERS)
+    from pipeline_lib.masking.format_preserving import mask_email as _mask_email
+    return arr_series.apply(lambda a: _safe_map(a, _mask_email))
 
 
 @pandas_udf(ArrayType(StringType()))
 def mask_phone_array(arr_series: pd.Series) -> pd.Series:
-    return arr_series.apply(lambda a: _safe_map(a, mask_phone))
+    _ensure_secret_on_worker(_MASKING_SECRET_FOR_WORKERS)
+    from pipeline_lib.masking.format_preserving import mask_phone as _mask_phone
+    return arr_series.apply(lambda a: _safe_map(a, _mask_phone))
 
 
 @pandas_udf(ArrayType(StringType()))
 def mask_plate_array(arr_series: pd.Series) -> pd.Series:
-    return arr_series.apply(lambda a: _safe_map(a, mask_plate))
+    _ensure_secret_on_worker(_MASKING_SECRET_FOR_WORKERS)
+    from pipeline_lib.masking.format_preserving import mask_plate as _mask_plate
+    return arr_series.apply(lambda a: _safe_map(a, _mask_plate))
 
 
 # Aplica mascaramento distribuido. Cada pandas_udf roda em batches —
