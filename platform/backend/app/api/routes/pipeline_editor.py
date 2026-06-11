@@ -44,6 +44,7 @@ from app.services.pipeline_editor.artifacts import build_prompt_markdown
 from app.services.pipeline_editor.downstream_impact import check_downstream_impact
 from app.services.pipeline_editor.manifest import (
     DEFAULT_CATALOG,
+    correct_to_last_writer,
     ensure_silver_node,
     load_manifest_for_template,
     manifest_for_editor,
@@ -679,7 +680,14 @@ async def approve_edit_version(
 
     draft = _version_to_draft(version)
     manifest = await _resolve_manifest(db, pipeline)
-    node = manifest.resolve_node(draft.target_node)
+    # Defesa em profundidade: re-vincula ao ULTIMO escritor da tabela alvo
+    # (builder/clients antigos podem mandar um escritor anterior — a operacao
+    # viraria no-op sobrescrito; achado no E2E real #138). Persiste o draft
+    # corrigido na versao para o diff/PR refletirem o node certo.
+    draft, node = correct_to_last_writer(draft, manifest)
+    if draft.target_node != version.draft.get("target_node"):
+        version.draft = draft.model_dump(mode="json")
+        await db.flush()
     github = GitHubService(db, auth.company_id)
 
     # Guard de impacto downstream: lê notebooks gold/validation em paralelo e bloqueia

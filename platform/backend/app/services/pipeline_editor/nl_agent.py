@@ -28,7 +28,7 @@ from app.services.credential_service import PROVIDER_CREDENTIAL_MAP, CredentialS
 from app.services.pipeline_editor.agent import build_edit_proposal
 from app.services.pipeline_editor.manifest import (
     PipelineManifest,
-    last_writer_node,
+    correct_to_last_writer,
     silver_nodes,
 )
 from app.services.pipeline_editor.schemas import EditProposal, TransformDraft
@@ -179,27 +179,10 @@ def _proposal_from_tool_input(
     if node.layer != "silver":
         raise ValueError(f"No `{draft.target_node}` nao e Silver")
 
-    # Correcao deterministica: se o LLM escolheu um node que NAO e o ultimo
-    # escritor da tabela alvo, re-vincula ao ultimo escritor. Operacao de
-    # coluna aplicada num escritor anterior vira no-op silencioso (o overwrite
-    # posterior apaga o efeito) — achado no E2E real (#132: rename no dedup
-    # nunca chegou na tabela; o entities a reescreve depois).
-    last_writer = last_writer_node(manifest, draft.target_table)
-    if (
-        last_writer is not None
-        and last_writer.layer == "silver"
-        and last_writer.id != node.id
-    ):
-        warnings = list(draft.warnings or [])
-        warnings.append(
-            f"Node ajustado de `{node.id}` para `{last_writer.id}` — ultimo "
-            f"escritor de {draft.target_table} (escritores anteriores sao "
-            "sobrescritos)."
-        )
-        draft = draft.model_copy(
-            update={"target_node": last_writer.id, "warnings": warnings}
-        )
-        node = last_writer
+    # Correcao deterministica ao ultimo escritor (helper compartilhado com o
+    # approve) — achado nos E2E reais #132/#138: rename aplicado num escritor
+    # anterior vira no-op silencioso.
+    draft, node = correct_to_last_writer(draft, manifest)
     files = [node.file_path]
     risk = int(tool_input.get("risk_score", 3))
     test_plan = tool_input.get("test_plan") or [

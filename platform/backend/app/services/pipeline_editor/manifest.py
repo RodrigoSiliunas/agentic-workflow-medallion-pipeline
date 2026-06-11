@@ -82,6 +82,33 @@ def last_writer_node(
     return found
 
 
+def correct_to_last_writer(draft, manifest: PipelineManifest):
+    """Re-vincula o draft ao ULTIMO escritor da tabela alvo, se preciso.
+
+    Retorna (draft_corrigido, node). Usado pelo nl_agent E pelo approve
+    (defesa em profundidade: builder/clients antigos podem mandar um
+    target_node anterior — a operacao viraria no-op sobrescrito).
+    """
+    node = manifest.resolve_node(draft.target_node)
+    last_writer = last_writer_node(manifest, draft.target_table)
+    if (
+        last_writer is not None
+        and last_writer.layer == SILVER_LAYER
+        and last_writer.id != node.id
+    ):
+        warnings = list(draft.warnings or [])
+        warnings.append(
+            f"Node ajustado de `{node.id}` para `{last_writer.id}` — ultimo "
+            f"escritor de {draft.target_table} (escritores anteriores sao "
+            "sobrescritos)."
+        )
+        draft = draft.model_copy(
+            update={"target_node": last_writer.id, "warnings": warnings}
+        )
+        node = last_writer
+    return draft, node
+
+
 def manifest_for_editor(manifest: PipelineManifest) -> PipelineManifest:
     """Retorna manifesto filtrado para o editor (Silver only)."""
     return PipelineManifest(

@@ -1507,3 +1507,34 @@ def test_nl_proposal_nao_mexe_quando_ja_e_ultimo_escritor():
     proposal = _proposal_from_tool_input(tool_input, manifest)
     assert proposal.draft.target_node == "silver_enrichment"
     assert proposal.draft.warnings == []
+
+
+def test_correct_to_last_writer_rebinds_and_warns():
+    """Helper compartilhado (nl_agent + approve): draft no dedup para tabela
+    reescrita pelo entities -> re-vinculado com warning."""
+    from app.services.pipeline_editor.manifest import correct_to_last_writer
+
+    manifest = load_manifest_for_template("pipeline-seguradora-whatsapp")
+    draft = TransformDraft(
+        layer="silver",
+        target_node="silver_dedup",
+        target_table="medallion.silver.messages_clean",
+        operations=[
+            TransformOperation(op="rename_column", column="a", new_name="b")
+        ],
+    )
+    corrected, node = correct_to_last_writer(draft, manifest)
+    assert corrected.target_node == "silver_entities"
+    assert node.id == "silver_entities"
+    assert any("ultimo escritor" in w.lower() for w in corrected.warnings)
+
+    # Ja-correto: no-op, sem warnings
+    draft2 = TransformDraft(
+        layer="silver",
+        target_node="silver_enrichment",
+        target_table="medallion.silver.conversations_enriched",
+        operations=[],
+    )
+    corrected2, node2 = correct_to_last_writer(draft2, manifest)
+    assert corrected2.target_node == "silver_enrichment"
+    assert corrected2.warnings == []
